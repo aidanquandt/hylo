@@ -1,9 +1,3 @@
-// To compile and run the simulation:
-// 1. Make sure you have main.c, simulation.c, node.c, node.h, and simulation.h in the same directory.
-// 2. Open a terminal in this directory.
-// 3. Compile with: gcc -o sim main.c simulation.c node.c
-// 4. Run with: ./sim
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
