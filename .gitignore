@@ -1,1 +1,49 @@
+# Build output folders
+build/
+**/build/
+**/bin/
+**/out/
+**/obj/
+
+# CMake/Ninja generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+Makefile
+build.ninja
+rules.ninja
+Testing/
+
+# Compiled binaries and libraries
+*.exe
+*.dll
+*.lib
+*.exp
+*.dll.a
+*.a
+*.so
+*.dylib
+*.pdb
+*.ilk
+
+# Object and dependency files
+*.o
+*.obj
+*.lo
+*.d
+
+# Logs and dumps
+*.log
+*.stackdump
+
+# Editor/IDE
+*.code-workspace
+.idea/
 .vscode/
+
+# OS cruft
+Thumbs.db
+Desktop.ini
+.DS_Store
