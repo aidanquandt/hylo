@@ -3,4 +3,4 @@
 
 void simulation_run(void);
 
-#endif
+#endif /* SIMULATION_H */

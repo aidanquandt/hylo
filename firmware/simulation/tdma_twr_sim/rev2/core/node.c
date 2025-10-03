@@ -2,20 +2,23 @@
 #include <stdlib.h>
 #include <math.h>
 #include "node.h"
+#include "timebase.h"
+#include "phy.h"
 
 // Max neighbors and neighbor timeout in ms
-#define MAX_NEIGHBORS 5
 #define NEIGHBOR_TIMEOUT_MS 30000
 
 // TDMA sync validity window (e.g., ~1.5s in sim-time)
-// Increase to tolerate multiple get_current_time_ms() calls per step so sync survives to next slot.
 #define SYNC_TIMEOUT_MS 10000
+
+// Small processing/relay delays to simulate realistic behavior (ms)
+#define ANCHOR_TWR_PROC_DELAY_MS 2
+#define BEACON_RELAY_DELAY_MS    1
 
 // Placeholder: Implement this function to return current system time in ms
 unsigned long get_current_time_ms() {
-    // For simulation: use static counter or system time
-    static unsigned long time_ms = 0;
-    return time_ms += 100;  // e.g., advance 100ms each call
+    // Return global sim time (advanced explicitly by simulation.c)
+    return g_sim_time_ms;
 }
 
 // These should only be defined here, not in simulation.c
@@ -34,6 +37,8 @@ static float pos_y[MAX_NODES] = {0};
 static int pos_init = 0;
 
 static void ensure_positions(int id, Role role) {
+    // Silence unused parameter warnings (positions are static in this sim)
+    (void)id; (void)role;
     if (pos_init) return;
     // Example layout for first few nodes; others default to (0,0).
     // Anchor 0: (0,0), Anchor 1: (5,0), Tag 2: (2,2), Tag 3: (2,-1)
@@ -48,7 +53,6 @@ static float compute_range_m(int a, int b) {
     float dx = pos_x[a] - pos_x[b];
     float dy = pos_y[a] - pos_y[b];
     float d2 = dx*dx + dy*dy;
-    // Avoid libm sqrt dependency issues if needed; sqrtf is typically fine on MinGW.
     return sqrtf(d2);
 }
 
@@ -94,7 +98,7 @@ int is_reachable(int from_id, int to_id) {
     return 0;
 }
 
-// Add neighbor or update last seen timestamp
+// Add/update/prune neighbors
 void update_neighbor(int node_id, int neighbor_id) {
     if (node_id == neighbor_id || node_id < 0 || neighbor_id < 0) return;
     NeighborTable *table = &neighbor_tables[node_id];
@@ -113,8 +117,6 @@ void update_neighbor(int node_id, int neighbor_id) {
         table->neighbor_count++;
     }
 }
-
-// Remove neighbors exceeding timeout
 void prune_neighbors(int node_id) {
     NeighborTable *table = &neighbor_tables[node_id];
     unsigned long now = get_current_time_ms();
@@ -139,20 +141,48 @@ void send_message(int from_id, int to_id, MsgType type) {
     // TDMA: require reachability for data-plane messages
     if (from_id != -1 && !is_reachable(from_id, to_id)) return;
 
-    // Update neighbor info for real-node traffic
+    // For real-node traffic, update neighbor info (keepalive)
     if (from_id != -1) {
         update_neighbor(from_id, to_id);
         update_neighbor(to_id, from_id);
     }
 
-    Message msg = { type, from_id, to_id };
-    msg.ttl = 0; // data-plane messages do not flood
+    Message msg = (Message){ type, from_id, to_id, 0 };
+    // Delegate actual delivery/logging to the simulation's PHY
+    phy_unicast(&msg);
+}
 
-    // Notify simulation layer (sending)
-    on_message_sent(&msg);
+// Schedule a message to be sent by this node after delay_ms
+static void schedule_tx(Node* node, const Message* m, unsigned long delay_ms) {
+    if (!node || !m) return;
+    for (int i = 0; i < MAX_MESSAGES; i++) {
+        if (!node->txq[i].in_use) {
+            node->txq[i].msg = *m;
+            node->txq[i].due_ms = get_current_time_ms() + delay_ms;
+            node->txq[i].in_use = 1;
+            return;
+        }
+    }
+    // Drop if TX queue full
+}
 
-    // Enqueue for delivery next step into receiver's next_queue
-    (void)enqueue_msg(&nodes[to_id]->next_queue, &msg);
+// Flush all due transmissions for this node
+static void flush_due_tx(Node* node) {
+    if (!node) return;
+    unsigned long now = get_current_time_ms();
+    for (int i = 0; i < MAX_MESSAGES; i++) {
+        if (node->txq[i].in_use && node->txq[i].due_ms <= now) {
+            Message* m = &node->txq[i].msg;
+            // Data-plane goes through send_message (reachability checks + keepalive)
+            if (m->type == MSG_TWR_REQUEST || m->type == MSG_TWR_RESPONSE) {
+                send_message(m->from_id, m->to_id, m->type);
+            } else {
+                // Control-plane uses PHY directly (keep TTL intact for BEACON)
+                phy_unicast(m);
+            }
+            node->txq[i].in_use = 0;
+        }
+    }
 }
 
 // Emit a BEACON from a coordinator anchor; anchors relay with ttl-1.
@@ -166,95 +196,109 @@ void emit_beacon(int origin_anchor_id, int ttl) {
         int nid = table->neighbors[i];
         if (nid < 0 || nid >= MAX_NODES || !nodes[nid]) continue;
 
-        Message m = { MSG_BEACON, origin_anchor_id, nid };
-        m.ttl = ttl;
-        on_message_sent(&m);
-        (void)enqueue_msg(&nodes[nid]->next_queue, &m);
+        Message m = (Message){ MSG_BEACON, origin_anchor_id, nid, ttl };
+        phy_unicast(&m);
     }
 }
 
 // Anchors: respond to TWR and relay BEACONs with TTL.
-// - MSG_TWR_REQUEST -> respond with MSG_TWR_RESPONSE (data-plane).
-// - MSG_BEACON -> flood to anchor neighbors (control-plane) with TTL-1.
+// Also periodically ANNOUNCE for discovery.
 void process_anchor(Node *node) {
-    node->state = ANCHOR_IDLE;
     prune_neighbors(node->id);
+
+    // Flush any due transmissions first (node-owned scheduling)
+    flush_due_tx(node);
+
+    // Periodic announce for neighbor discovery
+    unsigned long now = get_current_time_ms();
+    if (now - node->last_announce_ms >= ANNOUNCE_PERIOD_MS) {
+        node->last_announce_ms = now;
+        phy_broadcast(node->id, MSG_ANNOUNCE, 0);
+    }
 
     Message msg;
     while (dequeue_msg(&node->msg_queue, &msg)) {
         // Notify simulation layer (receiving)
         on_message_received(&msg, node->id);
+        // VCD: mark RX at this node
+        trace_phy_rx(&msg, node->id);
 
         update_neighbor(node->id, msg.from_id);
 
         switch (msg.type) {
             case MSG_ANNOUNCE:
+                // no response needed; last_seen updated above
                 break;
             case MSG_BEACON: {
-                // Relay only via anchors; decrement TTL; avoid echoing back to sender.
-                // Flood happens using next-step delivery so it does not collide with same-step TWR.
                 if (msg.ttl > 0) {
                     NeighborTable *t = &neighbor_tables[node->id];
                     for (int i = 0; i < t->neighbor_count; i++) {
                         int nid = t->neighbors[i];
                         if (nid == msg.from_id || !nodes[nid]) continue;
                         Message f = (Message){ MSG_BEACON, node->id, nid, msg.ttl - 1 };
-                        on_message_sent(&f);
-                        (void)enqueue_msg(&nodes[nid]->next_queue, &f);
+                        // Schedule a slight relay delay
+                        schedule_tx(node, &f, BEACON_RELAY_DELAY_MS);
                     }
                 }
                 break;
             }
-            case MSG_TWR_REQUEST:
-                // Deterministic response; anchors do not compute range, they just reply.
-                send_message(node->id, msg.from_id, MSG_TWR_RESPONSE);
+            case MSG_TWR_REQUEST: {
+                // Schedule a small processing delay before replying
+                Message resp = (Message){ MSG_TWR_RESPONSE, node->id, msg.from_id, 0 };
+                schedule_tx(node, &resp, ANCHOR_TWR_PROC_DELAY_MS);
                 break;
+            }
             default:
                 break;
         }
     }
 }
 
-// Tags: range only when 'synced' (after BEACON) and during their TDMA slot.
-// - On BEACON: set synced and record last_beacon_ms.
-// - On owning slot: send TWR_REQUESTs to anchor neighbors.
-// - On TWR_RESPONSE: compute/store deterministic range and advance when all received.
-// - Sync expires after SYNC_TIMEOUT_MS; tag must re-sync before initiating TWR again.
+// Tags: range only when 'synced' and during their TDMA slot.
+// Also periodically ANNOUNCE for discovery.
 void process_tag(Node *node) {
     prune_neighbors(node->id);
 
     static int pending_twr_responses[MAX_NODES] = {0};
     static unsigned long twr_deadline_ms[MAX_NODES] = {0};
 
-    // Reset per-slot tracking when slot owner changes (supports any number of slots/tags)
+    // Flush any due transmissions first (node-owned scheduling)
+    flush_due_tx(node);
+
+    // Reset per-slot tracking when slot owner changes
     if (node->last_slot_owner != current_slot_tag_id) {
         node->last_slot_owner = current_slot_tag_id;
         node->did_range_this_slot = 0;
+    }
+
+    // Periodic announce for neighbor discovery
+    unsigned long now = get_current_time_ms();
+    if (now - node->last_announce_ms >= ANNOUNCE_PERIOD_MS) {
+        node->last_announce_ms = now;
+        phy_broadcast(node->id, MSG_ANNOUNCE, 0);
     }
 
     Message msg;
     while (dequeue_msg(&node->msg_queue, &msg)) {
         // Notify simulation layer (receiving)
         on_message_received(&msg, node->id);
+        // VCD: mark RX at this node
+        trace_phy_rx(&msg, node->id);
 
         update_neighbor(node->id, msg.from_id);
 
         switch (node->state) {
             case TAG_IDLE:
             case TAG_WAIT_FOR_SLOT:
-                // Consume BEACONs to maintain sync; this gates whether TWR can start when slot is owned.
                 if (msg.type == MSG_BEACON) {
                     node->synced = 1;
                     node->last_beacon_ms = get_current_time_ms();
                 }
                 break;
             case TAG_INITIATE_TWR:
-                // No reception-driven actions here; TWR initiation happens after loop.
                 break;
             case TAG_WAIT_FOR_TWR_RESPONSES:
                 if (msg.type == MSG_TWR_RESPONSE) {
-                    // Deterministic range: use simple geometry model to compute and store last range.
-                    // The range entry is timestamped so a consumer can tell freshness.
                     ensure_positions(node->id, TAG);
                     float rng = compute_range_m(node->id, msg.from_id);
                     store_range(node, msg.from_id, rng, get_current_time_ms());
@@ -265,40 +309,35 @@ void process_tag(Node *node) {
                         }
                     }
                 } else if (msg.type == MSG_BEACON) {
-                    // Maintain sync even while waiting for responses.
                     node->synced = 1;
                     node->last_beacon_ms = get_current_time_ms();
                 }
                 break;
             case TAG_END_SLOT:
-                // no-op
                 break;
             default:
                 break;
         }
     }
 
-    // Enforce sync validity: if last beacon is too old, require re-sync before next TWR.
-    // This prevents tags from ranging indefinitely without fresh timing.
-    unsigned long now = get_current_time_ms();
+    // Enforce sync validity
+    now = get_current_time_ms();
     if (node->synced && (now - node->last_beacon_ms) > SYNC_TIMEOUT_MS) {
         node->synced = 0;
-        // Fall back to waiting for slot/sync
         if (node->state != TAG_WAIT_FOR_TWR_RESPONSES) {
             node->state = TAG_WAIT_FOR_SLOT;
         }
     }
 
-    // TDMA gating: only start TWR if this tag owns the current slot, is synced,
-    // and has not already ranged in this slot (works for any N tags).
+    // TDMA gating
     if ((node->state == TAG_WAIT_FOR_SLOT || node->state == TAG_IDLE) &&
         node->synced && current_slot_tag_id == node->id &&
         node->did_range_this_slot == 0) {
         node->state = TAG_INITIATE_TWR;
-        node->did_range_this_slot = 1; // prevent re-initiation within same slot
+        node->did_range_this_slot = 1;
     }
 
-    // Check for timeout while waiting for TWR responses
+    // Timeout
     if (node->state == TAG_WAIT_FOR_TWR_RESPONSES &&
         pending_twr_responses[node->id] > 0 &&
         now >= twr_deadline_ms[node->id]) {
@@ -306,17 +345,16 @@ void process_tag(Node *node) {
         node->state = TAG_END_SLOT;
     }
 
-    // One-shot actions:
+    // One-shot actions
     switch (node->state) {
         case TAG_INITIATE_TWR: {
-            // Send TWR_REQUEST to all anchor neighbors; expect that many responses.
-            // If none are visible, end slot immediately.
             ensure_positions(node->id, TAG);
             int twr_count = 0;
             NeighborTable *table = &neighbor_tables[node->id];
             for (int i = 0; i < table->neighbor_count; i++) {
                 int neighbor_id = table->neighbors[i];
                 if (nodes[neighbor_id]->role == ANCHOR) {
+                    // Send immediately (data-plane paths still see 1-tick air latency)
                     send_message(node->id, neighbor_id, MSG_TWR_REQUEST);
                     twr_count++;
                 }
@@ -331,7 +369,6 @@ void process_tag(Node *node) {
             break;
         }
         case TAG_END_SLOT: {
-            // End of slot; tag returns to IDLE. did_range_this_slot remains 1 until slot owner changes.
             node->state = TAG_IDLE;
             break;
         }
@@ -369,6 +406,15 @@ void add_node(int id, Role role, void (*process_func)(Node *)) {
 
     // Initialize simple geometry once
     ensure_positions(id, role);
+
+    // Initialize discovery timer
+    nodes[node_count - 1]->last_announce_ms = 0;
+
+    // Initialize delayed TX queue
+    for (int i = 0; i < MAX_MESSAGES; i++) {
+        node->txq[i].in_use = 0;
+        node->txq[i].due_ms = 0;
+    }
 }
 
 void add_neighbor(int node_id, int neighbor_id) {
@@ -381,5 +427,44 @@ void add_neighbor(int node_id, int neighbor_id) {
         table->neighbors[table->neighbor_count] = neighbor_id;
         table->last_seen[table->neighbor_count] = get_current_time_ms();
         table->neighbor_count++;
+    }
+}
+
+// Helper: find grid position for a node id; returns 1 if found
+static int find_node_in_grid(int id, int* out_x, int* out_y) {
+    for (int y = 0; y < PHY_GRID_H; y++) {
+        for (int x = 0; x < PHY_GRID_W; x++) {
+            int v = PHY_GRID[y][x];
+            if (v > 0 && (v - 1) == id) {
+                *out_x = x; *out_y = y;
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+// Public API: search for neighbors based on Manhattan distance over the global grid.
+// Updates only this node's neighbor table (no symmetry assumed here).
+void discover_neighbors(int node_id, int dist_thresh) {
+    if (node_id < 0 || node_id >= MAX_NODES) return;
+
+    int xA = -1, yA = -1;
+    if (!find_node_in_grid(node_id, &xA, &yA)) return;
+
+    for (int y = 0; y < PHY_GRID_H; y++) {
+        for (int x = 0; x < PHY_GRID_W; x++) {
+            int v = PHY_GRID[y][x];
+            if (v <= 0) continue;
+            int other_id = v - 1;
+            if (other_id == node_id) continue;
+
+            int dx = xA - x; if (dx < 0) dx = -dx;
+            int dy = yA - y; if (dy < 0) dy = -dy;
+            int manhattan = dx + dy;
+            if (manhattan <= dist_thresh) {
+                add_neighbor(node_id, other_id);
+            }
+        }
     }
 }
