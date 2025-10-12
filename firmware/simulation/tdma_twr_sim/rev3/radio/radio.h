@@ -18,6 +18,7 @@ typedef struct radio_S
     uint64_t now_ns;
 } radio_S;
 
+// Function prototypes
 void radio_init(radio_S* r);
 void radio_register(radio_S* r, node_S* n);
 uint64_t radio_now(radio_S* r);

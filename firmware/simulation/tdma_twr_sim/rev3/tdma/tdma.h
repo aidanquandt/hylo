@@ -14,6 +14,7 @@ typedef struct tdma_S
     radio_S* radio;
 } tdma_S;
 
+// Function prototypes
 void tdma_init(tdma_S* t, radio_S* r, uint64_t slot_dur_ns);
 void tdma_set_tags(tdma_S* t, const int* tag_ids, int count);
 int  tdma_active_tag_id(tdma_S* t, uint64_t now_ns);

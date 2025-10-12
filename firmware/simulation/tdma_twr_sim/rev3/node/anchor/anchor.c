@@ -2,6 +2,14 @@
 #include "anchor.h"
 #include "radio.h"
 
+// Variable declarations
+const node_ops_S anchor_ops = {
+    .on_rx = anchor_on_rx,
+    .on_slot_start = anchor_on_slot_start,
+    .on_process = anchor_on_process,
+};
+
+// Private Functions
 static void anchor_on_rx(node_S* n, const message_S* msg) {
     anchor_ctx_S* ctx = (anchor_ctx_S*)n->role_ctx;
     if (msg->type == msg_twr_poll) {
@@ -20,22 +28,20 @@ static void anchor_on_rx(node_S* n, const message_S* msg) {
     }
 }
 
-static void anchor_on_slot_start(node_S* n) {
+static void anchor_on_slot_start(node_S* n)
+{
     (void)n; // anchors are passive
 }
 
-static void anchor_on_process(node_S* n, uint64_t now_ns) {
+static void anchor_on_process(node_S* n, uint64_t now_ns) 
+{
     (void)n; (void)now_ns;
 }
 
-void anchor_init(node_S* n, anchor_ctx_S* ctx, uint64_t resp_proc_delay_ns) {
+// Public functions
+void anchor_init(node_S* n, anchor_ctx_S* ctx, uint64_t resp_proc_delay_ns) 
+{
     memset(ctx, 0, sizeof(*ctx));
     ctx->resp_proc_delay_ns = resp_proc_delay_ns;
     n->role_ctx = ctx;
 }
-
-const node_ops_S anchor_ops = {
-    .on_rx = anchor_on_rx,
-    .on_slot_start = anchor_on_slot_start,
-    .on_process = anchor_on_process,
-};

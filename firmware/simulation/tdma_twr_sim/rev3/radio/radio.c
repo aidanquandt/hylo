@@ -3,6 +3,15 @@
 #include "radio.h"
 #include "node.h"
 
+// Private Functions
+static uint64_t compute_propagation_ns(node_S* a, node_S* b) {
+    vec3_S pa = node_get_pos(a), pb = node_get_pos(b);
+    double d = vec3_dist(&pa, &pb); // meters
+    double tof_s = d / c_mps;
+    return s_to_ns(tof_s);
+}
+
+// Public functions
 void radio_init(radio_S* r) {
     memset(r, 0, sizeof(*r));
     r->now_ns = 0;
@@ -20,13 +29,6 @@ node_S* radio_find_node(radio_S* r, int id) {
 }
 
 uint64_t radio_now(radio_S* r) { return r->now_ns; }
-
-static uint64_t compute_propagation_ns(node_S* a, node_S* b) {
-    vec3_S pa = node_get_pos(a), pb = node_get_pos(b);
-    double d = vec3_dist(&pa, &pb); // meters
-    double tof_s = d / c_mps;
-    return s_to_ns(tof_s);
-}
 
 void radio_send(radio_S* r, const message_S* m) {
     // Broadcast if dst_id < 0

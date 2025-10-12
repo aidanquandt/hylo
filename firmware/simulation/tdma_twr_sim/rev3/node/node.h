@@ -33,11 +33,14 @@ struct node_S
     void* role_ctx; // tag_ctx_S* or anchor_ctx_S*
 };
 
+// Function prototypes
 void node_init(node_S* n, int id, node_role_E role, vec3_S pos, radio_S* r, tdma_S* tdm, const node_ops_S* ops, void* role_ctx);
+void node_receive(node_S* n, const message_S* msg); // called by radio
+void node_slot_start(node_S* n);                    // called by TDMA
+void node_process(node_S* n, uint64_t now_ns);      // optional
+
+// Private Functions
 static inline vec3_S node_get_pos(const node_S* n)
 {
     return n->pos;
 }
-void node_receive(node_S* n, const message_S* msg); // called by radio
-void node_slot_start(node_S* n);                    // called by TDMA
-void node_process(node_S* n, uint64_t now_ns);      // optional

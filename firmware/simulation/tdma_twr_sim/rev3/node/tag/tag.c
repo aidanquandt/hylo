@@ -5,6 +5,14 @@
 #include "radio.h"
 #include "tdma.h"
 
+// Variable declarations
+const node_ops_S tag_ops = {
+    .on_rx = tag_on_rx,
+    .on_slot_start = tag_on_slot_start,
+    .on_process = tag_on_process,
+};
+
+// Private Functions
 static void tag_send_poll(node_S* n, tag_ctx_S* ctx, int anchor_id) {
     radio_S* r = n->radio;
     uint64_t now = radio_now(r);
@@ -63,6 +71,7 @@ static void tag_on_process(node_S* n, uint64_t now_ns) {
     // If WAIT_RESP, do nothing; response handler will flip to IDLE and next process continues.
 }
 
+// Public functions
 void tag_init(node_S* n, tag_ctx_S* ctx, const int* anchor_ids, int num_anchors) {
     memset(ctx, 0, sizeof(*ctx));
     if (num_anchors > arr_len(ctx->anchors)) num_anchors = arr_len(ctx->anchors);
@@ -70,9 +79,3 @@ void tag_init(node_S* n, tag_ctx_S* ctx, const int* anchor_ids, int num_anchors)
     ctx->num_anchors = num_anchors;
     n->role_ctx = ctx;
 }
-
-const node_ops_S tag_ops = {
-    .on_rx = tag_on_rx,
-    .on_slot_start = tag_on_slot_start,
-    .on_process = tag_on_process,
-};

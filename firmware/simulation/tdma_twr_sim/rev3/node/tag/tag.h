@@ -16,5 +16,6 @@ typedef struct
     uint64_t t1_ns; // last POLL tx time
 } tag_ctx_S;
 
+// Function prototypes
 void tag_init(node_S* n, tag_ctx_S* ctx, const int* anchor_ids, int num_anchors);
 extern const node_ops_S tag_ops;
