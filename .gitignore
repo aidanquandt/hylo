@@ -45,7 +45,6 @@ Testing/
 # Editor/IDE
 *.code-workspace
 .idea/
-.vscode/
 
 # OS cruft
 Thumbs.db
