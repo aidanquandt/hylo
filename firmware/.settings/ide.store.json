@@ -1,0 +1,7 @@
+{
+  "board": "NUCLEO-H723ZG",
+  "device": "STM32H723ZGT6",
+  "core": "Cortex-M7",
+  "order": 0,
+  "toolchain": "GCC"
+}

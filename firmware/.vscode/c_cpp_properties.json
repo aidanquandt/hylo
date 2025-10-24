@@ -1,0 +1,8 @@
+{
+    "configurations": [
+        {
+            "name": "STM32",
+            "compileCommands": "${workspaceFolder}/build/arm-gcc-debug/compile_commands.json"
+        }
+    ]
+}
