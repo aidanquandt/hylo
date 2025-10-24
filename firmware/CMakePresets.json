@@ -1,0 +1,42 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 22,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "arm-gcc-debug",
+      "displayName": "ARM GCC Debug (Ninja)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/arm-gcc-debug",
+      "toolchainFile": "${sourceDir}/cubemx/cmake/gcc-arm-none-eabi.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "arm-gcc-release",
+      "displayName": "ARM GCC Release (Ninja)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/arm-gcc-release",
+      "toolchainFile": "${sourceDir}/cubemx/cmake/gcc-arm-none-eabi.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "arm-gcc-debug",
+      "configurePreset": "arm-gcc-debug"
+    },
+    {
+      "name": "arm-gcc-release",
+      "configurePreset": "arm-gcc-release"
+    }
+  ]
+}

@@ -27,6 +27,10 @@ Testing/
 *.dylib
 *.pdb
 *.ilk
+*.elf
+*.hex
+*.bin
+*.map
 
 # Object and dependency files
 *.o
