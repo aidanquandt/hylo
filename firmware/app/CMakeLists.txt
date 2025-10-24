@@ -1,11 +1,11 @@
 add_library(app STATIC
-    src/app.c
+    app.c
 )
 
-# Public headers for consumers (e.g., cubemx executable)
+# Expose include path so consumers can include "app/app.h"
 target_include_directories(app
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}
 )
 
 # App may use HAL/BSP headers via stm32cubemx interface

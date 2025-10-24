@@ -1,13 +1,15 @@
 add_library(platform STATIC
-    src/platform.c
+    platform.c
 )
 
+# Expose include path so consumers can include
 target_include_directories(platform
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}
 )
 
-# Platform uses HAL types optionally
+# App may use HAL/BSP headers via stm32cubemx interface
+# (provided by cubemx/cmake/stm32cubemx)
 target_link_libraries(platform
     PUBLIC
         stm32cubemx

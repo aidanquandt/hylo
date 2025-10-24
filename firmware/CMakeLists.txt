@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
 
+# cmake --preset arm-gcc-debug
+# cmake --build --preset arm-gcc-debug
+
 project(firmware C ASM)
 
 # Export compile commands for tooling (clangd, etc.)
