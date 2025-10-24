@@ -2,13 +2,5 @@
 
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-// Returns system tick in milliseconds
-uint32_t Platform_Ticks(void);
-
-#ifdef __cplusplus
-}
-#endif
+uint32_t platform_gettick(void);
+void platform_delay_ms(uint32_t delay_ms);

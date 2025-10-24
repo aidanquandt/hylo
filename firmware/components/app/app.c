@@ -1,7 +1,8 @@
-#include "app/app.h"
+#include "app.h"
+#include "common.h"
 #include "main.h"
-#include "stm32h7xx_hal.h"
-#include "stm32h7xx_nucleo.h"
+#include "platform.h"
+#include "platform_gpio.h"
 
 void App_Init(void) {
     // Put application one-time initialization here (after HAL and BSP init)
@@ -9,6 +10,6 @@ void App_Init(void) {
 
 void App_Loop(void) {
     // Simple heartbeat: toggle LED and delay
-    BSP_LED_Toggle(LED_GREEN);
-    HAL_Delay(500);
+    platform_gpio_toggle_pin();
+    platform_delay_ms(100U);
 }
