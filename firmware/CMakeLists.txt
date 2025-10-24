@@ -11,10 +11,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Reusable options
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-# Your code libraries
-add_subdirectory(app)
-add_subdirectory(platform)
-add_subdirectory(modules)
+# Your code libraries (now consolidated in components)
+add_subdirectory(components)
 
 # CubeMX-generated executable target lives here
 add_subdirectory(cubemx)
