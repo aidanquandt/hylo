@@ -8,7 +8,7 @@ void App_Init(void) {
     // Put application one-time initialization here (after HAL and BSP init)
 }
 
-void App_Loop(void) {
+TCM_FUNCTION void App_Loop(void) {
     // Simple heartbeat: toggle LED and delay
     platform_gpio_toggle_pin();
     platform_delay_ms(100U);

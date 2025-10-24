@@ -97,6 +97,24 @@ SECTIONS
     _etext = .;        /* define a global symbols at end of code */
   } >FLASH
 
+  /* Place functions in ITCMRAM using section attribute */
+  .itcmram :
+  {
+    . = ALIGN(4);
+    *(.itcmram)
+    *(.itcmram*)
+    . = ALIGN(4);
+  } >ITCMRAM
+
+  /* Place variables in DTCMRAM using section attribute */
+  .dtcmram :
+  {
+    . = ALIGN(4);
+    *(.dtcmram)
+    *(.dtcmram*)
+    . = ALIGN(4);
+  } >DTCMRAM
+
   /* Constant data goes into FLASH */
   .rodata :
   {
