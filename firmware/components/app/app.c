@@ -46,7 +46,6 @@ STATIC void datalogger_task(void *argument) {
     TickType_t lastWake = xTaskGetTickCount();
     for(;;)
     {
-        platform_gpio_toggle_pin();
         datalogger_process();
         vTaskDelayUntil(&lastWake, TASK_RATE_10HZ);
     }

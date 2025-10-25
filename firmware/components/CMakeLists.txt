@@ -118,6 +118,7 @@ target_include_directories(modules
 target_link_libraries(modules
     PUBLIC
         stm32cubemx
+        m
 )
 
 # ============================================================================
