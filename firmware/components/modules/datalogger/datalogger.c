@@ -13,6 +13,7 @@
  *---------------------------------------------------------------------------*/
 #define STATS_UPDATE_INTERVAL 50
 #define MAX_TASKS 10
+#define IDLE_CPU_FILTER_ALPHA 0.2f
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -24,6 +25,7 @@ typedef struct {
     float32_t tdma_cpu;
     float32_t twr_cpu;
     float32_t idle_cpu;
+    float32_t idle_cpu_filtered;
 } task_cpu_usage_t;
 
 /*---------------------------------------------------------------------------
@@ -66,6 +68,7 @@ STATIC void monitor_rtos_usage(void) {
                 cpu_usage.twr_cpu = percentage;
             } else if (strncmp(task_status_array[i].pcTaskName, "IDLE", 4) == 0) {
                 cpu_usage.idle_cpu = percentage;
+                cpu_usage.idle_cpu_filtered = (IDLE_CPU_FILTER_ALPHA * percentage) + ((1.0f - IDLE_CPU_FILTER_ALPHA) * cpu_usage.idle_cpu_filtered);
             }
         }
     }
