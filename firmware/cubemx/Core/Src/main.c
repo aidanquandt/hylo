@@ -268,14 +268,7 @@ static void MX_GPIO_Init(void)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-  app_init();
-  
-  /* Infinite loop */
-  for(;;)
-  {
-    app_loop();
-    osDelay(1);
-  }
+  app_enter(argument);
   /* USER CODE END 5 */
 }
 
