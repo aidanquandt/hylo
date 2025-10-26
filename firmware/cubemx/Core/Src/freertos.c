@@ -21,6 +21,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
+#include "platform_timer.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -60,12 +61,12 @@ unsigned long getRunTimeCounterValue(void);
 /* Functions needed when configGENERATE_RUN_TIME_STATS is on */
 __weak void configureTimerForRunTimeStats(void)
 {
-
+  platform_configure_timer_for_run_time_stats();
 }
 
 __weak unsigned long getRunTimeCounterValue(void)
 {
-return 0;
+  return platform_get_run_time_counter_value();
 }
 /* USER CODE END 1 */
 

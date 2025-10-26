@@ -70,10 +70,10 @@ STATIC const module_parameters_S module_parameters[NUM_MODULES] = {
         .module_process = datalogger_process,
         .module_freertos_parameters = {
             .task_time_increment = TASK_RATE_10HZ,
-            .task_pointer = NULL, // Not used, see below
-            .task_name = "Datalogger",
+            .task_pointer = NULL,
+            .task_name = TOSTRING(DATALOGGER_MODULE),
             .task_stack_depth = TASK_STACK_MEDIUM,
-            .task_priority = TASK_PRIORITY_NORMAL
+            .task_priority = TASK_PRIORITY_LOW
         }
     },
     [NODE_MODULE] = {
@@ -82,7 +82,7 @@ STATIC const module_parameters_S module_parameters[NUM_MODULES] = {
         .module_freertos_parameters = {
             .task_time_increment = TASK_RATE_1KHZ,
             .task_pointer = NULL,
-            .task_name = "Node",
+            .task_name = TOSTRING(NODE_MODULE),
             .task_stack_depth = TASK_STACK_MEDIUM,
             .task_priority = TASK_PRIORITY_HIGH
         }
@@ -93,7 +93,7 @@ STATIC const module_parameters_S module_parameters[NUM_MODULES] = {
         .module_freertos_parameters = {
             .task_time_increment = TASK_RATE_1KHZ,
             .task_pointer = NULL,
-            .task_name = "TDMA",
+            .task_name = TOSTRING(TDMA_MODULE),
             .task_stack_depth = TASK_STACK_MEDIUM,
             .task_priority = TASK_PRIORITY_HIGH
         }
@@ -104,7 +104,7 @@ STATIC const module_parameters_S module_parameters[NUM_MODULES] = {
         .module_freertos_parameters = {
             .task_time_increment = TASK_RATE_1KHZ,
             .task_pointer = NULL,
-            .task_name = "TWR",
+            .task_name = TOSTRING(TWR_MODULE),
             .task_stack_depth = TASK_STACK_MEDIUM,
             .task_priority = TASK_PRIORITY_HIGH
         }

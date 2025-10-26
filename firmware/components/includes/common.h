@@ -14,7 +14,13 @@
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
+
+// Defines
 #define STATIC static
+
+// Macros
+#define TOSTRING(x) #x
+#define STRLEN_LITERAL(s) (sizeof(s) - 1)
 
 // todo - add tcm integration
 // #define TCM_FUNCTION __attribute__((section(".itcm")))

@@ -6,10 +6,13 @@
 /*---------------------------------------------------------------------------
  * Public function implementations
  *---------------------------------------------------------------------------*/
-void tdma_init(void) {
+
+void tdma_init(void) 
+{
 
 }
 
-void tdma_process(void) {
+void tdma_process(void) 
+{
 
 }

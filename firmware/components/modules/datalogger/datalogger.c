@@ -34,14 +34,14 @@ STATIC void datalogger_monitor_rtos_usage(void);
 /*---------------------------------------------------------------------------
  * Data declarations
  *---------------------------------------------------------------------------*/
-STATIC TaskStatus_t task_status_array[NUM_MODULES];
+STATIC TaskStatus_t task_status_array[NUM_MODULES + 5U]; // Aidan - why are there 6 tasks - should have 4 (4x freertos) + 1 idle? what is other? maybe scheduler?
 STATIC task_cpu_usage_t cpu_usage = { 0.0f };
 STATIC task_name_map_t map[] = {
-    { "Datalogger",   10, &cpu_usage.datalogger_cpu },
-    { "Node",          4, &cpu_usage.node_cpu },
-    { "TDMA",          4, &cpu_usage.tdma_cpu },
-    { "TWR",           3, &cpu_usage.twr_cpu },
-    { "IDLE",          4, &cpu_usage.idle_cpu }
+    { TOSTRING(DATALOGGER_MODULE), STRLEN_LITERAL(TOSTRING(DATALOGGER_MODULE)), &cpu_usage.datalogger_cpu },
+    { TOSTRING(NODE_MODULE),       STRLEN_LITERAL(TOSTRING(NODE_MODULE)),       &cpu_usage.node_cpu },
+    { TOSTRING(TDMA_MODULE),       STRLEN_LITERAL(TOSTRING(TDMA_MODULE)),       &cpu_usage.tdma_cpu },
+    { TOSTRING(TWR_MODULE),        STRLEN_LITERAL(TOSTRING(TWR_MODULE)),        &cpu_usage.twr_cpu },
+    { "IDLE",                      STRLEN_LITERAL("IDLE"),                      &cpu_usage.idle_cpu }
 };
 
 /*---------------------------------------------------------------------------
@@ -52,12 +52,11 @@ STATIC void datalogger_monitor_rtos_usage(void) {
     uint32_t total_runtime;
 
     UBaseType_t num_tasks = uxTaskGetNumberOfTasks();
-    if (num_tasks > NUM_MODULES) {
-        num_tasks = NUM_MODULES;
+    if (num_tasks > (NUM_MODULES + 5U)) {
+        num_tasks = (NUM_MODULES + 5U);
     }
 
     num_tasks = uxTaskGetSystemState(task_status_array, num_tasks, &total_runtime);
-
     if (total_runtime > 0U) 
     {
         for (UBaseType_t task_idx = 0; task_idx < num_tasks; task_idx++) 

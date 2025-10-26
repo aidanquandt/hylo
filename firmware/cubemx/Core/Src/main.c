@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 
 #include "app/app.h"
+#include "platform_timer.h"
 
 /* USER CODE END Includes */
 
@@ -80,7 +81,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+  
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/

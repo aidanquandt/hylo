@@ -10,6 +10,6 @@ void sensor_fusion_init(void) {
 
 }
 
-void sensor_fusion_process(void) {
+void sensor_fusion_isr(void) {
 
 }
