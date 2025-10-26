@@ -9,5 +9,6 @@
  * Public function implementations
  *---------------------------------------------------------------------------*/
 void platform_gpio_toggle_pin(void){
+    // todo - abstract this we will get rid of this once we get off of dev baords too
     BSP_LED_Toggle(LED_GREEN);
 }

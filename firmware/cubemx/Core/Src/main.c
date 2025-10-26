@@ -268,7 +268,8 @@ static void MX_GPIO_Init(void)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-  app_enter(argument);
+  (void)(argument);
+  app_init();
   /* USER CODE END 5 */
 }
 

@@ -31,59 +31,139 @@
 #define TASK_STACK_LARGE 1024
 
 /*---------------------------------------------------------------------------
+ * Typedefs
+ *---------------------------------------------------------------------------*/
+typedef enum
+{
+    SENSOR_FUSION_MODULE = 0U,
+    DATALOGGER_MODULE,
+    NODE_MODULE,
+    TDMA_MODULE,
+    TWR_MODULE,
+    NUM_MODULES
+} modules_E;
+
+typedef struct
+{
+    // Other parameters of xTaskCreate left NULL.
+    TickType_t task_time_increment;
+    void (*task_pointer)(void);
+    char * task_name;
+    configSTACK_DEPTH_TYPE task_stack_depth;
+    UBaseType_t task_priority;
+} module_freertos_parameters_S;
+typedef struct 
+{
+    void (*module_init)(void);
+    void (*module_process)(void); // note - this is only for freertos tasks so eg sensor fusion ISR will just be NULL for this as we won't have freertos task there
+    module_freertos_parameters_S module_freertos_parameters;
+} module_parameters_S;
+
+/*---------------------------------------------------------------------------
  * Private function prototypes
  *---------------------------------------------------------------------------*/
-STATIC void datalogger_task(void *argument);
-STATIC void node_task(void *argument);
-STATIC void sensor_fusion_task(void *argument);
-STATIC void tdma_task(void *argument);
-STATIC void twr_task(void *argument);
+STATIC void module_task(void *argument);
+STATIC void app_initialize_modules(void);
+STATIC void app_create_module_tasks(void);
+
+/*---------------------------------------------------------------------------
+ * Data declarations
+ *---------------------------------------------------------------------------*/
+STATIC const module_parameters_S module_parameters[NUM_MODULES] = {
+    [SENSOR_FUSION_MODULE] = {
+        .module_init = sensor_fusion_init,
+        .module_process = NULL,
+        .module_freertos_parameters = { 0 }
+    },
+    [DATALOGGER_MODULE] = {
+        .module_init = datalogger_init,
+        .module_process = datalogger_process,
+        .module_freertos_parameters = {
+            .task_time_increment = TASK_RATE_10HZ,
+            .task_pointer = NULL, // Not used, see below
+            .task_name = "Datalogger",
+            .task_stack_depth = TASK_STACK_MEDIUM,
+            .task_priority = TASK_PRIORITY_NORMAL
+        }
+    },
+    [NODE_MODULE] = {
+        .module_init = node_init,
+        .module_process = node_process,
+        .module_freertos_parameters = {
+            .task_time_increment = TASK_RATE_100HZ,
+            .task_pointer = NULL,
+            .task_name = "Node",
+            .task_stack_depth = TASK_STACK_MEDIUM,
+            .task_priority = TASK_PRIORITY_HIGH
+        }
+    },
+    [TDMA_MODULE] = {
+        .module_init = tdma_init,
+        .module_process = tdma_process,
+        .module_freertos_parameters = {
+            .task_time_increment = TASK_RATE_100HZ,
+            .task_pointer = NULL,
+            .task_name = "TDMA",
+            .task_stack_depth = TASK_STACK_MEDIUM,
+            .task_priority = TASK_PRIORITY_HIGH
+        }
+    },
+    [TWR_MODULE] = {
+        .module_init = twr_init,
+        .module_process = twr_process,
+        .module_freertos_parameters = {
+            .task_time_increment = TASK_RATE_100HZ,
+            .task_pointer = NULL,
+            .task_name = "TWR",
+            .task_stack_depth = TASK_STACK_MEDIUM,
+            .task_priority = TASK_PRIORITY_HIGH
+        }
+    }
+};
 
 /*---------------------------------------------------------------------------
  * Private function implementations
  *---------------------------------------------------------------------------*/
-STATIC void datalogger_task(void *argument) {
+STATIC void module_task(void *argument) {
+    modules_E module = (modules_E)(uintptr_t)argument;
     TickType_t lastWake = xTaskGetTickCount();
     for(;;)
     {
-        datalogger_process();
-        vTaskDelayUntil(&lastWake, TASK_RATE_10HZ);
+        if (module_parameters[module].module_process != NULL)
+        {
+            module_parameters[module].module_process();
+        }
+        vTaskDelayUntil(&lastWake, module_parameters[module].module_freertos_parameters.task_time_increment);
     }
 }
 
-STATIC void node_task(void *argument) {
-    TickType_t lastWake = xTaskGetTickCount();
-    for(;;)
+STATIC void app_initialize_modules(void)
+{
+    for (modules_E module_idx = (modules_E)0U; module_idx < NUM_MODULES; module_idx++) 
     {
-        node_process();
-        vTaskDelayUntil(&lastWake, TASK_RATE_100HZ);
+        if (module_parameters[module_idx].module_init != NULL)
+        {
+            module_parameters[module_idx].module_init();
+        }
     }
 }
 
-STATIC void sensor_fusion_task(void *argument) {
-    TickType_t lastWake = xTaskGetTickCount();
-    for(;;)
+STATIC void app_create_module_tasks(void)
+{
+    for (modules_E module_idx = (modules_E)0U; module_idx < NUM_MODULES; module_idx++) 
     {
-        sensor_fusion_process();
-        vTaskDelayUntil(&lastWake, TASK_RATE_1KHZ);
-    }
-}
 
-STATIC void tdma_task(void *argument) {
-    TickType_t lastWake = xTaskGetTickCount();
-    for(;;)
-    {
-        tdma_process();
-        vTaskDelayUntil(&lastWake, TASK_RATE_100HZ);
-    }
-}
-
-STATIC void twr_task(void *argument) {
-    TickType_t lastWake = xTaskGetTickCount();
-    for(;;)
-    {
-        twr_process();
-        vTaskDelayUntil(&lastWake, TASK_RATE_100HZ);
+        if (module_parameters[module_idx].module_process != NULL)
+        {
+            xTaskCreate(
+                module_task,
+                module_parameters[module_idx].module_freertos_parameters.task_name,
+                module_parameters[module_idx].module_freertos_parameters.task_stack_depth,
+                (void *)(uintptr_t)module_idx,
+                module_parameters[module_idx].module_freertos_parameters.task_priority,
+                NULL
+            );
+        }
     }
 }
 
@@ -91,32 +171,9 @@ STATIC void twr_task(void *argument) {
  * Public function implementations
  *---------------------------------------------------------------------------*/
 void app_init(void) {
-    datalogger_init();
-    node_init();
-    sensor_fusion_init();
-    tdma_init();
-    twr_init();
-    
-    xTaskCreate(datalogger_task, "Datalogger", TASK_STACK_MEDIUM, NULL, TASK_PRIORITY_NORMAL, NULL);
-    xTaskCreate(node_task, "Node", TASK_STACK_MEDIUM, NULL, TASK_PRIORITY_HIGH, NULL);
-    xTaskCreate(sensor_fusion_task, "SensorFusion", TASK_STACK_LARGE, NULL, TASK_PRIORITY_CRITICAL, NULL);
-    xTaskCreate(tdma_task, "TDMA", TASK_STACK_MEDIUM, NULL, TASK_PRIORITY_HIGH, NULL);
-    xTaskCreate(twr_task, "TWR", TASK_STACK_MEDIUM, NULL, TASK_PRIORITY_HIGH, NULL);
-}
 
-void app_enter(void *argument) {
-    app_init();
+    app_initialize_modules();
+    app_create_module_tasks();
+
     osThreadExit();
-}
-
-void configureTimerForRunTimeStats(void)
-{
-    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-    DWT->CYCCNT = 0;
-    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-}
-
-unsigned long getRunTimeCounterValue(void)
-{
-    return DWT->CYCCNT;
 }
