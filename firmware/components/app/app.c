@@ -33,16 +33,6 @@
 /*---------------------------------------------------------------------------
  * Typedefs
  *---------------------------------------------------------------------------*/
-typedef enum
-{
-    SENSOR_FUSION_MODULE = 0U,
-    DATALOGGER_MODULE,
-    NODE_MODULE,
-    TDMA_MODULE,
-    TWR_MODULE,
-    NUM_MODULES
-} modules_E;
-
 typedef struct
 {
     // Other parameters of xTaskCreate left NULL.
