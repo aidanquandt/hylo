@@ -90,7 +90,7 @@ STATIC const module_parameters_S module_parameters[NUM_MODULES] = {
         .module_init = node_init,
         .module_process = node_process,
         .module_freertos_parameters = {
-            .task_time_increment = TASK_RATE_100HZ,
+            .task_time_increment = TASK_RATE_1KHZ,
             .task_pointer = NULL,
             .task_name = "Node",
             .task_stack_depth = TASK_STACK_MEDIUM,
@@ -101,7 +101,7 @@ STATIC const module_parameters_S module_parameters[NUM_MODULES] = {
         .module_init = tdma_init,
         .module_process = tdma_process,
         .module_freertos_parameters = {
-            .task_time_increment = TASK_RATE_100HZ,
+            .task_time_increment = TASK_RATE_1KHZ,
             .task_pointer = NULL,
             .task_name = "TDMA",
             .task_stack_depth = TASK_STACK_MEDIUM,
@@ -112,7 +112,7 @@ STATIC const module_parameters_S module_parameters[NUM_MODULES] = {
         .module_init = twr_init,
         .module_process = twr_process,
         .module_freertos_parameters = {
-            .task_time_increment = TASK_RATE_100HZ,
+            .task_time_increment = TASK_RATE_1KHZ,
             .task_pointer = NULL,
             .task_name = "TWR",
             .task_stack_depth = TASK_STACK_MEDIUM,
@@ -152,7 +152,6 @@ STATIC void app_create_module_tasks(void)
 {
     for (modules_E module_idx = (modules_E)0U; module_idx < NUM_MODULES; module_idx++) 
     {
-
         if (module_parameters[module_idx].module_process != NULL)
         {
             xTaskCreate(

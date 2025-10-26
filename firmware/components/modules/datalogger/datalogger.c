@@ -31,19 +31,18 @@ typedef struct {
 /*---------------------------------------------------------------------------
  * Private function prototypes
  *---------------------------------------------------------------------------*/
-STATIC void monitor_rtos_usage(void);
+STATIC void datalogger_monitor_rtos_usage(void);
 
 /*---------------------------------------------------------------------------
  * Data declarations
  *---------------------------------------------------------------------------*/
-STATIC uint32_t stats_counter = 0U;
 STATIC TaskStatus_t task_status_array[MAX_TASKS];
 STATIC task_cpu_usage_t cpu_usage = { 0.0f };
 
 /*---------------------------------------------------------------------------
  * Private function implementations
  *---------------------------------------------------------------------------*/
-STATIC void monitor_rtos_usage(void) {
+STATIC void datalogger_monitor_rtos_usage(void) {
     UBaseType_t num_tasks = uxTaskGetNumberOfTasks();
     if (num_tasks > MAX_TASKS) {
         num_tasks = MAX_TASKS;
@@ -52,7 +51,7 @@ STATIC void monitor_rtos_usage(void) {
     uint32_t total_runtime;
     num_tasks = uxTaskGetSystemState(task_status_array, num_tasks, &total_runtime);
     
-    if (total_runtime > 0) {
+    if (total_runtime > 0U) {
         for (UBaseType_t i = 0; i < num_tasks; i++) {
             float32_t percentage = (float32_t)(task_status_array[i].ulRunTimeCounter) / (float32_t)total_runtime;
             
@@ -82,9 +81,5 @@ void datalogger_init(void) {
 }
 
 void datalogger_process(void) {
-    stats_counter++;
-    if (stats_counter >= STATS_UPDATE_INTERVAL) {
-        stats_counter = 0;
-        monitor_rtos_usage();
-    }
+    datalogger_monitor_rtos_usage();
 }
