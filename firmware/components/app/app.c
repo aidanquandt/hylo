@@ -1,7 +1,7 @@
 /*---------------------------------------------------------------------------
  * Includes :)
  *---------------------------------------------------------------------------*/
-#include "app.h" // hello
+#include "app.h" // hello guys
 #include "common.h"
 #include "main.h"
 #include "platform.h"
