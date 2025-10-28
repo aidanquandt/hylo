@@ -20,8 +20,8 @@ add_subdirectory(cubemx)
 # Link your libraries into the CubeMX executable
 target_link_libraries(cubemx app modules platform)
 
-# Set linker script path
-set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/cubemx/STM32H723XG_FLASH.ld")
+# # Set linker script path
+# set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/cubemx/STM32H723XG_FLASH.ld")
 
-# Remove any previous or duplicate linker script settings!
-target_link_options(cubemx PRIVATE -T${LINKER_SCRIPT})
+# # Remove any previous or duplicate linker script settings!
+# target_link_options(cubemx PRIVATE -T${LINKER_SCRIPT})
