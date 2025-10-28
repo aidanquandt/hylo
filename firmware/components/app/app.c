@@ -119,10 +119,7 @@ STATIC void module_task(void *argument) {
     TickType_t lastWake = xTaskGetTickCount();
     for(;;)
     {
-        if (module_parameters[module].module_process != NULL)
-        {
-            module_parameters[module].module_process();
-        }
+        module_parameters[module].module_process();
         vTaskDelayUntil(&lastWake, module_parameters[module].module_freertos_parameters.task_time_increment);
     }
 }
