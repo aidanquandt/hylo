@@ -1,26 +1,34 @@
+
+#pragma once
+
 /*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
-#include "node.h"
 #include "common.h"
-#include "module.h"
 
 /*---------------------------------------------------------------------------
- * Module Functions
+ * Typedefs
  *---------------------------------------------------------------------------*/
-extern const module_S node_module;
-const module_S node_module = {
-        .module_init = node_init,
-        .module_process_100Hz = node_process,
-};
+typedef enum
+{
+    SENSOR_FUSION_MODULE = 0U,
+    DATALOGGER_MODULE,
+    NODE_MODULE,
+    TDMA_MODULE,
+    TWR_MODULE,
+    NUM_MODULES
+} modules_E;
+
+typedef struct 
+{
+    void (*module_init)(void);
+    void (*module_process_1Hz)(void);
+    void (*module_process_10Hz)(void);
+    void (*module_process_100Hz)(void);
+    void (*module_process_1kHz)(void);
+} module_S;
 
 /*---------------------------------------------------------------------------
- * Public function implementations
+ * Public variables
  *---------------------------------------------------------------------------*/
-void node_init(void) {
-
-}
-
-void node_process(void) {
-
-}
+extern const module_S* const modules[NUM_MODULES];
