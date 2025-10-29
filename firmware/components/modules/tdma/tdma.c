@@ -7,22 +7,25 @@
 /*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
+STATIC void tdma_init(void);
+STATIC void tdma_process_100Hz(void);
+
 extern const module_S tdma_module;
 const module_S tdma_module = {
         .module_init = tdma_init,
-        .module_process_100Hz = tdma_process,
+        .module_process_100Hz = tdma_process_100Hz,
 };
 
 /*---------------------------------------------------------------------------
  * Public function implementations
  *---------------------------------------------------------------------------*/
 
-void tdma_init(void) 
+STATIC void tdma_init(void) 
 {
 
 }
 
-void tdma_process(void) 
+STATIC void tdma_process_100Hz(void) 
 {
 
 }
