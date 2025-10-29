@@ -1,8 +1,9 @@
 /*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
-#include "common.h"
 #include "datalogger.h"
+#include "common.h"
+#include "module.h"
 #include "main.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -27,12 +28,22 @@ typedef struct {
 } task_name_map_t;
 
 /*---------------------------------------------------------------------------
+ * Module Functions
+ *---------------------------------------------------------------------------*/
+extern const module_S datalogger_module;
+const module_S datalogger_module = {
+        .module_init = datalogger_init,
+        .module_process_100Hz = datalogger_process,
+};
+
+/*---------------------------------------------------------------------------
  * Private function prototypes
  *---------------------------------------------------------------------------*/
+
 STATIC void datalogger_monitor_rtos_usage(void);
 
 /*---------------------------------------------------------------------------
- * Data declarations
+ * Private variables
  *---------------------------------------------------------------------------*/
 STATIC TaskStatus_t task_status_array[NUM_MODULES + 5U]; // Aidan - why are there 6 tasks - should have 4 (4x freertos) + 1 idle? what is other? maybe scheduler?
 STATIC task_cpu_usage_t cpu_usage = { 0.0f };

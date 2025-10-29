@@ -2,6 +2,16 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "twr.h"
+#include "module.h"
+
+/*---------------------------------------------------------------------------
+ * Module Functions
+ *---------------------------------------------------------------------------*/
+extern const module_S twr_module;
+const module_S twr_module = {
+        .module_init = twr_init,
+        .module_process_100Hz = twr_process,
+};
 
 /*---------------------------------------------------------------------------
  * Public function implementations

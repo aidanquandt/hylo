@@ -2,6 +2,16 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "tdma.h"
+#include "module.h"
+
+/*---------------------------------------------------------------------------
+ * Module Functions
+ *---------------------------------------------------------------------------*/
+extern const module_S tdma_module;
+const module_S tdma_module = {
+        .module_init = tdma_init,
+        .module_process_100Hz = tdma_process,
+};
 
 /*---------------------------------------------------------------------------
  * Public function implementations
