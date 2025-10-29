@@ -10,22 +10,9 @@
 #include "app.h"
 
 /*---------------------------------------------------------------------------
- * Typedefs
+ * Defines
  *---------------------------------------------------------------------------*/
-typedef struct {
-    float32_t datalogger_cpu;
-    float32_t node_cpu;
-    float32_t sensor_fusion_cpu;
-    float32_t tdma_cpu;
-    float32_t twr_cpu;
-    float32_t idle_cpu;
-} task_cpu_usage_t;
-
-typedef struct {
-    const char *name;
-    size_t name_len;
-    float32_t *usage_ptr;
-} task_name_map_t;
+#define MAX_NUM_TASKS 10U
 
 /*---------------------------------------------------------------------------
  * Module Functions
@@ -47,40 +34,35 @@ STATIC void datalogger_monitor_rtos_usage(void);
 /*---------------------------------------------------------------------------
  * Private variables
  *---------------------------------------------------------------------------*/
-STATIC TaskStatus_t task_status_array[NUM_MODULES + 5U]; // Aidan - why are there 6 tasks - should have 4 (4x freertos) + 1 idle? what is other? maybe scheduler?
-STATIC task_cpu_usage_t cpu_usage = { 0.0f };
-STATIC task_name_map_t map[] = {
-    { TOSTRING(DATALOGGER_MODULE), STRLEN_LITERAL(TOSTRING(DATALOGGER_MODULE)), &cpu_usage.datalogger_cpu },
-    { TOSTRING(NODE_MODULE),       STRLEN_LITERAL(TOSTRING(NODE_MODULE)),       &cpu_usage.node_cpu },
-    { TOSTRING(TDMA_MODULE),       STRLEN_LITERAL(TOSTRING(TDMA_MODULE)),       &cpu_usage.tdma_cpu },
-    { TOSTRING(TWR_MODULE),        STRLEN_LITERAL(TOSTRING(TWR_MODULE)),        &cpu_usage.twr_cpu },
-    { "IDLE",                      STRLEN_LITERAL("IDLE"),                      &cpu_usage.idle_cpu }
-};
+STATIC float32_t cpu_usage[MAX_NUM_TASKS] = { 0.0f }; //combine cpu usage and task handle array
+STATIC TaskStatus_t task_status_array[MAX_NUM_TASKS];
+STATIC TaskHandle_t task_handle_array[MAX_NUM_TASKS];
 
 /*---------------------------------------------------------------------------
  * Private function implementations
  *---------------------------------------------------------------------------*/
-STATIC void datalogger_monitor_rtos_usage(void) {
-    const size_t map_size = sizeof(map) / sizeof(map[0]);
-    uint32_t total_runtime;
 
-    UBaseType_t num_tasks = uxTaskGetNumberOfTasks();
-    if (num_tasks > (NUM_MODULES + 5U)) {
-        num_tasks = (NUM_MODULES + 5U);
+STATIC void datalogger_monitor_rtos_usage(void)
+{
+    for (uint8_t i = 0; i < MAX_NUM_TASKS; ++i) cpu_usage[i] = 0.0f;
+
+    uint32_t total_runtime = 0;
+
+    UBaseType_t num_tasks = uxTaskGetSystemState(task_status_array, MAX_NUM_TASKS, &total_runtime);
+
+    if (num_tasks == 0 || total_runtime == 0)
+    {
+        return;
     }
 
-    num_tasks = uxTaskGetSystemState(task_status_array, num_tasks, &total_runtime);
-    if (total_runtime > 0U) 
-    {
-        for (UBaseType_t task_idx = 0; task_idx < num_tasks; task_idx++) 
-        {
-            float32_t percentage = (float32_t)(task_status_array[task_idx].ulRunTimeCounter) / (float32_t)total_runtime;
-            for (size_t map_idx = 0; map_idx < map_size; map_idx++) 
-            {
-                if (strncmp(task_status_array[task_idx].pcTaskName, map[map_idx].name, map[map_idx].name_len) == 0) 
-                {
-                    *(map[map_idx].usage_ptr) = percentage;
-                }
+    for (UBaseType_t tsi = 0; tsi < num_tasks; ++tsi) {
+        TaskHandle_t h = task_status_array[tsi].xHandle;
+
+        for (uint8_t idx = 0; idx < MAX_NUM_TASKS; ++idx) {
+            if (task_handle_array[idx] != NULL && h == task_handle_array[idx]) {
+                float32_t percentage = (100.0f * (float32_t)task_status_array[tsi].ulRunTimeCounter) / (float32_t)total_runtime;
+                cpu_usage[idx] = percentage;
+                break;
             }
         }
     }
@@ -89,10 +71,39 @@ STATIC void datalogger_monitor_rtos_usage(void) {
 /*---------------------------------------------------------------------------
  * Public function implementations
  *---------------------------------------------------------------------------*/
+void datalogger_update_task_handles(void)
+{
+    for (uint8_t i = 0; i < MAX_NUM_TASKS; ++i)
+    {
+        task_handle_array[i] = NULL;
+    } 
+
+    task_handle_array[0] = xTaskGetHandle("IDLE");
+    task_handle_array[1] = xTaskGetHandle("Tmr Svc");
+    if (task_handle_array[1] == NULL) task_handle_array[1] = xTaskGetHandle("TmrSvc");
+    if (task_handle_array[1] == NULL) task_handle_array[1] = xTaskGetHandle("Timer");
+
+    for (uint8_t k = 2, num = 1; k < MAX_NUM_TASKS; ++k, ++num) {
+        char name[16];
+        snprintf(name, sizeof(name), "TASK_%u", (unsigned)num);
+        task_handle_array[k] = xTaskGetHandle(name);
+    }
+}
+
 STATIC void datalogger_init(void) {
     // init
 }
 
-void datalogger_process_100Hz(void) {
-    datalogger_monitor_rtos_usage();
+STATIC void datalogger_process_100Hz(void) {
+
+    STATIC uint32_t monitor_rtos_usage_count = 0U;
+    if ((monitor_rtos_usage_count % 20U) == 0U)
+    {
+        // only run this at 5 Hz as it is quite expensive. todo - optimize datalogger_monitor_rtos_usage
+        // todo - make counter api
+        datalogger_monitor_rtos_usage();
+    }
+    monitor_rtos_usage_count++;
+
+    // runtime_stats_bufffer updated at this point can send here
 }

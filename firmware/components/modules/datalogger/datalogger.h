@@ -4,3 +4,5 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "common.h"
+
+void datalogger_update_task_handles(void);
