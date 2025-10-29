@@ -30,16 +30,18 @@ typedef struct {
 /*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
+STATIC void datalogger_init(void);
+STATIC void datalogger_process_100Hz(void);
+
 extern const module_S datalogger_module;
 const module_S datalogger_module = {
-        .module_init = datalogger_init,
-        .module_process_100Hz = datalogger_process,
+    .module_init = datalogger_init,
+    .module_process_100Hz = datalogger_process_100Hz,
 };
 
 /*---------------------------------------------------------------------------
  * Private function prototypes
  *---------------------------------------------------------------------------*/
-
 STATIC void datalogger_monitor_rtos_usage(void);
 
 /*---------------------------------------------------------------------------
@@ -87,10 +89,10 @@ STATIC void datalogger_monitor_rtos_usage(void) {
 /*---------------------------------------------------------------------------
  * Public function implementations
  *---------------------------------------------------------------------------*/
-void datalogger_init(void) {
+STATIC void datalogger_init(void) {
     // init
 }
 
-void datalogger_process(void) {
+void datalogger_process_100Hz(void) {
     datalogger_monitor_rtos_usage();
 }

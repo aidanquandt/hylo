@@ -7,19 +7,22 @@
 /*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
+STATIC void twr_init(void);
+STATIC void twr_process_100Hz(void);
+
 extern const module_S twr_module;
 const module_S twr_module = {
         .module_init = twr_init,
-        .module_process_100Hz = twr_process,
+        .module_process_100Hz = twr_process_100Hz,
 };
 
 /*---------------------------------------------------------------------------
  * Public function implementations
  *---------------------------------------------------------------------------*/
-void twr_init(void) {
+STATIC void twr_init(void) {
 
 }
 
-void twr_process(void) {
+STATIC void twr_process_100Hz(void) {
 
 }
