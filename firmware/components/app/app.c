@@ -2,6 +2,7 @@
  * Includes :) :)
  *---------------------------------------------------------------------------*/
 #include "app.h" // hello guys
+#include "cmsis_os2.h"
 #include "common.h"
 #include "module.h"
 #include "main.h"
@@ -69,7 +70,7 @@ STATIC void module_task_100Hz(void *argument)
     TickType_t lastWake = xTaskGetTickCount();
     for(;;)
     {
-        modules[module]->module_process_1Hz();
+        modules[module]->module_process_100Hz();
         vTaskDelayUntil(&lastWake, TASK_RATE_100HZ);
     }
 }
@@ -80,7 +81,7 @@ STATIC void module_task_1kHz(void *argument)
     TickType_t lastWake = xTaskGetTickCount();
     for(;;)
     {
-        modules[module]->module_process_1Hz();
+        modules[module]->module_process_1kHz();
         vTaskDelayUntil(&lastWake, TASK_RATE_1KHZ);
     }
 }
@@ -98,7 +99,7 @@ STATIC void app_initialize_modules(void)
 
 STATIC void app_create_module_tasks(void)
 {
-    STATIC uint8_t task_num = 0U;
+    STATIC uint8_t task_num = 1U; // we will use task 0 as idle task in datalogger so just set this 1 as first task
     char task_name[16];
 
     for (modules_E module_idx = (modules_E)0U; module_idx < NUM_MODULES; module_idx++) 
@@ -106,6 +107,8 @@ STATIC void app_create_module_tasks(void)
         if (modules[module_idx]->module_process_1kHz != NULL)
         {
             snprintf(task_name, sizeof(task_name), "TASK_%u", task_num);
+            task_num++;
+
             xTaskCreate(
                 module_task_1kHz, 
                 task_name,
@@ -114,12 +117,13 @@ STATIC void app_create_module_tasks(void)
                 PRIORITY_1KHZ_TASK,
                 NULL
             );
-            task_num++;
         }
 
         if (modules[module_idx]->module_process_100Hz != NULL)
         {
             snprintf(task_name, sizeof(task_name), "TASK_%u", task_num);
+            task_num++;
+
             xTaskCreate(
                 module_task_100Hz, 
                 task_name,
@@ -128,12 +132,13 @@ STATIC void app_create_module_tasks(void)
                 PRIORITY_100HZ_TASK,
                 NULL
             );
-            task_num++;
         }
 
         if (modules[module_idx]->module_process_10Hz != NULL)
         {
             snprintf(task_name, sizeof(task_name), "TASK_%u", task_num);
+            task_num++;
+
             xTaskCreate(
                 module_task_10Hz, 
                 task_name,
@@ -141,13 +146,14 @@ STATIC void app_create_module_tasks(void)
                 (void *)(uintptr_t)module_idx, 
                 PRIORITY_10HZ_TASK,
                 NULL
-            );
-            task_num++;
+            ); 
         }
 
         if (modules[module_idx]->module_process_1Hz != NULL)
         {
             snprintf(task_name, sizeof(task_name), "TASK_%u", task_num);
+            task_num++;
+            
             xTaskCreate(
                 module_task_1Hz, 
                 task_name,
@@ -156,7 +162,6 @@ STATIC void app_create_module_tasks(void)
                 PRIORITY_1HZ_TASK,
                 NULL
             );
-            task_num++;
         }
 
     }
@@ -169,6 +174,9 @@ void app_init(void) {
 
     app_initialize_modules();
     app_create_module_tasks();
+
+    // osDelay(1000U);
+    datalogger_update_task_handles();
 
     osThreadExit();
 }
