@@ -8,4 +8,4 @@
 /*---------------------------------------------------------------------------
  * Public function prototypes
  *---------------------------------------------------------------------------*/
-void platform_gpio_toggle_pin(void);
+void platform_gpio_toggle_led_green(void);

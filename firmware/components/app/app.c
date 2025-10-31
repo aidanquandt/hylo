@@ -36,8 +36,13 @@
 /*---------------------------------------------------------------------------
  * Private function prototypes
  *---------------------------------------------------------------------------*/
+STATIC void module_task_1Hz(void *argument);
+STATIC void module_task_10Hz(void *argument);
+STATIC void module_task_100Hz(void *argument);
+STATIC void module_task_1kHz(void *argument);
 STATIC void app_initialize_modules(void);
 STATIC void app_create_module_tasks(void);
+STATIC void app_post_module_initialization(void);
 
 /*---------------------------------------------------------------------------
  * Private function implementations
@@ -167,16 +172,21 @@ STATIC void app_create_module_tasks(void)
     }
 }
 
+STATIC void app_post_module_initialization(void)
+{
+    datalogger_update_task_handles();
+}
+
 /*---------------------------------------------------------------------------
  * Public function implementations
  *---------------------------------------------------------------------------*/
-void app_init(void) {
-
+void app_init(void) 
+{
+    // module initialization
     app_initialize_modules();
     app_create_module_tasks();
 
-    // osDelay(1000U);
-    datalogger_update_task_handles();
+    app_post_module_initialization();
 
     osThreadExit();
 }
