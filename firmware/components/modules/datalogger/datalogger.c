@@ -37,7 +37,7 @@ STATIC void datalogger_monitor_rtos_usage(void);
 /*---------------------------------------------------------------------------
  * Private variables
  *---------------------------------------------------------------------------*/
-STATIC float32_t cpu_usage[MAX_NUM_TASKS] = { 0.0f }; //combine cpu usage and task handle array
+STATIC float32_t cpu_usage[MAX_NUM_TASKS] = { 0 }; //combine cpu usage and task handle array
 STATIC TaskStatus_t task_status_array[MAX_NUM_TASKS];
 STATIC TaskHandle_t task_handle_array[MAX_NUM_TASKS];
 
@@ -47,35 +47,46 @@ STATIC TaskHandle_t task_handle_array[MAX_NUM_TASKS];
 
 STATIC void datalogger_monitor_rtos_usage(void)
 {
-    for (uint8_t idx = 0U; idx < MAX_NUM_TASKS; idx++) 
-    {
-        cpu_usage[idx] = 0.0f;
-    }
-    
-    uint32_t total_runtime = 0;
+    STATIC uint32_t prev_total_runtime = 0U;
+    STATIC uint32_t prev_task_runtime[MAX_NUM_TASKS] = { 0 };
 
-    // Note - uxTaskGetSystemState blocks scheduler - maybe should change later?
-    UBaseType_t num_tasks = uxTaskGetSystemState(task_status_array, MAX_NUM_TASKS, &total_runtime);
-
-    if ((num_tasks == 0U) || (total_runtime == 0U))
+    uint32_t total_runtime = 0U;
+    UBaseType_t num_active_tasks = uxTaskGetSystemState(task_status_array, MAX_NUM_TASKS, &total_runtime);
+    if ((num_active_tasks == 0U) || (total_runtime == 0U) || (total_runtime == prev_total_runtime))
     {
         return;
     }
 
-    for (UBaseType_t task_status_index = 0; task_status_index < num_tasks; ++task_status_index) 
-    {
-        TaskHandle_t task_handle = task_status_array[task_status_index].xHandle;
+    uint32_t total_runtime_change = total_runtime - prev_total_runtime;
 
-        for (uint8_t task_handle_index = 0; task_handle_index < MAX_NUM_TASKS; ++task_handle_index) {
-            if ((task_handle_array[task_handle_index] != NULL) && 
-                (task_handle == task_handle_array[task_handle_index])) 
+    for (UBaseType_t task_index = 0U; task_index < num_active_tasks; ++task_index)
+    {
+        TaskHandle_t current_handle = task_status_array[task_index].xHandle;
+
+        for (uint8_t handle_index = 0U; handle_index < MAX_NUM_TASKS; ++handle_index)
+        {
+            if (task_handle_array[handle_index] == current_handle)
             {
-                float32_t percentage = (100.0f * (float32_t)task_status_array[task_status_index].ulRunTimeCounter) / (float32_t)total_runtime;
-                cpu_usage[task_handle_index] = percentage;
+                uint32_t current_runtime = task_status_array[task_index].ulRunTimeCounter;
+                uint32_t previous_runtime = prev_task_runtime[handle_index];
+                uint32_t runtime_change = current_runtime - previous_runtime;
+
+                float32_t usage_percent = 0.0f;
+                if (total_runtime_change != 0U)
+                {
+                    usage_percent = (100.0f * (float32_t)runtime_change) / (float32_t)total_runtime_change;
+                }
+
+                cpu_usage[handle_index] = usage_percent;
+                prev_task_runtime[handle_index] = current_runtime;
+                break;
             }
         }
     }
+
+    prev_total_runtime = total_runtime;
 }
+
 
 /*---------------------------------------------------------------------------
  * Public function implementations
