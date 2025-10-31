@@ -8,6 +8,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "app.h"
+#include "platform_gpio.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -18,11 +19,13 @@
  * Module Functions
  *---------------------------------------------------------------------------*/
 STATIC void datalogger_init(void);
+STATIC void datalogger_process_1Hz(void);
 STATIC void datalogger_process_100Hz(void);
 
 extern const module_S datalogger_module;
 const module_S datalogger_module = {
     .module_init = datalogger_init,
+    .module_process_1Hz = datalogger_process_1Hz,
     .module_process_100Hz = datalogger_process_100Hz,
 };
 
@@ -44,25 +47,31 @@ STATIC TaskHandle_t task_handle_array[MAX_NUM_TASKS];
 
 STATIC void datalogger_monitor_rtos_usage(void)
 {
-    for (uint8_t i = 0; i < MAX_NUM_TASKS; ++i) cpu_usage[i] = 0.0f;
-
+    for (uint8_t idx = 0U; idx < MAX_NUM_TASKS; idx++) 
+    {
+        cpu_usage[idx] = 0.0f;
+    }
+    
     uint32_t total_runtime = 0;
 
+    // Note - uxTaskGetSystemState blocks scheduler - maybe should change later?
     UBaseType_t num_tasks = uxTaskGetSystemState(task_status_array, MAX_NUM_TASKS, &total_runtime);
 
-    if (num_tasks == 0 || total_runtime == 0)
+    if ((num_tasks == 0U) || (total_runtime == 0U))
     {
         return;
     }
 
-    for (UBaseType_t tsi = 0; tsi < num_tasks; ++tsi) {
-        TaskHandle_t h = task_status_array[tsi].xHandle;
+    for (UBaseType_t task_status_index = 0; task_status_index < num_tasks; ++task_status_index) 
+    {
+        TaskHandle_t task_handle = task_status_array[task_status_index].xHandle;
 
-        for (uint8_t idx = 0; idx < MAX_NUM_TASKS; ++idx) {
-            if (task_handle_array[idx] != NULL && h == task_handle_array[idx]) {
-                float32_t percentage = (100.0f * (float32_t)task_status_array[tsi].ulRunTimeCounter) / (float32_t)total_runtime;
-                cpu_usage[idx] = percentage;
-                break;
+        for (uint8_t task_handle_index = 0; task_handle_index < MAX_NUM_TASKS; ++task_handle_index) {
+            if ((task_handle_array[task_handle_index] != NULL) && 
+                (task_handle == task_handle_array[task_handle_index])) 
+            {
+                float32_t percentage = (100.0f * (float32_t)task_status_array[task_status_index].ulRunTimeCounter) / (float32_t)total_runtime;
+                cpu_usage[task_handle_index] = percentage;
             }
         }
     }
@@ -90,20 +99,18 @@ void datalogger_update_task_handles(void)
     }
 }
 
-STATIC void datalogger_init(void) {
+STATIC void datalogger_init(void) 
+{
     // init
 }
 
-STATIC void datalogger_process_100Hz(void) {
+STATIC void datalogger_process_1Hz(void)
+{
+    platform_gpio_toggle_led_green(); // todo - remove, helpful for debug.
+    datalogger_monitor_rtos_usage();
+}
 
-    STATIC uint32_t monitor_rtos_usage_count = 0U;
-    if ((monitor_rtos_usage_count % 20U) == 0U)
-    {
-        // only run this at 5 Hz as it is quite expensive. todo - optimize datalogger_monitor_rtos_usage
-        // todo - make counter api
-        datalogger_monitor_rtos_usage();
-    }
-    monitor_rtos_usage_count++;
+STATIC void datalogger_process_100Hz(void)
+{
 
-    // runtime_stats_bufffer updated at this point can send here
 }
