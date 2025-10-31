@@ -1,27 +1,16 @@
 cmake_minimum_required(VERSION 3.22)
-
-# cmake --preset arm-gcc-debug
-# cmake --build --preset arm-gcc-debug
-
 project(firmware C ASM)
 
-# Export compile commands for tooling (clangd, etc.)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# Reusable options
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-# Your code libraries (now consolidated in components)
 add_subdirectory(components)
-
-# CubeMX-generated executable target lives here
 add_subdirectory(cubemx)
 
-# Link your libraries into the CubeMX executable
-target_link_libraries(cubemx app modules platform)
+# Link all user code to the CubeMX exe in one go
+target_link_libraries(cubemx components)
 
-# Set linker script path
-set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/cubemx/STM32H723XG_FLASH.ld")
-
-# Remove any previous or duplicate linker script settings!
-target_link_options(cubemx PRIVATE -T${LINKER_SCRIPT})
+# Linker script
+target_link_options(cubemx PRIVATE
+    -T${CMAKE_SOURCE_DIR}/cubemx/STM32H723XG_FLASH.ld
+)
