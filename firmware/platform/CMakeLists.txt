@@ -1,10 +1,10 @@
 # Umbrella libraries
-add_library(components INTERFACE)      # what top-level links to
-add_library(components_inc INTERFACE)  # global include + usage
+add_library(platform INTERFACE)      # what top-level links to
+add_library(platform_inc INTERFACE)  # global include + usage
 
 # Global usage (one place)
-target_link_libraries(components_inc INTERFACE stm32cubemx platform)
-target_include_directories(components_inc INTERFACE
+target_link_libraries(platform_inc INTERFACE stm32cubemx components)
+target_include_directories(platform_inc INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
@@ -23,16 +23,16 @@ function(add_component NAME)
     endforeach()
     list(REMOVE_DUPLICATES INCS)
 
-    target_include_directories(components_inc INTERFACE ${INCS})
+    target_include_directories(platform_inc INTERFACE ${INCS})
 
     file(GLOB_RECURSE SRCS CONFIGURE_DEPENDS
         "${ROOT}/*.c" "${ROOT}/*.cpp" "${ROOT}/*.cxx"
     )
     if(SRCS)
         add_library(${NAME} STATIC ${SRCS})
-        target_link_libraries(${NAME} PUBLIC components_inc)
-        set_target_properties(${NAME} PROPERTIES FOLDER "components")
-        target_link_libraries(components INTERFACE ${NAME})
+        target_link_libraries(${NAME} PUBLIC platform_inc)
+        set_target_properties(${NAME} PROPERTIES FOLDER "platform")
+        target_link_libraries(platform INTERFACE ${NAME})
     endif()
 endfunction()
 

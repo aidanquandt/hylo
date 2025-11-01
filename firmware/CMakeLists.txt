@@ -6,9 +6,10 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 add_subdirectory(components)
 add_subdirectory(cubemx)
+add_subdirectory(platform)
 
 # Link all user code to the CubeMX exe in one go
-target_link_libraries(cubemx components)
+target_link_libraries(cubemx components platform)
 
 # Linker script
 target_link_options(cubemx PRIVATE

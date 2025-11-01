@@ -93,20 +93,22 @@ STATIC void datalogger_monitor_rtos_usage(void)
  *---------------------------------------------------------------------------*/
 void datalogger_update_task_handles(void)
 {
-    for (uint8_t i = 0; i < MAX_NUM_TASKS; ++i)
+    for (uint8_t handle_index = 0; handle_index < MAX_NUM_TASKS; handle_index++)
     {
-        task_handle_array[i] = NULL;
+        task_handle_array[handle_index] = NULL;
     } 
 
     task_handle_array[0] = xTaskGetHandle("IDLE");
     task_handle_array[1] = xTaskGetHandle("Tmr Svc");
-    if (task_handle_array[1] == NULL) task_handle_array[1] = xTaskGetHandle("TmrSvc");
-    if (task_handle_array[1] == NULL) task_handle_array[1] = xTaskGetHandle("Timer");
 
-    for (uint8_t k = 2, num = 1; k < MAX_NUM_TASKS; ++k, ++num) {
-        char name[16];
-        snprintf(name, sizeof(name), "TASK_%u", (unsigned)num);
-        task_handle_array[k] = xTaskGetHandle(name);
+    for (uint8_t task_slot = 2U; task_slot < MAX_NUM_TASKS; ++task_slot)
+    {
+        char task_name[16];
+        // Task numbers start at 1, corresponding to slot index 2 → TASK_1
+        unsigned task_number = (unsigned)(task_slot - 1U);
+        snprintf(task_name, sizeof(task_name), "TASK_%u", task_number);
+
+        task_handle_array[task_slot] = xTaskGetHandle(task_name);
     }
 }
 
