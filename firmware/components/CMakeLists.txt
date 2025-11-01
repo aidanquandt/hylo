@@ -3,9 +3,9 @@ add_library(components INTERFACE)      # what top-level links to
 add_library(components_inc INTERFACE)  # global include + usage
 
 # Global usage (one place)
-target_link_libraries(components_inc INTERFACE stm32cubemx)   # + m if needed
+target_link_libraries(components_inc INTERFACE stm32cubemx platform ports uwb_driver_itf)
 target_include_directories(components_inc INTERFACE
-    ${CMAKE_CURRENT_SOURCE_DIR}  # lets you do #include "modules/tdma/tdma.h" if you want
+    ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 function(add_component NAME)
@@ -14,7 +14,6 @@ function(add_component NAME)
         return()
     endif()
 
-    # Collect include dirs: this folder + all subfolders (so bare headers work)
     set(INCS "${ROOT}")
     file(GLOB_RECURSE _dirs LIST_DIRECTORIES TRUE "${ROOT}/*")
     foreach(d ${_dirs})
@@ -24,10 +23,8 @@ function(add_component NAME)
     endforeach()
     list(REMOVE_DUPLICATES INCS)
 
-    # Every component’s include dirs go into the global pool
     target_include_directories(components_inc INTERFACE ${INCS})
 
-    # Sources for this component
     file(GLOB_RECURSE SRCS CONFIGURE_DEPENDS
         "${ROOT}/*.c" "${ROOT}/*.cpp" "${ROOT}/*.cxx"
     )
