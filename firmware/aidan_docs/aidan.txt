@@ -1,0 +1,34 @@
+                   ┌────────────────────────────┐
+                   │        Application         │
+                   │----------------------------│
+                   │ - Business logic           │
+                   │ - Uses Port API to talk    │
+                   │   to vendor drivers        │
+                   │ - Uses Platform API        │
+                   │   directly for board I/O   │
+                   └──────────────┬─────────────┘
+                                  │
+             ┌────────────────────┼────────────────────┐
+             │                                         │
+             ▼                                         ▼
+┌────────────────────────────┐           ┌────────────────────────────┐
+│           Port             │           │          Platform          │
+│ (e.g. bmi323_port.c/.h)    │           │ (e.g. platform_spi.c/.h)   │
+│----------------------------│           │----------------------------│
+│ - Adapter between app &    │           │ - Thin HAL abstraction     │
+│   vendor driver            │           │ - Generic hardware ops:    │
+│ - Implements vendor I/O    │           │   SPI, I2C, GPIO, delay... │
+│   callbacks using Platform │           │ - Used by ports & app      │
+└──────────────┬─────────────┘           └──────────────┬─────────────┘
+               │                                        │
+               ▼                                        ▼
+┌────────────────────────────┐           ┌────────────────────────────┐
+│     Third-party Driver     │           │        STM32 HAL +         │
+│   (Bosch, Qorvo, etc.)     │           │         Hardware           │
+│----------------------------│           │----------------------------│
+│ - Vendor logic, math, etc. │           │ - HAL functions & drivers  │
+│ - Calls port callbacks     │           │ - Actual MCU peripherals   │
+└──────────────┬─────────────┘           └────────────────────────────┘
+               │
+               ▼
+       (calls Platform functions)

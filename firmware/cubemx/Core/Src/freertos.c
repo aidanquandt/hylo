@@ -78,6 +78,17 @@ void configureTimerForRunTimeStats(void) {
 unsigned long getRunTimeCounterValue(void) {
     return TIM5->CNT;
 }
+
+/* Stack overflow hook */
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+    /* This function will be called if a stack overflow is detected */
+    /* Halt execution for debugging */
+    (void)xTask;
+    (void)pcTaskName;
+    taskDISABLE_INTERRUPTS();
+    for(;;);
+}
 /* USER CODE END 1 */
 
 /**
