@@ -11,9 +11,8 @@
 #include "platform_spi.h"
 #include "platform_gpio.h"
 #include "platform_timer.h"
+#include "platform_critical.h"
 #include "deca_device_api.h"
-#include "FreeRTOS.h"
-#include "task.h"
 
 /*---------------------------------------------------------------------------
  * External Driver Declaration
@@ -421,15 +420,12 @@ void deca_sleep(unsigned int time_ms)
 decaIrqStatus_t decamutexon(void)
 {
     // Enter critical section to prevent concurrent access to DW3000
-    // FreeRTOS automatically saves interrupt state
-    taskENTER_CRITICAL();
-    return 0;  // Return value not used with FreeRTOS critical sections
+    // Uses platform abstraction to remain RTOS-agnostic
+    return (decaIrqStatus_t)platform_critical_enter();
 }
 
 void decamutexoff(decaIrqStatus_t s)
 {
-    (void)s;  // Parameter not used with FreeRTOS critical sections
-    
     // Exit critical section and restore interrupts
-    taskEXIT_CRITICAL();
+    platform_critical_exit((platform_critical_state_t)s);
 }
