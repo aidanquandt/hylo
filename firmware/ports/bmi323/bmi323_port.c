@@ -1,6 +1,9 @@
 /*---------------------------------------------------------------------------
  * @file    bmi323_port.c
  * @brief   Port layer implementation for BMI323 sensor driver
+ * @note    Thread safety: BMI323 API is not inherently thread-safe.
+ *          If accessed from multiple tasks, add critical sections using
+ *          platform_critical_enter/exit around API calls.
  *---------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------
