@@ -8,6 +8,7 @@
 #include "tdma.h"
 #include "twr.h"
 #include "dw3000_test.h"
+#include "bmi323_test.h"
 
 /*---------------------------------------------------------------------------
  * Public variables
@@ -18,6 +19,7 @@ extern const module_S node_module;
 extern const module_S tdma_module;
 extern const module_S twr_module;
 extern const module_S dw3000_test_module;
+extern const module_S bmi323_test_module;
 
 const module_S* const modules[NUM_MODULES] = {
     [SENSOR_FUSION_MODULE] = &sensor_fusion_module,
@@ -26,4 +28,5 @@ const module_S* const modules[NUM_MODULES] = {
     [TDMA_MODULE]          = &tdma_module,
     [TWR_MODULE]           = &twr_module,
     [DW3000_TEST_MODULE]   = &dw3000_test_module,
+    [BMI323_TEST_MODULE]   = &bmi323_test_module,
 };
