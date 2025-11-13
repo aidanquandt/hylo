@@ -16,7 +16,6 @@
  *---------------------------------------------------------------------------*/
 #define DW3000_EXPECTED_DEV_ID  (0xDECA0302UL)  // DW3000 Device ID
 #define STARTUP_DELAY_SECONDS   (2U)            // Wait 2 seconds before probing
-#define TEST_INTERVAL_SECONDS   (5U)            // Test every 5 seconds
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
