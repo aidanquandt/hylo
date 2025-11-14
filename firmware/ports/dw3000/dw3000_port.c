@@ -151,6 +151,151 @@ void dw3000_port_read_temp_and_voltage(float *temperature, float *voltage)
     }
 }
 
+void dw3000_port_set_pan_id(uint16_t pan_id)
+{
+    dwt_setpanid(pan_id);
+}
+
+void dw3000_port_set_address(uint16_t address)
+{
+    dwt_setaddress16(address);
+}
+
+int dw3000_port_configure_tx(uint8_t channel)
+{
+    dwt_config_t config = {
+        .chan = channel,
+        .txPreambLength = DWT_PLEN_128,
+        .rxPAC = DWT_PAC8,
+        .txCode = 9,
+        .rxCode = 9,
+        .sfdType = DWT_SFD_DW_8,
+        .dataRate = DWT_BR_6M8,
+        .phrMode = DWT_PHRMODE_STD,
+        .phrRate = DWT_PHRRATE_STD,
+        .sfdTO = (129 + 8 - 8),
+        .stsMode = DWT_STS_MODE_OFF,
+        .stsLength = DWT_STS_LEN_64,
+        .pdoaMode = DWT_PDOA_M0
+    };
+    
+    if (dwt_configure(&config) != DWT_SUCCESS) {
+        return DW3000_ERROR;
+    }
+    
+    // Enable 802.15.4 frame filtering - allow data frames
+    dwt_configureframefilter(DWT_FF_ENABLE_802_15_4, DWT_FF_DATA_EN);
+    
+    // Set TX power
+    dwt_txconfig_t txconfig = {
+        .PGdly = 0x34,
+        .power = 0xFEFEFEFEUL
+    };
+    dwt_configuretxrf(&txconfig);
+    
+    return DW3000_SUCCESS;
+}
+
+int dw3000_port_configure_rx(uint8_t channel)
+{
+    // Use same config as TX
+    if (dw3000_port_configure_tx(channel) != DW3000_SUCCESS) {
+        return DW3000_ERROR;
+    }
+    
+    // Enable receiver
+    if (dwt_rxenable(DWT_START_RX_IMMEDIATE) != DWT_SUCCESS) {
+        return DW3000_ERROR;
+    }
+    
+    return DW3000_SUCCESS;
+}
+
+int dw3000_port_send_message(const uint8_t *data, uint16_t length)
+{
+    if (data == NULL || length == 0 || length > 127) {
+        return DW3000_ERROR;
+    }
+    
+    // Write data to TX buffer
+    dwt_writetxdata(length, (uint8_t*)data, 0);
+    
+    // Set frame length (data + 2-byte CRC)
+    dwt_writetxfctrl(length + 2, 0, 0);
+    
+    // Start transmission (immediate, no response expected)
+    if (dwt_starttx(DWT_START_TX_IMMEDIATE) != DWT_SUCCESS) {
+        return DW3000_ERROR;
+    }
+    
+    // Wait for TX to complete by polling status
+    uint32_t status = 0;
+    uint32_t timeout = 1000;  // 1000 iterations
+    while (timeout--) {
+        status = dwt_readsysstatuslo();
+        if (status & DWT_INT_TXFRS_BIT_MASK) {
+            // TX complete - clear flag
+            dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
+            return DW3000_SUCCESS;
+        }
+        platform_delay_us(10);
+    }
+    
+    // Timeout
+    return DW3000_ERROR;
+}
+
+int dw3000_port_receive_message(uint8_t *data, uint16_t max_length, uint16_t *received_length)
+{
+    if (data == NULL || received_length == NULL) {
+        return DW3000_ERROR;
+    }
+    
+    // Read system status register
+    uint32_t status = dwt_readsysstatuslo();
+    
+    // Check for any RX errors first and clear them
+    if (status & (DWT_INT_RXPHE_BIT_MASK | DWT_INT_RXFCE_BIT_MASK | 
+                  DWT_INT_RXFSL_BIT_MASK | DWT_INT_RXFTO_BIT_MASK |
+                  DWT_INT_RXOVRR_BIT_MASK | DWT_INT_RXPTO_BIT_MASK)) {
+        // Clear error flags and restart RX
+        dwt_writesysstatuslo(SYS_STATUS_ALL_RX_ERR);
+        dwt_forcetrxoff();
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+        return DW3000_ERROR;
+    }
+    
+    // Check if good frame received (RXFCG bit set)
+    if ((status & DWT_INT_RXFCG_BIT_MASK) == 0) {
+        // No good frame received
+        return DW3000_ERROR;
+    }
+    
+    // Get frame length
+    uint8_t rng = 0;
+    uint16_t frame_len = dwt_getframelength(&rng);
+    
+    if (frame_len == 0 || frame_len > max_length) {
+        // Frame too large or invalid - force off, clear status and re-enable RX
+        dwt_forcetrxoff();
+        dwt_writesysstatuslo(DWT_INT_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_ERR);
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+        return DW3000_ERROR;
+    }
+    
+    // Read received data (subtract 2-byte CRC from length)
+    uint16_t data_len = (frame_len > 2) ? (frame_len - 2) : 0;
+    dwt_readrxdata(data, data_len, 0);
+    *received_length = data_len;
+    
+    // Force transceiver off, clear ALL status flags, then re-enable receiver
+    dwt_forcetrxoff();
+    dwt_writesysstatuslo(SYS_STATUS_ALL_RX_GOOD | SYS_STATUS_ALL_RX_ERR);
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
+    
+    return DW3000_SUCCESS;
+}
+
 /*---------------------------------------------------------------------------
  * Private Function Implementations - SPI Callbacks for Qorvo Driver
  *---------------------------------------------------------------------------*/

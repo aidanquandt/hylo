@@ -3,7 +3,7 @@ add_library(components INTERFACE)      # what top-level links to
 add_library(components_inc INTERFACE)  # global include + usage
 
 # Global usage (one place)
-target_link_libraries(components_inc INTERFACE stm32cubemx platform ports uwb_driver_itf)
+target_link_libraries(components_inc INTERFACE stm32cubemx platform ports uwb_driver_itf lib)
 target_include_directories(components_inc INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )

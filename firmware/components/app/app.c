@@ -15,6 +15,7 @@
 #include "sensor_fusion.h"
 #include "tdma.h"
 #include "twr.h"
+#include "dw3000_test.h"
 
 /*---------------------------------------------------------------------------
  * Defines
