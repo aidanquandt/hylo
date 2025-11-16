@@ -37,6 +37,7 @@ STATIC void datalogger_monitor_rtos_usage(void);
  * Private variables
  *---------------------------------------------------------------------------*/
 STATIC float32_t cpu_usage[MAX_NUM_TASKS] = { 0 }; //combine cpu usage and task handle array
+STATIC float32_t idle_task_cpu_usage = 0.0f;
 STATIC TaskStatus_t task_status_array[MAX_NUM_TASKS];
 STATIC TaskHandle_t task_handle_array[MAX_NUM_TASKS];
 
@@ -76,6 +77,11 @@ STATIC void datalogger_monitor_rtos_usage(void)
                     usage_percent = (100.0f * (float32_t)runtime_change) / (float32_t)total_runtime_change;
                 }
 
+                if (handle_index == 0U)
+                {
+                    idle_task_cpu_usage = usage_percent;
+                }
+                
                 cpu_usage[handle_index] = usage_percent;
                 prev_task_runtime[handle_index] = current_runtime;
                 break;

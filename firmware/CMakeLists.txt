@@ -13,6 +13,7 @@ add_link_options(-Wl,--gc-sections)
 # ---- Subdirs in dependency order (low → high) ----
 add_subdirectory(cubemx)                 # produces the 'cubemx' executable/elf
 add_subdirectory(platform)               # HAL wrappers (lib)
+add_subdirectory(lib)                    # utility libraries (counter, etc.)
 add_subdirectory(third_party/dwt_uwb_driver)   # vendor UWB driver -> 'uwb_driver'
 add_subdirectory(ports)                  # port layers -> 'ports' (includes dwm3000_port)
 add_subdirectory(components)             # app logic (lib)
@@ -23,6 +24,7 @@ target_link_libraries(cubemx
     ports             # port layers (dwm3000_port, etc.)
     uwb_driver        # vendor driver (pulls qmath, dw3000, etc.)
     platform          # HAL wrappers
+    lib               # utility libraries
 )
 
 # ---- Linker script ----

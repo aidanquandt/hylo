@@ -73,6 +73,49 @@ float dw3000_port_read_voltage(void);
  */
 void dw3000_port_read_temp_and_voltage(float *temperature, float *voltage);
 
+/**
+ * @brief Set the 802.15.4 PAN ID
+ * @param pan_id 16-bit PAN identifier
+ */
+void dw3000_port_set_pan_id(uint16_t pan_id);
+
+/**
+ * @brief Set the 802.15.4 short address (16-bit)
+ * @param address 16-bit short address for this device
+ */
+void dw3000_port_set_address(uint16_t address);
+
+/**
+ * @brief Configure DW3000 for basic message transmission
+ * @param channel UWB channel (5 or 9 recommended)
+ * @return DW3000_SUCCESS on success, DW3000_ERROR on failure
+ */
+int dw3000_port_configure_tx(uint8_t channel);
+
+/**
+ * @brief Configure DW3000 for message reception
+ * @param channel UWB channel (must match transmitter)
+ * @return DW3000_SUCCESS on success, DW3000_ERROR on failure
+ */
+int dw3000_port_configure_rx(uint8_t channel);
+
+/**
+ * @brief Send a message via UWB
+ * @param data Pointer to data buffer to transmit
+ * @param length Length of data in bytes (max 127)
+ * @return DW3000_SUCCESS on success, DW3000_ERROR on failure
+ */
+int dw3000_port_send_message(const uint8_t *data, uint16_t length);
+
+/**
+ * @brief Check if a message has been received
+ * @param data Pointer to buffer to store received data
+ * @param max_length Maximum buffer size
+ * @param received_length Pointer to store actual received length
+ * @return DW3000_SUCCESS if message received, DW3000_ERROR otherwise
+ */
+int dw3000_port_receive_message(uint8_t *data, uint16_t max_length, uint16_t *received_length);
+
 /*---------------------------------------------------------------------------
  * Platform Compatibility Functions (required by Qorvo driver)
  *---------------------------------------------------------------------------*/

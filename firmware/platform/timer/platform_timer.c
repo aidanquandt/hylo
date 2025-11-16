@@ -9,6 +9,7 @@
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
 
+// nonblocking for rtos tasks? aidan confirm this
 void platform_delay_ms(uint32_t ms)
 {
     osDelay(ms);
