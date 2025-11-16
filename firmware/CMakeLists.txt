@@ -15,14 +15,16 @@ add_subdirectory(cubemx)                 # produces the 'cubemx' executable/elf
 add_subdirectory(platform)               # HAL wrappers (lib)
 add_subdirectory(lib)                    # utility libraries (counter, etc.)
 add_subdirectory(third_party/dwt_uwb_driver)   # vendor UWB driver -> 'uwb_driver'
+add_subdirectory(third_party/bmi323)     # vendor BMI323 sensor API -> 'bmi323_api'
 add_subdirectory(ports)                  # port layers -> 'ports' (includes dwm3000_port)
 add_subdirectory(components)             # app logic (lib)
 
 # Link order matters: higher-level depends on lower-level
 target_link_libraries(cubemx
     components        # app
-    ports             # port layers (dwm3000_port, etc.)
+    ports             # port layers (dwm3000_port, bmi323_port, etc.)
     uwb_driver        # vendor driver (pulls qmath, dw3000, etc.)
+    bmi323_api        # vendor BMI323 sensor API
     platform          # HAL wrappers
     lib               # utility libraries
 )
