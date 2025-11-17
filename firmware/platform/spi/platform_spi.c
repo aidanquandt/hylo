@@ -36,7 +36,8 @@ STATIC const spi_cs_map_t cs_map[] = {
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-STATIC SPI_HandleTypeDef *current_spi = &hspi1;  // Default to SPI1
+// Current SPI peripheral - set by cs_low() before each transaction
+STATIC SPI_HandleTypeDef *current_spi = NULL;
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations

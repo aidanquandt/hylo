@@ -393,14 +393,18 @@ STATIC int32_t dw3000_spi_write_crc(uint16_t headerLength, const uint8_t *header
 
 STATIC void dw3000_spi_set_slow_rate(void)
 {
-    // Set SPI to slow speed for initialization
+    // Ensure correct SPI peripheral is selected before changing speed
+    platform_spi_cs_low(DW3000_CS_PIN);
     platform_spi_set_speed(PLATFORM_SPI_SPEED_SLOW);
+    platform_spi_cs_high(DW3000_CS_PIN);
 }
 
 STATIC void dw3000_spi_set_fast_rate(void)
 {
-    // Set SPI to fast speed for normal operation
+    // Ensure correct SPI peripheral is selected before changing speed
+    platform_spi_cs_low(DW3000_CS_PIN);
     platform_spi_set_speed(PLATFORM_SPI_SPEED_FAST);
+    platform_spi_cs_high(DW3000_CS_PIN);
 }
 
 /*---------------------------------------------------------------------------
