@@ -107,7 +107,9 @@ STATIC bool hardware_ready = false;
 STATIC uint16_t my_pan_id = MAC_DEFAULT_PAN_ID;     // This device's PAN ID
 STATIC uint16_t my_address = MY_ADDRESS;        // This device's short address (from define)
 STATIC uint16_t tx_dest_addr = DEST_ADDRESS;    // Destination address (from define)
+#ifdef DW3000_TX_MODE
 STATIC uint8_t tx_sequence = 0;                 // Frame sequence number
+#endif
 
 // RX state
 STATIC uint8_t rx_buffer[MAX_MESSAGE_LENGTH];
@@ -118,7 +120,9 @@ STATIC uint32_t rx_checks = 0;         // Number of RX checks (debug)
 
 // TX state
 STATIC uint32_t tx_attempts = 0;       // Number of TX attempts (debug)
+#ifdef DW3000_TX_MODE
 STATIC uint16_t tx_counter = 0;        // Incrementing counter 0-6699
+#endif
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations

@@ -17,6 +17,7 @@ typedef enum
     TDMA_MODULE,
     TWR_MODULE,
     DW3000_TEST_MODULE,
+    BMI323_TEST_MODULE,
     NUM_MODULES
 } modules_E;
 

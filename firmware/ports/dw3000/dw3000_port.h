@@ -9,11 +9,12 @@
  *---------------------------------------------------------------------------*/
 #include "common.h"
 #include "deca_interface.h"
+#include "platform_spi.h"
 
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define DW3000_CS_PIN  (0U)  // CS identifier for platform layer
+#define DW3000_CS_PIN  PLATFORM_SPI_CS_DW3000
 
 /** Return codes from port layer functions */
 #define DW3000_SUCCESS  (0)   // Operation successful

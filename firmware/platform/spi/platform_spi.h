@@ -17,12 +17,18 @@ typedef enum {
     PLATFORM_SPI_SUCCESS = 0,
     PLATFORM_SPI_ERROR = -1,
     PLATFORM_SPI_TIMEOUT = -2,
-} platform_spi_status_e;
+} platform_spi_status_E;
 
 typedef enum {
     PLATFORM_SPI_SPEED_SLOW = 0,  // ~2 MHz for initialization
     PLATFORM_SPI_SPEED_FAST = 1,  // ~20 MHz for normal operation
-} platform_spi_speed_e;
+} platform_spi_speed_E;
+
+typedef enum {
+    PLATFORM_SPI_CS_DW3000 = 0,  // DW3000 UWB on SPI1
+    PLATFORM_SPI_CS_BMI323 = 1,  // BMI323 IMU on SPI5
+    PLATFORM_SPI_CS_COUNT
+} platform_spi_cs_E;
 
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
@@ -35,7 +41,7 @@ typedef enum {
  * @param length Number of bytes to transfer
  * @return Platform SPI status
  */
-platform_spi_status_e platform_spi_transfer(const uint8_t *tx_data, uint8_t *rx_data, uint16_t length);
+platform_spi_status_E platform_spi_transfer(const uint8_t *tx_data, uint8_t *rx_data, uint16_t length);
 
 /**
  * @brief Transmit data over SPI
@@ -43,7 +49,7 @@ platform_spi_status_e platform_spi_transfer(const uint8_t *tx_data, uint8_t *rx_
  * @param length Number of bytes to transmit
  * @return Platform SPI status
  */
-platform_spi_status_e platform_spi_transmit(const uint8_t *data, uint16_t length);
+platform_spi_status_E platform_spi_transmit(const uint8_t *data, uint16_t length);
 
 /**
  * @brief Receive data over SPI
@@ -51,23 +57,23 @@ platform_spi_status_e platform_spi_transmit(const uint8_t *data, uint16_t length
  * @param length Number of bytes to receive
  * @return Platform SPI status
  */
-platform_spi_status_e platform_spi_receive(uint8_t *data, uint16_t length);
+platform_spi_status_E platform_spi_receive(uint8_t *data, uint16_t length);
 
 /**
  * @brief Set SPI speed
  * @param speed Desired SPI speed (slow or fast)
  * @return Platform SPI status
  */
-platform_spi_status_e platform_spi_set_speed(platform_spi_speed_e speed);
+platform_spi_status_E platform_spi_set_speed(platform_spi_speed_E speed);
 
 /**
  * @brief Set chip select low (assert)
  * @param cs_pin Chip select identifier (for multi-device support)
  */
-void platform_spi_cs_low(uint8_t cs_pin);
+void platform_spi_cs_low(platform_spi_cs_E cs_pin);
 
 /**
  * @brief Set chip select high (deassert)
  * @param cs_pin Chip select identifier (for multi-device support)
  */
-void platform_spi_cs_high(uint8_t cs_pin);
+void platform_spi_cs_high(platform_spi_cs_E cs_pin);
