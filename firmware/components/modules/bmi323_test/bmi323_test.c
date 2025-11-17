@@ -89,6 +89,9 @@ STATIC uint8_t chip_id = 0;
 STATIC float temperature = 0.0f;
 STATIC bool hardware_ready = false;
 
+// Debug variable
+STATIC uint8_t raw_read_result[4] = {0};
+
 // Sensor data (watch these in debugger)
 STATIC bmi323_sensor_data_t accel_data = {0};
 STATIC bmi323_sensor_data_t gyro_data = {0};
@@ -196,11 +199,19 @@ STATIC void bmi323_test_state_initialization_on_entry(uint16_t prevState)
         return;
     }
     
-    // Probe and initialize the device
+    // Probe and initialize the device (this handles the mode switch)
     int ret = bmi323_port_probe_and_init(bmi_dev);
     if (ret != BMI323_SUCCESS) {
         return;
     }
+    
+    // Debug: Raw SPI read AFTER mode switch
+    // Try reading both chip ID (0x00) and error register (0x01)
+    platform_spi_cs_low(BMI323_CS_PIN);
+    uint8_t cmd = 0x81;  // Read register 0x01 (error register)
+    platform_spi_transmit(&cmd, 1);
+    platform_spi_receive(raw_read_result, 3);
+    platform_spi_cs_high(BMI323_CS_PIN);
     
     // Verify chip ID
     if (!verify_chip_id()) {

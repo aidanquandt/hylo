@@ -11,6 +11,7 @@
 #include "platform_spi.h"
 #include "platform_timer.h"
 #include "bmi323.h"
+#include "gpio.h"
 #include <string.h>
 
 /*---------------------------------------------------------------------------
@@ -49,15 +50,63 @@ int bmi323_port_probe_and_init(struct bmi3_dev *dev)
         return BMI323_ERROR;
     }
     
-    // Initialize the BMI323 sensor
-    int8_t rslt = bmi323_init(dev);
+    // CRITICAL: BMI323 requires a RISING EDGE on CSB after power-up to select SPI mode
+    // MANUAL PROCEDURE:
+    // 1. Power off board
+    // 2. Connect CS pin to GND (keeps it LOW during power-up)
+    // 3. Power on board and run debugger
+    // 4. Set breakpoint on line below (platform_delay_us line)
+    // 5. When breakpoint hits, move CS wire from GND back to PE3
+    // 6. Resume - firmware already set CS HIGH, moving wire creates rising edge
+    
+    // Wait for power-up to complete
+    platform_delay_ms(10);
+    
+    // Set CS HIGH (prepares for rising edge when you reconnect the wire)
+    platform_spi_cs_high(BMI323_CS_PIN);
+    // <-- SET BREAKPOINT HERE (before resume, move CS from GND to PE3)
+    platform_delay_us(250);  
+    
+    // Give BMI323 time to complete mode switch (datasheet says 200µs)
+    platform_delay_ms(1);
+    
+    // Perform a dummy SPI read to fully activate SPI mode
+    uint8_t dummy_rx[3] = {0};
+    platform_spi_cs_low(BMI323_CS_PIN);
+    uint8_t dummy_cmd = 0x80;  // Read chip ID
+    platform_spi_transmit(&dummy_cmd, 1);
+    platform_spi_receive(dummy_rx, 3);
+    platform_spi_cs_high(BMI323_CS_PIN);
+    platform_delay_ms(1);
+    
+    // Now the BMI323 should be in SPI mode
+    
+    // First verify chip ID to ensure SPI communication works
+    uint8_t chip_id = 0;
+    int8_t rslt = bmi3_get_regs(BMI3_REG_CHIP_ID, &chip_id, 1, dev);
     if (rslt != BMI3_OK) {
-        return BMI323_ERROR;
+        return (int)rslt;  // SPI communication failed
     }
     
-    // Verify chip ID
-    if (bmi323_port_check_device_id(dev) != BMI323_SUCCESS) {
-        return BMI323_ERROR;
+    // Verify chip ID is valid (BMI323 = 0x43, BMI330 = 0x44)
+    if (chip_id != 0x43 && chip_id != 0x44) {
+        return BMI3_E_DEV_NOT_FOUND;
+    }
+    
+    // Perform soft reset to ensure clean state
+    rslt = bmi323_soft_reset(dev);
+    if (rslt != BMI3_OK) {
+        return (int)rslt;
+    }
+    
+    // Wait for reset to complete and feature engine to be ready
+    // BMI323 needs up to 25ms for feature engine initialization after reset
+    platform_delay_ms(30);
+    
+    // Now initialize the BMI323 sensor (this configures the feature engine)
+    rslt = bmi323_init(dev);
+    if (rslt != BMI3_OK) {
+        return (int)rslt;  // Return actual API error code for debugging
     }
     
     return BMI323_SUCCESS;
@@ -210,9 +259,10 @@ int bmi323_port_configure_accel(struct bmi3_dev *dev, uint8_t range, uint16_t od
         return BMI323_ERROR;
     }
     
-    // Set new range and ODR
+    // Set new range, ODR, and enable sensor
     config.cfg.acc.range = range;
     config.cfg.acc.odr = odr;
+    config.cfg.acc.acc_mode = BMI3_ACC_MODE_NORMAL;  // Enable accelerometer
     
     // Apply configuration
     rslt = bmi323_set_sensor_config(&config, 1, dev);
@@ -238,9 +288,10 @@ int bmi323_port_configure_gyro(struct bmi3_dev *dev, uint16_t range, uint16_t od
         return BMI323_ERROR;
     }
     
-    // Set new range and ODR
+    // Set new range, ODR, and enable sensor
     config.cfg.gyr.range = range;
     config.cfg.gyr.odr = odr;
+    config.cfg.gyr.gyr_mode = BMI3_GYR_MODE_NORMAL;  // Enable gyroscope
     
     // Apply configuration
     rslt = bmi323_set_sensor_config(&config, 1, dev);
@@ -263,23 +314,20 @@ STATIC int8_t bmi323_spi_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len,
         return BMI3_E_NULL_PTR;
     }
     
+    // BMI323 API already adds dummy_byte to len, so len includes the dummy
+    // For chip ID: API requests len=3 (1 dummy + 2 data bytes)
+    // SPI transaction: TX[addr, 0, 0, 0] RX[junk, data0, data1, data2]
+    // We return all of RX to the API, which will skip the first dummy_byte itself
+    
     platform_spi_cs_low(BMI323_CS_PIN);
     
-    // Send register address with read bit set (bit 7 = 1)
-    uint8_t addr_byte = reg_addr | 0x80;
-    if (platform_spi_transmit(&addr_byte, 1) != PLATFORM_SPI_SUCCESS) {
+    // Send address byte first
+    if (platform_spi_transmit(&reg_addr, 1) != PLATFORM_SPI_SUCCESS) {
         platform_spi_cs_high(BMI323_CS_PIN);
         return BMI3_E_COM_FAIL;
     }
     
-    // BMI323 requires a dummy byte before data (per datasheet)
-    uint8_t dummy = 0xFF;
-    if (platform_spi_transmit(&dummy, 1) != PLATFORM_SPI_SUCCESS) {
-        platform_spi_cs_high(BMI323_CS_PIN);
-        return BMI3_E_COM_FAIL;
-    }
-    
-    // Read the actual data
+    // Now receive 'len' bytes (API already included dummy byte in this count)
     if (platform_spi_receive(reg_data, len) != PLATFORM_SPI_SUCCESS) {
         platform_spi_cs_high(BMI323_CS_PIN);
         return BMI3_E_COM_FAIL;
