@@ -37,7 +37,16 @@ STATIC const spi_cs_map_t cs_map[] = {
  * Private Variables
  *---------------------------------------------------------------------------*/
 // Current SPI peripheral - set by cs_low() before each transaction
+// NOTE: This is NOT thread-safe! Each SPI transaction must complete atomically
+// without task switches (osDelay, blocking calls, etc.) between cs_low and cs_high
 STATIC SPI_HandleTypeDef *current_spi = NULL;
+
+// Debug counters
+STATIC volatile uint32_t spi_transmit_count = 0;
+STATIC volatile uint32_t spi_receive_count = 0;
+STATIC volatile uint32_t spi_cs_low_count = 0;
+STATIC volatile uint32_t spi_cs_high_count = 0;
+STATIC volatile HAL_StatusTypeDef last_hal_status = HAL_OK;
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations
@@ -68,11 +77,18 @@ platform_spi_status_E platform_spi_transfer(const uint8_t *tx_data, uint8_t *rx_
 
 platform_spi_status_E platform_spi_transmit(const uint8_t *data, uint16_t length)
 {
+    spi_transmit_count++;  // Debug counter
+    
     if (data == NULL) {
         return PLATFORM_SPI_ERROR;
     }
     
+    if (current_spi == NULL) {
+        return PLATFORM_SPI_ERROR;  // SPI not selected
+    }
+    
     HAL_StatusTypeDef status = HAL_SPI_Transmit(current_spi, (uint8_t*)data, length, SPI_TIMEOUT_MS);
+    last_hal_status = status;  // Debug: store last HAL status
     
     if (status == HAL_OK) {
         return PLATFORM_SPI_SUCCESS;
@@ -85,11 +101,18 @@ platform_spi_status_E platform_spi_transmit(const uint8_t *data, uint16_t length
 
 platform_spi_status_E platform_spi_receive(uint8_t *data, uint16_t length)
 {
+    spi_receive_count++;  // Debug counter
+    
     if (data == NULL) {
         return PLATFORM_SPI_ERROR;
     }
     
+    if (current_spi == NULL) {
+        return PLATFORM_SPI_ERROR;  // SPI not selected
+    }
+    
     HAL_StatusTypeDef status = HAL_SPI_Receive(current_spi, data, length, SPI_TIMEOUT_MS);
+    last_hal_status = status;  // Debug: store last HAL status
     
     if (status == HAL_OK) {
         return PLATFORM_SPI_SUCCESS;
@@ -126,6 +149,8 @@ platform_spi_status_E platform_spi_set_speed(platform_spi_speed_E speed)
 
 void platform_spi_cs_low(platform_spi_cs_E cs_pin)
 {
+    spi_cs_low_count++;  // Debug counter
+    
     if (cs_pin < PLATFORM_SPI_CS_COUNT) {
         // Select the SPI peripheral for this CS pin
         current_spi = cs_map[cs_pin].hspi;
@@ -136,6 +161,8 @@ void platform_spi_cs_low(platform_spi_cs_E cs_pin)
 
 void platform_spi_cs_high(platform_spi_cs_E cs_pin)
 {
+    spi_cs_high_count++;  // Debug counter
+    
     if (cs_pin < PLATFORM_SPI_CS_COUNT) {
         // Deassert CS high
         HAL_GPIO_WritePin(cs_map[cs_pin].port, cs_map[cs_pin].pin, GPIO_PIN_SET);

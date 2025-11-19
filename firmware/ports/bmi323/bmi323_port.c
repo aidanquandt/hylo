@@ -33,6 +33,8 @@ STATIC struct bmi3_dev bmi323_device = {
     .read_write_len = 32,  // Max read/write length
 };
 
+STATIC uint16_t aidan_chip_id = 742;
+
 /*---------------------------------------------------------------------------
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
@@ -51,29 +53,21 @@ int bmi323_port_probe_and_init(struct bmi3_dev *dev)
     }
     
     // CRITICAL: BMI323 requires a RISING EDGE on CSB after power-up to select SPI mode
-    // MANUAL PROCEDURE:
-    // 1. Power off board
-    // 2. Connect CS pin to GND (keeps it LOW during power-up)
-    // 3. Power on board and run debugger
-    // 4. Set breakpoint on line below (platform_delay_us line)
-    // 5. When breakpoint hits, move CS wire from GND back to PE3
-    // 6. Resume - firmware already set CS HIGH, moving wire creates rising edge
+    // Workaround: Force CS LOW briefly, then HIGH to create rising edge
+    // This assumes the device has been powered up long enough (called after 2s delay in test module)
     
-    // Wait for power-up to complete
-    platform_delay_ms(10);
+    // Force CS LOW
+    platform_spi_cs_low(BMI323_CS_PIN);
+    platform_delay_us(100);  // Hold LOW briefly
     
-    // Set CS HIGH (prepares for rising edge when you reconnect the wire)
+    // Set CS HIGH - this creates the rising edge needed for SPI mode selection
     platform_spi_cs_high(BMI323_CS_PIN);
-    // <-- SET BREAKPOINT HERE (before resume, move CS from GND to PE3)
-    platform_delay_us(250);  
-    
-    // Give BMI323 time to complete mode switch (datasheet says 200µs)
-    platform_delay_ms(1);
+    platform_delay_us(250);  // Wait for mode switch (datasheet: 200µs min)
     
     // Perform a dummy SPI read to fully activate SPI mode
     uint8_t dummy_rx[3] = {0};
     platform_spi_cs_low(BMI323_CS_PIN);
-    uint8_t dummy_cmd = 0x80;  // Read chip ID
+    uint8_t dummy_cmd = 0x80;  // Read chip ID register
     platform_spi_transmit(&dummy_cmd, 1);
     platform_spi_receive(dummy_rx, 3);
     platform_spi_cs_high(BMI323_CS_PIN);
@@ -82,11 +76,15 @@ int bmi323_port_probe_and_init(struct bmi3_dev *dev)
     // Now the BMI323 should be in SPI mode
     
     // First verify chip ID to ensure SPI communication works
-    uint8_t chip_id = 0;
-    int8_t rslt = bmi3_get_regs(BMI3_REG_CHIP_ID, &chip_id, 1, dev);
+    uint8_t chip_id_buf[2] = {0};
+    int8_t rslt = bmi3_get_regs(BMI3_REG_CHIP_ID, chip_id_buf, 2, dev);
     if (rslt != BMI3_OK) {
         return (int)rslt;  // SPI communication failed
     }
+    
+    // Chip ID is in the first byte of the 2-byte read
+    uint8_t chip_id = chip_id_buf[0];
+    aidan_chip_id = (uint16_t)chip_id;
     
     // Verify chip ID is valid (BMI323 = 0x43, BMI330 = 0x44)
     if (chip_id != 0x43 && chip_id != 0x44) {
@@ -134,14 +132,15 @@ uint8_t bmi323_port_read_chip_id(struct bmi3_dev *dev)
         return 0;
     }
     
-    uint8_t chip_id = 0;
-    int8_t rslt = bmi3_get_regs(BMI3_REG_CHIP_ID, &chip_id, 1, dev);
+    uint8_t chip_id_buf[2] = {0};
+    int8_t rslt = bmi3_get_regs(BMI3_REG_CHIP_ID, chip_id_buf, 2, dev);
     
     if (rslt != BMI3_OK) {
         return 0;
     }
     
-    return chip_id;
+    // Return first byte which contains the chip ID
+    return chip_id_buf[0];
 }
 
 float bmi323_port_read_temperature(struct bmi3_dev *dev)
@@ -314,23 +313,33 @@ STATIC int8_t bmi323_spi_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len,
         return BMI3_E_NULL_PTR;
     }
     
-    // BMI323 API already adds dummy_byte to len, so len includes the dummy
-    // For chip ID: API requests len=3 (1 dummy + 2 data bytes)
-    // SPI transaction: TX[addr, 0, 0, 0] RX[junk, data0, data1, data2]
-    // We return all of RX to the API, which will skip the first dummy_byte itself
+    // BMI323 SPI has 2 dummy bytes total:
+    // - 1 dummy during address byte transmission
+    // - 1 more dummy byte before actual data
+    // The API already adds dev->dummy_byte (1) to len, so:
+    // For chip ID (2 bytes wanted): API calls with len=3, we need to do 4-byte transfer total
+    // TX: [addr, 0, 0, 0], RX: [junk, junk, data0, data1]
+    // We return [junk, data0, data1], API will skip first byte giving [data0, data1]
     
     platform_spi_cs_low(BMI323_CS_PIN);
     
-    // Send address byte first
-    if (platform_spi_transmit(&reg_addr, 1) != PLATFORM_SPI_SUCCESS) {
+    // Need to do full transfer: address + len bytes
+    uint8_t tx_buf[len + 1];
+    uint8_t rx_buf[len + 1];
+    
+    tx_buf[0] = reg_addr;
+    for (uint32_t i = 1; i <= len; i++) {
+        tx_buf[i] = 0;
+    }
+    
+    if (platform_spi_transfer(tx_buf, rx_buf, len + 1) != PLATFORM_SPI_SUCCESS) {
         platform_spi_cs_high(BMI323_CS_PIN);
         return BMI3_E_COM_FAIL;
     }
     
-    // Now receive 'len' bytes (API already included dummy byte in this count)
-    if (platform_spi_receive(reg_data, len) != PLATFORM_SPI_SUCCESS) {
-        platform_spi_cs_high(BMI323_CS_PIN);
-        return BMI3_E_COM_FAIL;
+    // Copy received data, skipping the first byte (junk during address)
+    for (uint32_t i = 0; i < len; i++) {
+        reg_data[i] = rx_buf[i + 1];
     }
     
     platform_spi_cs_high(BMI323_CS_PIN);
