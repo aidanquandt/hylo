@@ -38,6 +38,13 @@ STATIC volatile uint8_t debug_chip_id_raw[8] = {0};  // Raw SPI transaction resu
 STATIC volatile uint8_t debug_chip_id_parsed = 0;     // Parsed chip ID value
 STATIC volatile int8_t debug_last_spi_result = 0;     // Last SPI operation result
 STATIC volatile int8_t debug_init_result = 0;         // Result from bmi323_init()
+STATIC volatile uint32_t debug_spi_write_count = 0;   // Count of SPI writes
+STATIC volatile uint32_t debug_spi_read_count = 0;    // Count of SPI reads
+
+// Feature engine debugging
+STATIC volatile uint8_t debug_feature_io1_status[2] = {0};  // Last FEATURE_IO1 read
+STATIC volatile uint8_t debug_last_write_reg = 0;           // Last register written to
+STATIC volatile uint8_t debug_last_write_data[4] = {0};     // Last data written
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations
@@ -317,6 +324,8 @@ STATIC int8_t bmi323_spi_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len,
 {
     (void)intf_ptr;  // Unused
     
+    debug_spi_read_count++;
+    
     if (reg_data == NULL) {
         return BMI3_E_NULL_PTR;
     }
@@ -364,6 +373,12 @@ STATIC int8_t bmi323_spi_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len,
         reg_data[i] = rx_buf[i + 2];  // Skip 2 junk bytes
     }
     
+    // Capture FEATURE_IO1 reads for debugging feature engine issues
+    if (reg_addr == 0x91 && len >= 2) {  // 0x91 = BMI3_REG_FEATURE_IO1 | 0x80 (read bit)
+        debug_feature_io1_status[0] = reg_data[0];
+        debug_feature_io1_status[1] = reg_data[1];
+    }
+    
     platform_spi_cs_high(BMI323_CS_PIN);
     
     return BMI3_OK;
@@ -372,6 +387,14 @@ STATIC int8_t bmi323_spi_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len,
 STATIC int8_t bmi323_spi_write(uint8_t reg_addr, const uint8_t *reg_data, uint32_t len, void *intf_ptr)
 {
     (void)intf_ptr;  // Unused
+    
+    debug_spi_write_count++;
+    
+    // Capture last write for debugging
+    debug_last_write_reg = reg_addr;
+    for (uint32_t i = 0; i < len && i < 4; i++) {
+        debug_last_write_data[i] = reg_data[i];
+    }
     
     if (reg_data == NULL) {
         return BMI3_E_NULL_PTR;
