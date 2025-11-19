@@ -33,7 +33,11 @@ STATIC struct bmi3_dev bmi323_device = {
     .read_write_len = 32,  // Max read/write length
 };
 
-STATIC uint16_t aidan_chip_id = 742;
+// Debug variables (watch in debugger)
+STATIC volatile uint8_t debug_chip_id_raw[8] = {0};  // Raw SPI transaction result
+STATIC volatile uint8_t debug_chip_id_parsed = 0;     // Parsed chip ID value
+STATIC volatile int8_t debug_last_spi_result = 0;     // Last SPI operation result
+STATIC volatile int8_t debug_init_result = 0;         // Result from bmi323_init()
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations
@@ -82,27 +86,24 @@ int bmi323_port_probe_and_init(struct bmi3_dev *dev)
         return (int)rslt;  // SPI communication failed
     }
     
+    // Store raw chip ID read in debug buffer
+    debug_chip_id_raw[0] = chip_id_buf[0];
+    debug_chip_id_raw[1] = chip_id_buf[1];
+    
     // Chip ID is in the first byte of the 2-byte read
     uint8_t chip_id = chip_id_buf[0];
-    aidan_chip_id = (uint16_t)chip_id;
+    debug_chip_id_parsed = chip_id;
     
-    // Verify chip ID is valid (BMI323 = 0x43, BMI330 = 0x44)
-    if (chip_id != 0x43 && chip_id != 0x44) {
+    // Verify chip ID is valid
+    // Note: BMI323 shuttle boards may report 0x44 instead of documented 0x43
+    if (chip_id != 0x43 && chip_id != 0x44 && chip_id != 0x48) {
         return BMI3_E_DEV_NOT_FOUND;
     }
     
-    // Perform soft reset to ensure clean state
-    rslt = bmi323_soft_reset(dev);
-    if (rslt != BMI3_OK) {
-        return (int)rslt;
-    }
-    
-    // Wait for reset to complete and feature engine to be ready
-    // BMI323 needs up to 25ms for feature engine initialization after reset
-    platform_delay_ms(30);
-    
-    // Now initialize the BMI323 sensor (this configures the feature engine)
+    // Initialize the BMI323 sensor (this will do soft reset internally)
     rslt = bmi323_init(dev);
+    debug_init_result = rslt;  // Store for debugging
+
     if (rslt != BMI3_OK) {
         return (int)rslt;  // Return actual API error code for debugging
     }
@@ -135,9 +136,16 @@ uint8_t bmi323_port_read_chip_id(struct bmi3_dev *dev)
     uint8_t chip_id_buf[2] = {0};
     int8_t rslt = bmi3_get_regs(BMI3_REG_CHIP_ID, chip_id_buf, 2, dev);
     
+    debug_last_spi_result = rslt;
+    
     if (rslt != BMI3_OK) {
         return 0;
     }
+    
+    // Store raw result in debug buffer
+    debug_chip_id_raw[0] = chip_id_buf[0];
+    debug_chip_id_raw[1] = chip_id_buf[1];
+    debug_chip_id_parsed = chip_id_buf[0];
     
     // Return first byte which contains the chip ID
     return chip_id_buf[0];
@@ -313,17 +321,25 @@ STATIC int8_t bmi323_spi_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len,
         return BMI3_E_NULL_PTR;
     }
     
-    // BMI323 SPI has 2 dummy bytes total:
-    // - 1 dummy during address byte transmission
-    // - 1 more dummy byte before actual data
-    // The API already adds dev->dummy_byte (1) to len, so:
-    // For chip ID (2 bytes wanted): API calls with len=3, we need to do 4-byte transfer total
-    // TX: [addr, 0, 0, 0], RX: [junk, junk, data0, data1]
-    // We return [junk, data0, data1], API will skip first byte giving [data0, data1]
+    // BMI323 SPI Read Protocol:
+    // The driver (bmi3.c) does: read(reg_addr, temp_buf, len + dummy_byte)
+    // Then extracts: data[i] = temp_buf[i + dummy_byte]
+    //
+    // With dummy_byte = 1:
+    //   - Driver wants 2 bytes, calls read() with len = 3
+    //   - We must return buffer where:
+    //     * temp_buf[0] = junk/dummy (will be skipped by driver)
+    //     * temp_buf[1] = first data byte
+    //     * temp_buf[2] = second data byte
+    //
+    // SPI transaction for chip ID (reg 0x00, len=3):
+    //   TX: [0x80, 0x00, 0x00, 0x00]
+    //   RX: [junk, junk, byte0, byte1]  ← 2 junk bytes: addr response + dummy response
+    //
+    // We need to return [junk, byte0, byte1] so driver gets [byte0, byte1]
     
     platform_spi_cs_low(BMI323_CS_PIN);
     
-    // Need to do full transfer: address + len bytes
     uint8_t tx_buf[len + 1];
     uint8_t rx_buf[len + 1];
     
@@ -337,9 +353,15 @@ STATIC int8_t bmi323_spi_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len,
         return BMI3_E_COM_FAIL;
     }
     
-    // Copy received data, skipping the first byte (junk during address)
+    // The BMI323 has 2 dummy bytes in SPI reads:
+    // - rx_buf[0] = junk from address byte transmission  
+    // - rx_buf[1] = junk from first dummy byte
+    // - rx_buf[2+] = actual data
+    // 
+    // Skip both junk bytes and return actual data starting at rx_buf[2]
+    // The driver does NOT skip anything further (dummy_byte=1 just increases the len)
     for (uint32_t i = 0; i < len; i++) {
-        reg_data[i] = rx_buf[i + 1];
+        reg_data[i] = rx_buf[i + 2];  // Skip 2 junk bytes
     }
     
     platform_spi_cs_high(BMI323_CS_PIN);

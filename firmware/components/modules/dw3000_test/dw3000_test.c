@@ -62,8 +62,8 @@ STATIC void dw3000_test_process_1Hz(void);
 
 extern const module_S dw3000_test_module;
 const module_S dw3000_test_module = {
-    .module_init = dw3000_test_init,
-    .module_process_1Hz = dw3000_test_process_1Hz,
+    // .module_init = dw3000_test_init,
+    // .module_process_1Hz = dw3000_test_process_1Hz,
 };
 
 /*---------------------------------------------------------------------------

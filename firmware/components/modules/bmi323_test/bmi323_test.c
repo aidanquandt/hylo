@@ -89,12 +89,8 @@ STATIC uint8_t chip_id = 0;
 STATIC float temperature = 0.0f;
 STATIC bool hardware_ready = false;
 
-// Debug variables
-STATIC uint8_t raw_read_result[4] = {0};
+// Debug variables (for watching in debugger)
 STATIC int probe_result = 0;  // Store probe_and_init return value
-STATIC uint8_t spi_test_tx[4] = {0x80, 0x00, 0x00, 0x00};  // Test SPI transaction
-STATIC uint8_t spi_test_rx[4] = {0};
-STATIC uint8_t chip_id_raw[4] = {0};  // Raw chip ID read result
 
 // Sensor data (watch these in debugger)
 STATIC bmi323_sensor_data_t accel_data = {0};
@@ -204,43 +200,13 @@ STATIC void bmi323_test_state_initialization_on_entry(uint16_t prevState)
         return;
     }
     
-    // Debug: Try raw SPI transaction BEFORE anything else
-    // Force verify CS pin value
-    volatile platform_spi_cs_E test_cs_pin = BMI323_CS_PIN;  // Should be 1
-    (void)test_cs_pin;  // Prevent optimization
-    
-    platform_spi_cs_low(BMI323_CS_PIN);
-    platform_spi_transmit(spi_test_tx, 4);
-    platform_spi_cs_high(BMI323_CS_PIN);
-    // Don't delay here - causes task switch that corrupts current_spi
-    
-    // Try another raw read
-    platform_spi_cs_low(BMI323_CS_PIN);
-    uint8_t cmd = 0x80;  // Read chip ID
-    platform_spi_transmit(&cmd, 1);
-    platform_spi_receive(spi_test_rx, 3);
-    platform_spi_cs_high(BMI323_CS_PIN);
-    
-    // Also try reading with TransmitReceive to see the difference
-    platform_spi_cs_low(BMI323_CS_PIN);
-    uint8_t tx_buf[3] = {0x80, 0x00, 0x00};
-    platform_spi_transfer(tx_buf, chip_id_raw, 3);
-    platform_spi_cs_high(BMI323_CS_PIN);
-    
-    // Probe and initialize the device (this handles the mode switch)
+    // Probe and initialize the device (this handles the mode switch and SPI setup)
     probe_result = bmi323_port_probe_and_init(bmi_dev);
     if (probe_result != BMI323_SUCCESS) {
         return;
     }
     
-    // Debug: Raw SPI read AFTER mode switch
-    platform_spi_cs_low(BMI323_CS_PIN);
-    uint8_t cmd2 = 0x81;  // Read register 0x01 (error register)
-    platform_spi_transmit(&cmd2, 1);
-    platform_spi_receive(raw_read_result, 3);
-    platform_spi_cs_high(BMI323_CS_PIN);
-    
-    // Verify chip ID
+    // Verify chip ID through port layer
     if (!verify_chip_id()) {
         return;
     }
