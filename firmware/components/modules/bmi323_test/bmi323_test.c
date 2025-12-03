@@ -144,8 +144,11 @@ STATIC void bmi323_test_process_1Hz(void)
     // Read sensors if hardware is ready
     if (hardware_ready) {
         read_sensors();
+        // printf("Accel: X=%.2f Y=%.2f Z=%.2f\r\n", 
+        //        accel_data.x, accel_data.y, accel_data.z);
+        // printf("Gyro: X=%.2f Y=%.2f Z=%.2f\r\n", 
+        //        gyro_data.x, gyro_data.y, gyro_data.z);
     }
-    
     // Run state machine at 1Hz
     state_machine_periodic(&bmi323_state_machine);
 }
