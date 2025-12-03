@@ -9,6 +9,7 @@
 #include "bmi323_test.h"
 #include "module.h"
 #include "platform_gpio.h"
+#include "platform_os.h"
 #include "bmi323_port.h"
 #include "state_machine.h"
 
@@ -210,11 +211,34 @@ STATIC void bmi323_test_state_initialization_on_entry(uint16_t prevState)
     
     hardware_ready = true;
     
-    // Configure accelerometer: ±2g range, 100 Hz ODR
-    bmi323_port_configure_accel(bmi_dev, BMI3_ACC_RANGE_2G, BMI3_ACC_ODR_100HZ);
+    // Configure accelerometer with heavy filtering
+    // Note: 64x averaging requires lower ODR (25Hz max per datasheet)
+    bmi323_accel_config_t accel_config = {
+        .range = BMI3_ACC_RANGE_2G,
+        .odr = BMI3_ACC_ODR_25HZ,        // Lower ODR required for AVG64
+        .avg_num = BMI3_ACC_AVG64,        // Maximum averaging for smoothest data
+        .bwp = BMI3_ACC_BW_ODR_QUARTER    // Additional bandwidth filtering
+    };
+    int result = bmi323_port_configure_accel(bmi_dev, &accel_config);
+    if (result != BMI323_SUCCESS) {
+        // Config failed - averaging might be incompatible with ODR
+        return;
+    }
     
-    // Configure gyroscope: ±2000 deg/s range, 100 Hz ODR
-    bmi323_port_configure_gyro(bmi_dev, BMI3_GYR_RANGE_2000DPS, BMI3_GYR_ODR_100HZ);
+    // Configure gyroscope with moderate filtering
+    bmi323_gyro_config_t gyro_config = {
+        .range = BMI3_GYR_RANGE_2000DPS,
+        .odr = BMI3_GYR_ODR_25HZ,         // Match accel ODR
+        .avg_num = BMI3_GYR_AVG16,        // Moderate averaging
+        .bwp = BMI3_GYR_BW_ODR_QUARTER
+    };
+    result = bmi323_port_configure_gyro(bmi_dev, &gyro_config);
+    if (result != BMI323_SUCCESS) {
+        return;
+    }
+    
+    // Give sensor time to stabilize after configuration
+    platform_os_delay_ms(100);
     
     // Read initial measurements
     read_sensors();

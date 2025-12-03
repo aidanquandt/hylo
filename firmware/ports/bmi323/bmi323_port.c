@@ -217,28 +217,30 @@ int bmi323_port_read_accel_and_gyro(struct bmi3_dev *dev, bmi323_sensor_data_t *
     return BMI323_SUCCESS;
 }
 
-int bmi323_port_configure_accel(struct bmi3_dev *dev, uint8_t range, uint16_t odr)
+int bmi323_port_configure_accel(struct bmi3_dev *dev, const bmi323_accel_config_t *config)
 {
-    if (dev == NULL) {
+    if (dev == NULL || config == NULL) {
         return BMI323_ERROR;
     }
     
-    struct bmi3_sens_config config = {0};
-    config.type = BMI323_ACCEL;
+    struct bmi3_sens_config sens_config = {0};
+    sens_config.type = BMI323_ACCEL;
     
     // Get current configuration
-    int8_t rslt = bmi323_get_sensor_config(&config, 1, dev);
+    int8_t rslt = bmi323_get_sensor_config(&sens_config, 1, dev);
     if (rslt != BMI3_OK) {
         return BMI323_ERROR;
     }
     
-    // Set new range, ODR, and enable sensor
-    config.cfg.acc.range = range;
-    config.cfg.acc.odr = odr;
-    config.cfg.acc.acc_mode = BMI3_ACC_MODE_NORMAL;  // Enable accelerometer
+    // Set new configuration parameters
+    sens_config.cfg.acc.range = config->range;
+    sens_config.cfg.acc.odr = config->odr;
+    sens_config.cfg.acc.avg_num = config->avg_num;
+    sens_config.cfg.acc.bwp = config->bwp;
+    sens_config.cfg.acc.acc_mode = BMI3_ACC_MODE_NORMAL;  // Enable accelerometer
     
     // Apply configuration
-    rslt = bmi323_set_sensor_config(&config, 1, dev);
+    rslt = bmi323_set_sensor_config(&sens_config, 1, dev);
     if (rslt != BMI3_OK) {
         return BMI323_ERROR;
     }
@@ -246,28 +248,30 @@ int bmi323_port_configure_accel(struct bmi3_dev *dev, uint8_t range, uint16_t od
     return BMI323_SUCCESS;
 }
 
-int bmi323_port_configure_gyro(struct bmi3_dev *dev, uint16_t range, uint16_t odr)
+int bmi323_port_configure_gyro(struct bmi3_dev *dev, const bmi323_gyro_config_t *config)
 {
-    if (dev == NULL) {
+    if (dev == NULL || config == NULL) {
         return BMI323_ERROR;
     }
     
-    struct bmi3_sens_config config = {0};
-    config.type = BMI323_GYRO;
+    struct bmi3_sens_config sens_config = {0};
+    sens_config.type = BMI323_GYRO;
     
     // Get current configuration
-    int8_t rslt = bmi323_get_sensor_config(&config, 1, dev);
+    int8_t rslt = bmi323_get_sensor_config(&sens_config, 1, dev);
     if (rslt != BMI3_OK) {
         return BMI323_ERROR;
     }
     
-    // Set new range, ODR, and enable sensor
-    config.cfg.gyr.range = range;
-    config.cfg.gyr.odr = odr;
-    config.cfg.gyr.gyr_mode = BMI3_GYR_MODE_NORMAL;  // Enable gyroscope
+    // Set new configuration parameters
+    sens_config.cfg.gyr.range = config->range;
+    sens_config.cfg.gyr.odr = config->odr;
+    sens_config.cfg.gyr.avg_num = config->avg_num;
+    sens_config.cfg.gyr.bwp = config->bwp;
+    sens_config.cfg.gyr.gyr_mode = BMI3_GYR_MODE_NORMAL;  // Enable gyroscope
     
     // Apply configuration
-    rslt = bmi323_set_sensor_config(&config, 1, dev);
+    rslt = bmi323_set_sensor_config(&sens_config, 1, dev);
     if (rslt != BMI3_OK) {
         return BMI323_ERROR;
     }

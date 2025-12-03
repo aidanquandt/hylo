@@ -31,6 +31,22 @@ typedef struct {
     float z;
 } bmi323_sensor_data_t;
 
+/** Accelerometer configuration structure */
+typedef struct {
+    uint8_t range;    // BMI3_ACC_RANGE_2G, 4G, 8G, 16G
+    uint8_t odr;      // BMI3_ACC_ODR_xxx (output data rate)
+    uint8_t avg_num;  // BMI3_ACC_AVGx (hardware averaging)
+    uint8_t bwp;      // BMI3_ACC_BW_ODR_HALF or QUARTER (bandwidth)
+} bmi323_accel_config_t;
+
+/** Gyroscope configuration structure */
+typedef struct {
+    uint8_t range;    // BMI3_GYR_RANGE_xxxDPS
+    uint8_t odr;      // BMI3_GYR_ODR_xxx (output data rate)
+    uint8_t avg_num;  // BMI3_GYR_AVGx (hardware averaging)
+    uint8_t bwp;      // BMI3_GYR_BW_ODR_HALF or QUARTER (bandwidth)
+} bmi323_gyro_config_t;
+
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
@@ -98,20 +114,18 @@ int bmi323_port_read_accel_and_gyro(struct bmi3_dev *dev, bmi323_sensor_data_t *
 /**
  * @brief Configure accelerometer settings
  * @param dev Pointer to device structure
- * @param range Accelerometer range (2g, 4g, 8g, 16g)
- * @param odr Output data rate in Hz
+ * @param config Pointer to accelerometer configuration structure
  * @return BMI323_SUCCESS on success, BMI323_ERROR on failure
  */
-int bmi323_port_configure_accel(struct bmi3_dev *dev, uint8_t range, uint16_t odr);
+int bmi323_port_configure_accel(struct bmi3_dev *dev, const bmi323_accel_config_t *config);
 
 /**
  * @brief Configure gyroscope settings
  * @param dev Pointer to device structure
- * @param range Gyroscope range (125, 250, 500, 1000, 2000 deg/s)
- * @param odr Output data rate in Hz
+ * @param config Pointer to gyroscope configuration structure
  * @return BMI323_SUCCESS on success, BMI323_ERROR on failure
  */
-int bmi323_port_configure_gyro(struct bmi3_dev *dev, uint16_t range, uint16_t odr);
+int bmi323_port_configure_gyro(struct bmi3_dev *dev, const bmi323_gyro_config_t *config);
 
 /**
  * @brief Delay function for BMI323 driver
