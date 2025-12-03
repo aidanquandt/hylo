@@ -1,18 +1,10 @@
 /*---------------------------------------------------------------------------
- * Includes
+ * @file    bmi323_test.h
+ * @brief   BMI323 hardware connection test module
  *---------------------------------------------------------------------------*/
-#include "platform.h"
-#include "stm32h7xx_hal.h"
+#pragma once
 
 /*---------------------------------------------------------------------------
- * Public function implementations
+ * Includes
  *---------------------------------------------------------------------------*/
-uint32_t platform_gettick(void)
-{
-    return HAL_GetTick();
-}
-
-void platform_delay_ms(uint32_t delay_ms)
-{
-    HAL_Delay(delay_ms);
-}
+#include "common.h"

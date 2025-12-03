@@ -8,12 +8,11 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "dw3000_port.h"
+#include "platform_os.h"
 #include "platform_spi.h"
 #include "platform_gpio.h"
 #include "platform_timer.h"
 #include "deca_device_api.h"
-#include "FreeRTOS.h"
-#include "task.h"
 
 /*---------------------------------------------------------------------------
  * External Driver Declaration
@@ -97,9 +96,9 @@ void dw3000_port_wakeup_device(void)
     // Toggle CS pin to wake up DW3000 from sleep
     // The DW3000 wakes up on CS rising edge after being low for >500us
     platform_spi_cs_low(DW3000_CS_PIN);
-    platform_delay_us(600);  // Wait >500us using precise microsecond delay
+    platform_os_delay_us_blocking(600);  // Wait >500us using precise microsecond delay
     platform_spi_cs_high(DW3000_CS_PIN);
-    platform_delay_ms(1);  // Wait 1ms for device to fully wake up
+    platform_os_delay_ms(1);  // Wait 1ms for device to fully wake up
 }
 
 int dw3000_port_check_device_id(void)
@@ -238,7 +237,7 @@ int dw3000_port_send_message(const uint8_t *data, uint16_t length)
             dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
             return DW3000_SUCCESS;
         }
-        platform_delay_us(10);
+        platform_os_delay_us_blocking(10);
     }
     
     // Timeout
@@ -394,14 +393,18 @@ STATIC int32_t dw3000_spi_write_crc(uint16_t headerLength, const uint8_t *header
 
 STATIC void dw3000_spi_set_slow_rate(void)
 {
-    // Set SPI to slow speed for initialization
+    // Ensure correct SPI peripheral is selected before changing speed
+    platform_spi_cs_low(DW3000_CS_PIN);
     platform_spi_set_speed(PLATFORM_SPI_SPEED_SLOW);
+    platform_spi_cs_high(DW3000_CS_PIN);
 }
 
 STATIC void dw3000_spi_set_fast_rate(void)
 {
-    // Set SPI to fast speed for normal operation
+    // Ensure correct SPI peripheral is selected before changing speed
+    platform_spi_cs_low(DW3000_CS_PIN);
     platform_spi_set_speed(PLATFORM_SPI_SPEED_FAST);
+    platform_spi_cs_high(DW3000_CS_PIN);
 }
 
 /*---------------------------------------------------------------------------
@@ -410,26 +413,23 @@ STATIC void dw3000_spi_set_fast_rate(void)
 
 void deca_usleep(unsigned long time_us)
 {
-    platform_delay_us((uint32_t)time_us);
+    platform_os_delay_us_blocking((uint32_t)time_us);
 }
 
 void deca_sleep(unsigned int time_ms)
 {
-    platform_delay_ms((uint32_t)time_ms);
+    platform_os_delay_ms((uint32_t)time_ms);
 }
 
 decaIrqStatus_t decamutexon(void)
 {
     // Enter critical section to prevent concurrent access to DW3000
-    // FreeRTOS automatically saves interrupt state
-    taskENTER_CRITICAL();
-    return 0;  // Return value not used with FreeRTOS critical sections
+    // Uses platform abstraction to remain RTOS-agnostic
+    return (decaIrqStatus_t)platform_os_critical_enter();
 }
 
 void decamutexoff(decaIrqStatus_t s)
 {
-    (void)s;  // Parameter not used with FreeRTOS critical sections
-    
     // Exit critical section and restore interrupts
-    taskEXIT_CRITICAL();
+    platform_os_critical_exit((platform_os_critical_state_t)s);
 }

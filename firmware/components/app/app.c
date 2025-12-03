@@ -6,7 +6,7 @@
 #include "common.h"
 #include "module.h"
 #include "main.h"
-#include "platform.h"
+#include "platform_os.h"
 #include "platform_gpio.h"
 #include "cmsis_os.h"
 #include "task.h"

@@ -27,6 +27,7 @@
 /* USER CODE BEGIN Includes */
 
 #include "app.h"
+#include "platform_os.h"
 #include "platform_timer.h"
 
 /* USER CODE END Includes */
@@ -95,10 +96,8 @@ int main(void)
 
   /* USER CODE BEGIN SysInit */
 
-  /* Enable DWT cycle counter for microsecond timing */
-  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-  DWT->CYCCNT = 0;
-  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+  /* Initialize platform OS layer (DWT, etc.) */
+  platform_os_init();
 
   /* USER CODE END SysInit */
 
@@ -106,6 +105,7 @@ int main(void)
   MX_GPIO_Init();
   MX_TIM5_Init();
   MX_SPI1_Init();
+  MX_SPI5_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */

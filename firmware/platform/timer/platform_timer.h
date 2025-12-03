@@ -10,14 +10,16 @@
  *---------------------------------------------------------------------------*/
 
 /**
- * @brief Delay execution for specified milliseconds (RTOS-friendly)
- * @param ms Delay time in milliseconds
+ * @brief Get current timestamp from free-running hardware timer
+ * @return Current timestamp value (handles wraparound)
+ * @note Implementation-defined resolution, use platform_get_elapsed_us() for time measurements
  */
-void platform_delay_ms(uint32_t ms);
+uint32_t platform_get_timestamp(void);
 
 /**
- * @brief Delay execution for specified microseconds (blocking)
- * @param us Delay time in microseconds
- * @note Uses DWT cycle counter for precise timing, blocks CPU
+ * @brief Get elapsed time in microseconds between two timestamps
+ * @param start_timestamp Starting timestamp from platform_get_timestamp()
+ * @param end_timestamp Ending timestamp from platform_get_timestamp()
+ * @return Elapsed time in microseconds (handles counter wraparound)
  */
-void platform_delay_us(uint32_t us);
+uint32_t platform_get_elapsed_us(uint32_t start_timestamp, uint32_t end_timestamp);
