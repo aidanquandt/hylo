@@ -29,7 +29,7 @@ function(add_port NAME)
         # Link to platform and appropriate vendor driver interface
         if(NAME STREQUAL "dw3000")
             target_link_libraries(${NAME}_port PUBLIC platform uwb_driver_itf)
-        elseif(NAME STREQUAL "bmi323")
+        elseif(NAME STREQUAL "imu_port")
             target_link_libraries(${NAME}_port PUBLIC platform bmi323_api)
         else()
             target_link_libraries(${NAME}_port PUBLIC platform)

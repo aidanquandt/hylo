@@ -26,7 +26,7 @@ typedef enum {
 
 typedef enum {
     PLATFORM_SPI_CS_DW3000 = 0,  // DW3000 UWB on SPI1
-    PLATFORM_SPI_CS_BMI323 = 1,  // BMI323 IMU on SPI5
+    PLATFORM_SPI_CS_IMU = 1,     // IMU (BMI323) on SPI5
     PLATFORM_SPI_CS_COUNT
 } platform_spi_cs_E;
 

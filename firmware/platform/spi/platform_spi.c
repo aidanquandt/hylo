@@ -19,7 +19,7 @@
 
 // SPI peripheral handles
 extern SPI_HandleTypeDef hspi1;  // DW3000 UWB
-extern SPI_HandleTypeDef hspi5;  // BMI323 IMU
+extern SPI_HandleTypeDef hspi5;  // IMU (BMI323)
 
 // CS pin mapping
 typedef struct {
@@ -30,7 +30,7 @@ typedef struct {
 
 STATIC const spi_cs_map_t cs_map[] = {
     [PLATFORM_SPI_CS_DW3000] = { SPI1_CSn_GPIO_Port, SPI1_CSn_Pin, &hspi1 },
-    [PLATFORM_SPI_CS_BMI323] = { SPI5_CSn_GPIO_Port, SPI5_CSn_Pin, &hspi5 },
+    [PLATFORM_SPI_CS_IMU] = { SPI5_CSn_GPIO_Port, SPI5_CSn_Pin, &hspi5 },
 };
 
 /*---------------------------------------------------------------------------

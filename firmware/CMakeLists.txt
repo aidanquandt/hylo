@@ -22,7 +22,7 @@ add_subdirectory(components)             # app logic (lib)
 # Link order matters: higher-level depends on lower-level
 target_link_libraries(cubemx
     components        # app
-    ports             # port layers (dwm3000_port, bmi323_port, etc.)
+    ports             # port layers (dwm3000_port, imu_port, etc.)
     uwb_driver        # vendor driver (pulls qmath, dw3000, etc.)
     bmi323_api        # vendor BMI323 sensor API
     platform          # HAL wrappers
