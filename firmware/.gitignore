@@ -1,0 +1,33 @@
+# WiFi credentials (contains sensitive information)
+components/modules/wifi/wifi_config.h
+
+# Build directories
+build/
+*.bin
+*.elf
+*.hex
+*.map
+
+# IDE files
+.vscode/
+.vs/
+*.suo
+*.user
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+
+# Compiled files
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.exe
+
+# Debug files
+*.pdb
+*.ilk

@@ -42,4 +42,30 @@ platform_uart_status_E platform_uart_transmit_blocking(const uint8_t *data, size
  */
 platform_uart_status_E platform_uart_receive(UART_HandleTypeDef *huart, uint8_t *data, size_t length);
 
+/**
+ * @brief Transmit data to ESP01 via UART7 (blocking)
+ * @param data pointer to buffer to transmit
+ * @param length number of bytes to send
+ * @return PLATFORM_UART_SUCCESS if OK, PLATFORM_UART_TIMEOUT or PLATFORM_UART_ERROR on failure
+ * @note This function blocks until transmission complete
+ */
+platform_uart_status_E platform_uart_esp_transmit(const uint8_t *data, size_t length);
+
+/**
+ * @brief Start DMA circular reception from ESP01 via UART7
+ * @param buffer pointer to circular buffer
+ * @param buffer_size size of circular buffer
+ * @return PLATFORM_UART_SUCCESS if OK, PLATFORM_UART_ERROR on failure
+ * @note DMA will continuously fill buffer in circular mode
+ * @note Use platform_uart_esp_get_dma_counter() to determine current position
+ */
+platform_uart_status_E platform_uart_esp_receive_dma_start(uint8_t *buffer, size_t buffer_size);
+
+/**
+ * @brief Get current DMA counter value for ESP UART
+ * @return Current DMA counter (counts down from buffer size)
+ * @note Used to calculate write position in circular buffer
+ */
+uint16_t platform_uart_esp_get_dma_counter(void);
+
 #endif // PLATFORM_UART_H

@@ -22,6 +22,7 @@ extern const module_S tdma_module;
 extern const module_S twr_module;
 extern const module_S dw3000_test_module;
 extern const module_S bmi323_test_module;
+extern const module_S wifi_module;
 
 const module_S* const modules[NUM_MODULES] = {
     [UART_MANAGER_MODULE]  = &uart_manager_module,  // First! (other modules may print during init)
@@ -32,4 +33,5 @@ const module_S* const modules[NUM_MODULES] = {
     [TWR_MODULE]           = &twr_module,
     [DW3000_TEST_MODULE]   = &dw3000_test_module,
     [BMI323_TEST_MODULE]   = &bmi323_test_module,
+    [WIFI_MODULE]          = &wifi_module,
 };
