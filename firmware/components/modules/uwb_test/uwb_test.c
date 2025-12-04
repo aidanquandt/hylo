@@ -1,26 +1,26 @@
 /*---------------------------------------------------------------------------
- * @file    dw3000_test.c
- * @brief   DW3000 hardware connection test module
+ * @file    uwb_test.c
+ * @brief   UWB hardware connection test module
  *---------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
-#include "dw3000_test.h"
+#include "uwb_test.h"
 #include "module.h"
 #include "platform_gpio.h"
-#include "dw3000_port.h"
+#include "uwb_port.h"
 #include "state_machine.h"
 #include "mac_802154.h"
 
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-// Configuration: Define either DW3000_TX_MODE or DW3000_RX_MODE (not both)
-// #define DW3000_TX_MODE                          // This device is transmitter
-#define DW3000_RX_MODE                       // This device is receiver
+// Configuration: Define either UWB_TX_MODE or UWB_RX_MODE (not both)
+// #define UWB_TX_MODE                          // This device is transmitter
+#define UWB_RX_MODE                       // This device is receiver
 
-#ifdef DW3000_TX_MODE
+#ifdef UWB_TX_MODE
     #define MY_ADDRESS          (0x0001)        // TX device address
     #define DEST_ADDRESS        (0x0002)        // Send to RX device
 #else
@@ -28,9 +28,9 @@
     #define DEST_ADDRESS        (0x0001)        // Not used in RX mode
 #endif
 
-#define DW3000_EXPECTED_DEV_ID  (0xDECA0302UL)  // DW3000 Device ID
+#define UWB_EXPECTED_DEV_ID  (0xDECA0302UL)  // DW3000 Device ID
 #define STARTUP_DELAY_MS        (2000U)            // Wait 2 seconds before probing
-#define UWB_DEFAULT_CHANNEL     (5U)            // Default UWB channel
+#define UWB_DEFAULT_CHANNEL     UWB_CHANNEL_5     // Default UWB channel
 #define MAX_MESSAGE_LENGTH      (MAC_MAX_FRAME_SIZE)  // Max UWB frame size
 
 // State machine states
@@ -38,7 +38,7 @@ typedef enum {
     STATE_STARTUP,              // Waiting for startup delay
     STATE_INITIALIZATION,       // Initializing hardware
     STATE_ACTIVE                // Normal operation (TX/RX)
-} dw3000_state_E;
+} uwb_state_E;
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -47,57 +47,58 @@ STATIC bool verify_device_id(void);
 STATIC void read_measurements(void);
 
 // State machine transition logic
-STATIC uint16_t dw3000_test_transition_logic(uint16_t currentState, uint32_t stateTimer);
+STATIC uint16_t uwb_test_transition_logic(uint16_t currentState, uint32_t stateTimer);
 
 // State handlers
-STATIC void dw3000_test_state_startup_process(void);
-STATIC void dw3000_test_state_initialization_on_entry(uint16_t prevState);
-STATIC void dw3000_test_state_active_process(void);
+STATIC void uwb_test_state_startup_process(void);
+STATIC void uwb_test_state_initialization_on_entry(uint16_t prevState);
+STATIC void uwb_test_state_active_process(void);
 
 /*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
-STATIC void dw3000_test_init(void);
-STATIC void dw3000_test_process_1Hz(void);
+STATIC void uwb_test_init(void);
+STATIC void uwb_test_process_1Hz(void);
 
-extern const module_S dw3000_test_module;
-const module_S dw3000_test_module = {
-    .module_init = dw3000_test_init,
-    .module_process_1Hz = dw3000_test_process_1Hz,
+extern const module_S uwb_test_module;
+const module_S uwb_test_module = {
+    .module_init = uwb_test_init,
+    .module_process_1Hz = uwb_test_process_1Hz,
 };
 
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
 // State machine definition
-STATIC const state_s dw3000_states[] = {
+STATIC const state_s uwb_states[] = {
     [STATE_STARTUP] = {
-        .process = dw3000_test_state_startup_process,
+        .process = uwb_test_state_startup_process,
         .onEntry = NULL,
         .onExit = NULL
     },
     [STATE_INITIALIZATION] = {
         .process = NULL,
-        .onEntry = dw3000_test_state_initialization_on_entry,
+        .onEntry = uwb_test_state_initialization_on_entry,
         .onExit = NULL
     },
     [STATE_ACTIVE] = {
-        .process = dw3000_test_state_active_process,
+        .process = uwb_test_state_active_process,
         .onEntry = NULL,
         .onExit = NULL
     }
 };
 
-STATIC state_machine_s dw3000_state_machine = {
+STATIC state_machine_s uwb_state_machine = {
     .prev_state = STATE_STARTUP,
     .curr_state = STATE_STARTUP,
     .next_state = STATE_STARTUP,
     .timer = 0,
-    .transitionLogic = dw3000_test_transition_logic,
-    .states = dw3000_states
+    .transitionLogic = uwb_test_transition_logic,
+    .states = uwb_states
 };
 
 // Hardware state
+STATIC uwb_dev_t *uwb_dev = NULL;
 STATIC uint32_t device_id = 0;
 STATIC float temperature = 0.0f;
 STATIC float voltage = 0.0f;
@@ -107,7 +108,7 @@ STATIC bool hardware_ready = false;
 STATIC uint16_t my_pan_id = MAC_DEFAULT_PAN_ID;     // This device's PAN ID
 STATIC uint16_t my_address = MY_ADDRESS;        // This device's short address (from define)
 STATIC uint16_t tx_dest_addr = DEST_ADDRESS;    // Destination address (from define)
-#ifdef DW3000_TX_MODE
+#ifdef UWB_TX_MODE
 STATIC uint8_t tx_sequence = 0;                 // Frame sequence number
 #endif
 
@@ -120,7 +121,7 @@ STATIC uint32_t rx_checks = 0;         // Number of RX checks (debug)
 
 // TX state
 STATIC uint32_t tx_attempts = 0;       // Number of TX attempts (debug)
-#ifdef DW3000_TX_MODE
+#ifdef UWB_TX_MODE
 STATIC uint16_t tx_counter = 0;        // Incrementing counter 0-6699
 #endif
 
@@ -130,31 +131,38 @@ STATIC uint16_t tx_counter = 0;        // Incrementing counter 0-6699
 
 STATIC bool verify_device_id(void)
 {
+    if (uwb_dev == NULL) {
+        return false;
+    }
+    
     // Check the device ID through port layer
-    int ret = dw3000_port_check_device_id();
-    if (ret != DW3000_SUCCESS) {
+    uwb_port_status_t ret = uwb_port_check_device_id(uwb_dev);
+    if (ret != UWB_PORT_SUCCESS) {
         return false;
     }
     
     // Read and store device ID
-    device_id = dw3000_port_read_device_id();
+    device_id = uwb_port_read_device_id(uwb_dev);
     
     // Verify it matches expected value
-    return (device_id == DW3000_EXPECTED_DEV_ID);
+    return (device_id == UWB_EXPECTED_DEV_ID);
 }
 
 STATIC void read_measurements(void)
 {
+    if (uwb_dev == NULL) {
+        return;
+    }
     // Read and store IC temperature and voltage (single optimized call)
-    dw3000_port_read_temp_and_voltage(&temperature, &voltage);
+    uwb_port_read_temp_and_voltage(uwb_dev, &temperature, &voltage);
 }
 
-STATIC void dw3000_test_init(void)
+STATIC void uwb_test_init(void)
 {
     // State machine is already initialized with static values
 }
 
-STATIC void dw3000_test_process_1Hz(void)
+STATIC void uwb_test_process_1Hz(void)
 {
     // Toggle LED to show we're running
     platform_gpio_toggle_led_green();
@@ -165,10 +173,10 @@ STATIC void dw3000_test_process_1Hz(void)
     }
     
     // Run state machine at 1Hz
-    state_machine_periodic(&dw3000_state_machine);
+    state_machine_periodic(&uwb_state_machine);
 }
 
-STATIC uint16_t dw3000_test_transition_logic(uint16_t currentState, uint32_t stateTimer)
+STATIC uint16_t uwb_test_transition_logic(uint16_t currentState, uint32_t stateTimer)
 {
     uint16_t nextState = currentState;
     
@@ -200,24 +208,24 @@ STATIC uint16_t dw3000_test_transition_logic(uint16_t currentState, uint32_t sta
     return nextState;
 }
 
-STATIC void dw3000_test_state_startup_process(void)
+STATIC void uwb_test_state_startup_process(void)
 {
     // Nothing to do - timer automatically increments
 }
 
-STATIC void dw3000_test_state_initialization_on_entry(uint16_t prevState)
+STATIC void uwb_test_state_initialization_on_entry(uint16_t prevState)
 {
     (void)prevState;  // Unused
     
-    // Get the port chip structure
-    dwchip_t* dw_chip = dw3000_port_init();
-    if (dw_chip == NULL) {
+    // Get the port device structure
+    uwb_dev = uwb_port_init();
+    if (uwb_dev == NULL) {
         return;
     }
     
     // Probe and initialize the device
-    int ret = dw3000_port_probe_and_init(dw_chip);
-    if (ret != DW3000_SUCCESS) {
+    uwb_port_status_t ret = uwb_port_probe_and_init(uwb_dev);
+    if (ret != UWB_PORT_SUCCESS) {
         return;
     }
     
@@ -229,15 +237,15 @@ STATIC void dw3000_test_state_initialization_on_entry(uint16_t prevState)
     hardware_ready = true;
     
     // Set 802.15.4 addressing
-    dw3000_port_set_pan_id(my_pan_id);
-    dw3000_port_set_address(my_address);
+    uwb_port_set_pan_id(uwb_dev, my_pan_id);
+    uwb_port_set_address(uwb_dev, my_address);
     
     // Configure TX or RX mode based on compile-time define
-#ifdef DW3000_TX_MODE
-    dw3000_port_configure_tx(UWB_DEFAULT_CHANNEL);
+#ifdef UWB_TX_MODE
+    uwb_port_configure_tx(uwb_dev, UWB_DEFAULT_CHANNEL);
     tx_attempts = 0;
 #else
-    dw3000_port_configure_rx(UWB_DEFAULT_CHANNEL);
+    uwb_port_configure_rx(uwb_dev, UWB_DEFAULT_CHANNEL);
     rx_length = 0;
     rx_parsed_value = 0;
     rx_count = 0;
@@ -248,9 +256,9 @@ STATIC void dw3000_test_state_initialization_on_entry(uint16_t prevState)
     read_measurements();
 }
 
-STATIC void dw3000_test_state_active_process(void)
+STATIC void uwb_test_state_active_process(void)
 {
-#ifdef DW3000_TX_MODE
+#ifdef UWB_TX_MODE
     // TX mode: send 802.15.4 frame with number 68
     tx_attempts++;
     
@@ -278,13 +286,13 @@ STATIC void dw3000_test_state_active_process(void)
     
     // Send frame (header + payload)
     uint16_t frame_len = MAC_FRAME_SHORT_HEADER_SIZE + payload_len;
-    dw3000_port_send_message(tx_buffer, frame_len);
+    uwb_port_send_message(uwb_dev, tx_buffer, frame_len);
 #else
     // RX mode: check for received 802.15.4 frames and parse
     {
         rx_checks++;
         uint16_t received = 0;
-        if (dw3000_port_receive_message(rx_buffer, MAX_MESSAGE_LENGTH, &received) == DW3000_SUCCESS) {
+        if (uwb_port_receive_message(uwb_dev, rx_buffer, MAX_MESSAGE_LENGTH, &received) == UWB_PORT_SUCCESS) {
             // Check minimum frame size (12 bytes header minimum)
             if (received >= MAC_FRAME_SHORT_HEADER_SIZE) {
                 mac_frame_short_t *rx_frame = (mac_frame_short_t*)rx_buffer;
@@ -314,33 +322,33 @@ STATIC void dw3000_test_state_active_process(void)
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
 
-bool dw3000_test_device_id(void)
+bool uwb_test_device_id(void)
 {
     // For backward compatibility - verify device ID is correct
-    return (device_id == DW3000_EXPECTED_DEV_ID);
+    return (device_id == UWB_EXPECTED_DEV_ID);
 }
 
-uint32_t dw3000_test_get_device_id(void)
+uint32_t uwb_test_get_device_id(void)
 {
     return device_id;
 }
 
-float dw3000_test_get_temperature(void)
+float uwb_test_get_temperature(void)
 {
     return temperature;
 }
 
-float dw3000_test_get_voltage(void)
+float uwb_test_get_voltage(void)
 {
     return voltage;
 }
 
-bool dw3000_test_is_ready(void)
+bool uwb_test_is_ready(void)
 {
     return hardware_ready;
 }
 
-uint16_t dw3000_test_get_received_message(char *buffer, uint16_t buffer_size)
+uint16_t uwb_test_get_received_message(char *buffer, uint16_t buffer_size)
 {
     if (buffer == NULL || buffer_size == 0) {
         return 0;
@@ -355,57 +363,57 @@ uint16_t dw3000_test_get_received_message(char *buffer, uint16_t buffer_size)
     return rx_length;
 }
 
-uint32_t dw3000_test_get_rx_parsed_value(void)
+uint32_t uwb_test_get_rx_parsed_value(void)
 {
     return rx_parsed_value;
 }
 
-uint32_t dw3000_test_get_rx_count(void)
+uint32_t uwb_test_get_rx_count(void)
 {
     return rx_count;
 }
 
-uint32_t dw3000_test_get_tx_attempts(void)
+uint32_t uwb_test_get_tx_attempts(void)
 {
     return tx_attempts;
 }
 
-uint32_t dw3000_test_get_rx_checks(void)
+uint32_t uwb_test_get_rx_checks(void)
 {
     return rx_checks;
 }
 
-bool dw3000_test_is_tx_mode(void)
+bool uwb_test_is_tx_mode(void)
 {
-#ifdef DW3000_TX_MODE
+#ifdef UWB_TX_MODE
     return true;
 #else
     return false;
 #endif
 }
 
-bool dw3000_test_is_rx_mode(void)
+bool uwb_test_is_rx_mode(void)
 {
-#ifdef DW3000_TX_MODE
+#ifdef UWB_TX_MODE
     return false;
 #else
     return true;
 #endif
 }
 
-void dw3000_test_set_address(uint16_t address, uint16_t pan_id)
+void uwb_test_set_address(uint16_t address, uint16_t pan_id)
 {
     my_address = address;
     my_pan_id = pan_id;
     
     // Update hardware registers if already initialized
-    if (hardware_ready) {
-        dw3000_port_set_pan_id(my_pan_id);
-        dw3000_port_set_address(my_address);
+    if (hardware_ready && uwb_dev != NULL) {
+        uwb_port_set_pan_id(uwb_dev, my_pan_id);
+        uwb_port_set_address(uwb_dev, my_address);
     }
 }
 
-void dw3000_test_set_dest_address(uint16_t dest_addr)
+void uwb_test_set_dest_address(uint16_t dest_addr)
 {
     tx_dest_addr = dest_addr;
 }

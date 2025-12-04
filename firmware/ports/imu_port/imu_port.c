@@ -1,7 +1,7 @@
 /*---------------------------------------------------------------------------
  * @file    imu_port.c
  * @brief   Port layer implementation for IMU sensor driver
- *          Translates Bosch driver callbacks to platform API calls
+ *          Translates Bosch BMI323 vendor driver callbacks to platform API calls
  *---------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------
@@ -21,7 +21,7 @@
 
 /** Complete definition of opaque IMU device structure */
 struct imu_dev_s {
-    struct bmi3_dev bmi_dev;  ///< Wrapped BMI323 device structure
+    struct bmi3_dev bmi_dev;  ///< Wrapped vendor driver device structure (BMI323-specific)
 };
 
 /*---------------------------------------------------------------------------

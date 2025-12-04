@@ -25,7 +25,7 @@ typedef enum {
 } platform_spi_speed_E;
 
 typedef enum {
-    PLATFORM_SPI_CS_DW3000 = 0,  // DW3000 UWB on SPI1
+    PLATFORM_SPI_CS_UWB = 0,     // UWB radio (DW3000) on SPI1
     PLATFORM_SPI_CS_IMU = 1,     // IMU (BMI323) on SPI5
     PLATFORM_SPI_CS_COUNT
 } platform_spi_cs_E;

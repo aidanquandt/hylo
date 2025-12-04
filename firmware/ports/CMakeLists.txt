@@ -27,7 +27,7 @@ function(add_port NAME)
     if(SRCS)
         add_library(${NAME}_port STATIC ${SRCS})
         # Link to platform and appropriate vendor driver interface
-        if(NAME STREQUAL "dw3000")
+        if(NAME STREQUAL "uwb_port")
             target_link_libraries(${NAME}_port PUBLIC platform uwb_driver_itf)
         elseif(NAME STREQUAL "imu_port")
             target_link_libraries(${NAME}_port PUBLIC platform bmi323_api)
