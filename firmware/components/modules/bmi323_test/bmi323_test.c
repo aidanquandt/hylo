@@ -145,7 +145,7 @@ STATIC void bmi323_test_process_1Hz(void)
     if (hardware_ready) {
         read_sensors();
     }
-    
+
     // Run state machine at 1Hz
     state_machine_periodic(&bmi323_state_machine);
 }
@@ -188,7 +188,7 @@ STATIC void bmi323_test_state_startup_process(void)
 }
 
 STATIC void bmi323_test_state_initialization_on_entry(uint16_t prevState)
-{
+{   
     (void)prevState;  // Unused
     
     // Get the port device structure

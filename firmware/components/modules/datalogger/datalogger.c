@@ -8,6 +8,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "app.h"
+#include "uart_manager.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -32,6 +33,7 @@ const module_S datalogger_module = {
  * Private function prototypes
  *---------------------------------------------------------------------------*/
 STATIC void datalogger_monitor_rtos_usage(void);
+STATIC void datalogger_monitor_uart_health(void);
 
 /*---------------------------------------------------------------------------
  * Private variables
@@ -125,9 +127,35 @@ STATIC void datalogger_init(void)
 STATIC void datalogger_process_1Hz(void)
 {
     datalogger_monitor_rtos_usage();
+    datalogger_monitor_uart_health();
 }
 
 STATIC void datalogger_process_100Hz(void)
 {
 
+}
+
+/**
+ * @brief Monitor UART queue health and report anomalies
+ * @details Tracks queue depth and dropped messages to detect logging storms
+ */
+STATIC void datalogger_monitor_uart_health(void)
+{
+    uint32_t queue_count = uart_manager_get_queue_count();
+    STATIC uint32_t prev_dropped = 0U;
+    uint32_t dropped = uart_manager_get_dropped_count();
+    
+    // Check if messages were dropped since last check
+    if (dropped > prev_dropped) {
+        uint32_t new_drops = dropped - prev_dropped;
+        // Note: This will attempt to print, might drop if queue still full
+        // In production, could set an error LED instead
+        uart_manager_print("[UART] %u messages dropped!\n", (unsigned int)new_drops);
+        prev_dropped = dropped;
+    }
+    
+    // Warn if queue is filling up (>75% full = 24/32 messages)
+    if (queue_count > 24U) {
+        uart_manager_print("[UART] Queue high: %u/32\n", (unsigned int)queue_count);
+    }
 }
