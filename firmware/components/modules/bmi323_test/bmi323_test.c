@@ -11,7 +11,6 @@
 #include "platform_gpio.h"
 #include "bmi323_port.h"
 #include "state_machine.h"
-#include "platform_uart.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -146,6 +145,7 @@ STATIC void bmi323_test_process_1Hz(void)
     if (hardware_ready) {
         read_sensors();
     }
+
     // Run state machine at 1Hz
     state_machine_periodic(&bmi323_state_machine);
 }

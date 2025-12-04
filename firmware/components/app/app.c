@@ -16,6 +16,7 @@
 #include "tdma.h"
 #include "twr.h"
 #include "dw3000_test.h"
+#include "uart_manager.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -108,6 +109,16 @@ STATIC void app_create_module_tasks(void)
     STATIC uint8_t task_num = 1U; // we will use task 0 as idle task in datalogger so just set this 1 as first task
     char task_name[16];
 
+    // First, create any standalone module tasks (like UART_TX)
+    for (modules_E module_idx = (modules_E)0U; module_idx < NUM_MODULES; module_idx++) 
+    {
+        if (modules[module_idx]->module_create_task != NULL)
+        {
+            modules[module_idx]->module_create_task();
+        }
+    }
+
+    // Then create periodic processing tasks
     for (modules_E module_idx = (modules_E)0U; module_idx < NUM_MODULES; module_idx++) 
     {
         if (modules[module_idx]->module_process_1kHz != NULL)
@@ -183,10 +194,13 @@ STATIC void app_post_module_initialization(void)
  *---------------------------------------------------------------------------*/
 void app_init(void) 
 {
-    // module initialization
+    // Phase 1: Initialize modules (create queues, semaphores, etc.)
     app_initialize_modules();
+    
+    // Phase 2: Create all module tasks (now that RTOS primitives exist)
     app_create_module_tasks();
 
+    // Phase 3: Post-initialization (after all tasks created)
     app_post_module_initialization();
 
     osThreadExit();
