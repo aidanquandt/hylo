@@ -1,18 +1,28 @@
 /*---------------------------------------------------------------------------
- * @file    dw3000_port.c
- * @brief   Port layer implementation for DW3000 UWB driver
- *          Translates Qorvo driver callbacks to platform API calls
+ * @file    uwb_port.c
+ * @brief   Port layer implementation for UWB radio driver
+ *          Translates Qorvo DW3000 vendor driver callbacks to platform API calls
  *---------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
-#include "dw3000_port.h"
+#include "uwb_port.h"
 #include "platform_os.h"
 #include "platform_spi.h"
 #include "platform_gpio.h"
 #include "platform_timer.h"
 #include "deca_device_api.h"
+#include "deca_interface.h"
+
+/*---------------------------------------------------------------------------
+ * Type Definitions
+ *---------------------------------------------------------------------------*/
+
+/** Complete definition of opaque UWB device structure */
+struct uwb_dev_s {
+    dwchip_t dw_chip;  ///< Wrapped vendor driver chip structure (DW3000-specific)
+};
 
 /*---------------------------------------------------------------------------
  * External Driver Declaration
@@ -22,47 +32,48 @@ extern const struct dwt_driver_s dw3000_driver;
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
-STATIC int32_t dw3000_spi_read(uint16_t headerLength, uint8_t *headerBuffer,
+STATIC int32_t uwb_spi_read(uint16_t headerLength, uint8_t *headerBuffer,
                                  uint16_t readLength, uint8_t *readBuffer);
-STATIC int32_t dw3000_spi_write(uint16_t headerLength, const uint8_t *headerBuffer,
+STATIC int32_t uwb_spi_write(uint16_t headerLength, const uint8_t *headerBuffer,
                                   uint16_t bodyLength, const uint8_t *bodyBuffer);
-STATIC int32_t dw3000_spi_write_crc(uint16_t headerLength, const uint8_t *headerBuffer,
-                                      uint16_t bodyLength, const uint8_t *bodyBuffer,
-                                      uint8_t crc8);
-STATIC void dw3000_spi_set_slow_rate(void);
-STATIC void dw3000_spi_set_fast_rate(void);
-
-/*---------------------------------------------------------------------------
+STATIC int32_t uwb_spi_write_crc(uint16_t headerLength, const uint8_t *headerBuffer,
+                                     uint16_t bodyLength, const uint8_t *bodyBuffer,
+                                     uint8_t crc8);
+STATIC void uwb_spi_set_slow_rate(void);
+STATIC void uwb_spi_set_fast_rate(void);
+STATIC void uwb_wakeup_device_impl(void);
+STATIC bool validate_channel(const uwb_channel_t channel);/*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-STATIC struct dwt_spi_s dw3000_spi_fns = {
-    .readfromspi = dw3000_spi_read,
-    .writetospi = dw3000_spi_write,
-    .writetospiwithcrc = dw3000_spi_write_crc,
-    .setslowrate = dw3000_spi_set_slow_rate,
-    .setfastrate = dw3000_spi_set_fast_rate,
+STATIC struct dwt_spi_s uwb_spi_fns = {
+    .readfromspi = uwb_spi_read,
+    .writetospi = uwb_spi_write,
+    .writetospiwithcrc = uwb_spi_write_crc,
+    .setslowrate = uwb_spi_set_slow_rate,
+    .setfastrate = uwb_spi_set_fast_rate,
 };
 
-STATIC dwchip_t dw3000_chip = {
-    .SPI = &dw3000_spi_fns,
-    .wakeup_device_with_io = dw3000_port_wakeup_device,
+/** Static UWB device instance */
+STATIC struct uwb_dev_s uwb_device = {
+    .dw_chip = {
+        .SPI = &uwb_spi_fns,
+        .wakeup_device_with_io = uwb_wakeup_device_impl,
+    }
 };
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
 
-dwchip_t* dw3000_port_init(void)
+uwb_dev_t* uwb_port_init(void)
 {
-    // Port layer returns pointer to static chip structure
-    // GPIO and timing peripherals are configured in main system init
-    return &dw3000_chip;
+    return &uwb_device;
 }
 
-int dw3000_port_probe_and_init(dwchip_t *chip)
+uwb_port_status_t uwb_port_probe_and_init(uwb_dev_t *dev)
 {
-    if (chip == NULL) {
-        return DW3000_ERROR;
+    if (dev == NULL) {
+        return UWB_PORT_ERROR_NULL_PTR;
     }
     
     // Set up driver list for probe
@@ -70,50 +81,78 @@ int dw3000_port_probe_and_init(dwchip_t *chip)
     
     // Probe the device to detect and configure driver
     struct dwt_probe_s probe_data = {
-        .dw = chip,
-        .spi = &dw3000_spi_fns,
-        .wakeup_device_with_io = dw3000_port_wakeup_device,
+        .dw = &dev->dw_chip,
+        .spi = &uwb_spi_fns,
+        .wakeup_device_with_io = uwb_wakeup_device_impl,
         .driver_list = (struct dwt_driver_s **)driver_list,
         .dw_driver_num = 1
     };
     
     int ret = dwt_probe(&probe_data);
     if (ret != DWT_SUCCESS) {
-        return DW3000_ERROR;
+        return UWB_PORT_ERROR_COMM_FAIL;
     }
     
-    // Initialize device - reads calibration data from OTP
+    // Initialize device and load factory calibration values from OTP (One-Time Programmable) memory
+    // This includes antenna delay, crystal trim, and transmit power calibration
     ret = dwt_initialise(DWT_READ_OTP_ALL);
     if (ret != DWT_SUCCESS) {
-        return DW3000_ERROR;
+        return UWB_PORT_ERROR_INIT_FAIL;
     }
     
-    return DW3000_SUCCESS;
+    return UWB_PORT_SUCCESS;
 }
 
-void dw3000_port_wakeup_device(void)
+void uwb_port_wakeup_device(uwb_dev_t *dev)
 {
-    // Toggle CS pin to wake up DW3000 from sleep
-    // The DW3000 wakes up on CS rising edge after being low for >500us
-    platform_spi_cs_low(DW3000_CS_PIN);
-    platform_os_delay_us_blocking(600);  // Wait >500us using precise microsecond delay
-    platform_spi_cs_high(DW3000_CS_PIN);
-    platform_os_delay_ms(1);  // Wait 1ms for device to fully wake up
+    if (dev == NULL) {
+        return;
+    }
+    uwb_wakeup_device_impl();
 }
 
-int dw3000_port_check_device_id(void)
+STATIC void uwb_wakeup_device_impl(void)
 {
+    // Hardware-specific wakeup sequence for DW3000 from DEEP_SLEEP or SLEEP mode
+    // Per DW3000 datasheet section 5.6.2:
+    // 1. Drive CS low for minimum 500μs (we use 600μs for margin)
+    // 2. Rising edge of CS triggers wakeup
+    // 3. Wait minimum 4ms for internal oscillator stabilization (we use 1ms as device is typically in light sleep)
+    platform_spi_cs_low(UWB_PORT_CS_PIN);
+    platform_os_delay_us_blocking(600);  // Datasheet: min 500μs, using 600μs for safety margin
+    platform_spi_cs_high(UWB_PORT_CS_PIN);
+    platform_os_delay_ms(1);  // Allow oscillator to stabilize before SPI communication
+}
+
+uwb_port_status_t uwb_port_check_device_id(uwb_dev_t *dev)
+{
+    if (dev == NULL) {
+        return UWB_PORT_ERROR_NULL_PTR;
+    }
+    
     int ret = dwt_check_dev_id();
-    return (ret == DWT_SUCCESS) ? DW3000_SUCCESS : DW3000_ERROR;
+    if (ret != DWT_SUCCESS) {
+        return UWB_PORT_ERROR_INVALID_ID;
+    }
+    
+    return UWB_PORT_SUCCESS;
 }
 
-uint32_t dw3000_port_read_device_id(void)
+uint32_t uwb_port_read_device_id(uwb_dev_t *dev)
 {
+    if (dev == NULL) {
+        return 0;
+    }
+    
     return dwt_readdevid();
 }
 
-float dw3000_port_read_temperature(void)
+float uwb_port_read_temperature(uwb_dev_t *dev)
 {
+    if (dev == NULL) {
+        return 0.0f;
+    }
+    
     // Read combined temperature and voltage register
     uint16_t raw_reading = dwt_readtempvbat();
     
@@ -122,8 +161,12 @@ float dw3000_port_read_temperature(void)
     return dwt_convertrawtemperature(raw_temp);
 }
 
-float dw3000_port_read_voltage(void)
+float uwb_port_read_voltage(uwb_dev_t *dev)
 {
+    if (dev == NULL) {
+        return 0.0f;
+    }
+    
     // Read combined temperature and voltage register
     uint16_t raw_reading = dwt_readtempvbat();
     
@@ -132,8 +175,12 @@ float dw3000_port_read_voltage(void)
     return dwt_convertrawvoltage(raw_voltage);
 }
 
-void dw3000_port_read_temp_and_voltage(float *temperature, float *voltage)
+void uwb_port_read_temp_and_voltage(uwb_dev_t *dev, float *temperature, float *voltage)
 {
+    if (dev == NULL || (temperature == NULL && voltage == NULL)) {
+        return;  // Nothing to do if both output pointers are NULL
+    }
+    
     // Optimized: Read both from single register access
     uint16_t raw_reading = dwt_readtempvbat();
     
@@ -150,20 +197,58 @@ void dw3000_port_read_temp_and_voltage(float *temperature, float *voltage)
     }
 }
 
-void dw3000_port_set_pan_id(uint16_t pan_id)
+void uwb_port_set_pan_id(uwb_dev_t *dev, uint16_t pan_id)
 {
+    if (dev == NULL) {
+        return;
+    }
     dwt_setpanid(pan_id);
 }
 
-void dw3000_port_set_address(uint16_t address)
+void uwb_port_set_address(uwb_dev_t *dev, uint16_t address)
 {
+    if (dev == NULL) {
+        return;
+    }
     dwt_setaddress16(address);
 }
 
-int dw3000_port_configure_tx(uint8_t channel)
+/*---------------------------------------------------------------------------
+ * Private Function Implementations (Validation Helpers)
+ *---------------------------------------------------------------------------*/
+
+STATIC bool validate_channel(const uwb_channel_t channel)
 {
+    switch (channel) {
+        case UWB_CHANNEL_1:
+        case UWB_CHANNEL_2:
+        case UWB_CHANNEL_3:
+        case UWB_CHANNEL_4:
+        case UWB_CHANNEL_5:
+        case UWB_CHANNEL_7:
+        case UWB_CHANNEL_9:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/*---------------------------------------------------------------------------
+ * UWB Configuration and Communication Functions
+ *---------------------------------------------------------------------------*/
+
+uwb_port_status_t uwb_port_configure_tx(uwb_dev_t *dev, uwb_channel_t channel)
+{
+    if (dev == NULL) {
+        return UWB_PORT_ERROR_NULL_PTR;
+    }
+    
+    if (!validate_channel(channel)) {
+        return UWB_PORT_ERROR_CONFIG;
+    }
+    
     dwt_config_t config = {
-        .chan = channel,
+        .chan = (uint8_t)channel,
         .txPreambLength = DWT_PLEN_128,
         .rxPAC = DWT_PAC8,
         .txCode = 9,
@@ -179,7 +264,7 @@ int dw3000_port_configure_tx(uint8_t channel)
     };
     
     if (dwt_configure(&config) != DWT_SUCCESS) {
-        return DW3000_ERROR;
+        return UWB_PORT_ERROR_COMM_FAIL;
     }
     
     // Enable 802.15.4 frame filtering - allow data frames
@@ -192,28 +277,37 @@ int dw3000_port_configure_tx(uint8_t channel)
     };
     dwt_configuretxrf(&txconfig);
     
-    return DW3000_SUCCESS;
+    return UWB_PORT_SUCCESS;
 }
 
-int dw3000_port_configure_rx(uint8_t channel)
+uwb_port_status_t uwb_port_configure_rx(uwb_dev_t *dev, uwb_channel_t channel)
 {
+    if (dev == NULL) {
+        return UWB_PORT_ERROR_NULL_PTR;
+    }
+    
     // Use same config as TX
-    if (dw3000_port_configure_tx(channel) != DW3000_SUCCESS) {
-        return DW3000_ERROR;
+    uwb_port_status_t status = uwb_port_configure_tx(dev, channel);
+    if (status != UWB_PORT_SUCCESS) {
+        return status;
     }
     
     // Enable receiver
     if (dwt_rxenable(DWT_START_RX_IMMEDIATE) != DWT_SUCCESS) {
-        return DW3000_ERROR;
+        return UWB_PORT_ERROR_COMM_FAIL;
     }
     
-    return DW3000_SUCCESS;
+    return UWB_PORT_SUCCESS;
 }
 
-int dw3000_port_send_message(const uint8_t *data, uint16_t length)
+uwb_port_status_t uwb_port_send_message(uwb_dev_t *dev, const uint8_t *data, uint16_t length)
 {
-    if (data == NULL || length == 0 || length > 127) {
-        return DW3000_ERROR;
+    if (dev == NULL || data == NULL) {
+        return UWB_PORT_ERROR_NULL_PTR;
+    }
+    
+    if (length == 0 || length > UWB_MAX_MESSAGE_LENGTH) {
+        return UWB_PORT_ERROR_CONFIG;
     }
     
     // Write data to TX buffer
@@ -224,7 +318,7 @@ int dw3000_port_send_message(const uint8_t *data, uint16_t length)
     
     // Start transmission (immediate, no response expected)
     if (dwt_starttx(DWT_START_TX_IMMEDIATE) != DWT_SUCCESS) {
-        return DW3000_ERROR;
+        return UWB_PORT_ERROR_TX_FAIL;
     }
     
     // Wait for TX to complete by polling status
@@ -235,19 +329,19 @@ int dw3000_port_send_message(const uint8_t *data, uint16_t length)
         if (status & DWT_INT_TXFRS_BIT_MASK) {
             // TX complete - clear flag
             dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
-            return DW3000_SUCCESS;
+            return UWB_PORT_SUCCESS;
         }
         platform_os_delay_us_blocking(10);
     }
     
     // Timeout
-    return DW3000_ERROR;
+    return UWB_PORT_ERROR_TIMEOUT;
 }
 
-int dw3000_port_receive_message(uint8_t *data, uint16_t max_length, uint16_t *received_length)
+uwb_port_status_t uwb_port_receive_message(uwb_dev_t *dev, uint8_t *data, uint16_t max_length, uint16_t *received_length)
 {
-    if (data == NULL || received_length == NULL) {
-        return DW3000_ERROR;
+    if (dev == NULL || data == NULL || received_length == NULL) {
+        return UWB_PORT_ERROR_NULL_PTR;
     }
     
     // Read system status register
@@ -261,13 +355,13 @@ int dw3000_port_receive_message(uint8_t *data, uint16_t max_length, uint16_t *re
         dwt_writesysstatuslo(SYS_STATUS_ALL_RX_ERR);
         dwt_forcetrxoff();
         dwt_rxenable(DWT_START_RX_IMMEDIATE);
-        return DW3000_ERROR;
+        return UWB_PORT_ERROR_RX_FAIL;
     }
     
     // Check if good frame received (RXFCG bit set)
     if ((status & DWT_INT_RXFCG_BIT_MASK) == 0) {
         // No good frame received
-        return DW3000_ERROR;
+        return UWB_PORT_ERROR_NO_DATA;
     }
     
     // Get frame length
@@ -279,7 +373,7 @@ int dw3000_port_receive_message(uint8_t *data, uint16_t max_length, uint16_t *re
         dwt_forcetrxoff();
         dwt_writesysstatuslo(DWT_INT_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_ERR);
         dwt_rxenable(DWT_START_RX_IMMEDIATE);
-        return DW3000_ERROR;
+        return UWB_PORT_ERROR_RX_FAIL;
     }
     
     // Read received data (subtract 2-byte CRC from length)
@@ -292,71 +386,71 @@ int dw3000_port_receive_message(uint8_t *data, uint16_t max_length, uint16_t *re
     dwt_writesysstatuslo(SYS_STATUS_ALL_RX_GOOD | SYS_STATUS_ALL_RX_ERR);
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
     
-    return DW3000_SUCCESS;
+    return UWB_PORT_SUCCESS;
 }
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations - SPI Callbacks for Qorvo Driver
  *---------------------------------------------------------------------------*/
 
-STATIC int32_t dw3000_spi_read(uint16_t headerLength, uint8_t *headerBuffer,
+STATIC int32_t uwb_spi_read(uint16_t headerLength, uint8_t *headerBuffer,
                                  uint16_t readLength, uint8_t *readBuffer)
 {
     if ((headerBuffer == NULL) || (readBuffer == NULL)) {
         return DWT_ERROR;
     }
 
-    platform_spi_cs_low(DW3000_CS_PIN);
+    platform_spi_cs_low(UWB_PORT_CS_PIN);
 
     // Transmit header
     if (platform_spi_transmit(headerBuffer, headerLength) != PLATFORM_SPI_SUCCESS) {
-        platform_spi_cs_high(DW3000_CS_PIN);
+        platform_spi_cs_high(UWB_PORT_CS_PIN);
         return DWT_ERROR;
     }
 
-    // Small delay to ensure DW3000 is ready
+    // Small delay to ensure UWB radio is ready (hardware-specific timing requirement)
     for (volatile int i = 0; i < 10; i++);
 
     // Receive data
     if (platform_spi_receive(readBuffer, readLength) != PLATFORM_SPI_SUCCESS) {
-        platform_spi_cs_high(DW3000_CS_PIN);
+        platform_spi_cs_high(UWB_PORT_CS_PIN);
         return DWT_ERROR;
     }
 
-    platform_spi_cs_high(DW3000_CS_PIN);
+    platform_spi_cs_high(UWB_PORT_CS_PIN);
 
     return DWT_SUCCESS;
 }
 
-STATIC int32_t dw3000_spi_write(uint16_t headerLength, const uint8_t *headerBuffer,
+STATIC int32_t uwb_spi_write(uint16_t headerLength, const uint8_t *headerBuffer,
                                   uint16_t bodyLength, const uint8_t *bodyBuffer)
 {
     if (headerBuffer == NULL) {
         return DWT_ERROR;
     }
 
-    platform_spi_cs_low(DW3000_CS_PIN);
+    platform_spi_cs_low(UWB_PORT_CS_PIN);
 
     // Transmit header
     if (platform_spi_transmit(headerBuffer, headerLength) != PLATFORM_SPI_SUCCESS) {
-        platform_spi_cs_high(DW3000_CS_PIN);
+        platform_spi_cs_high(UWB_PORT_CS_PIN);
         return DWT_ERROR;
     }
 
     // Transmit body if present
     if ((bodyLength > 0U) && (bodyBuffer != NULL)) {
         if (platform_spi_transmit(bodyBuffer, bodyLength) != PLATFORM_SPI_SUCCESS) {
-            platform_spi_cs_high(DW3000_CS_PIN);
+            platform_spi_cs_high(UWB_PORT_CS_PIN);
             return DWT_ERROR;
         }
     }
 
-    platform_spi_cs_high(DW3000_CS_PIN);
+    platform_spi_cs_high(UWB_PORT_CS_PIN);
 
     return DWT_SUCCESS;
 }
 
-STATIC int32_t dw3000_spi_write_crc(uint16_t headerLength, const uint8_t *headerBuffer,
+STATIC int32_t uwb_spi_write_crc(uint16_t headerLength, const uint8_t *headerBuffer,
                                       uint16_t bodyLength, const uint8_t *bodyBuffer,
                                       uint8_t crc8)
 {
@@ -364,47 +458,47 @@ STATIC int32_t dw3000_spi_write_crc(uint16_t headerLength, const uint8_t *header
         return DWT_ERROR;
     }
 
-    platform_spi_cs_low(DW3000_CS_PIN);
+    platform_spi_cs_low(UWB_PORT_CS_PIN);
 
     // Transmit header
     if (platform_spi_transmit(headerBuffer, headerLength) != PLATFORM_SPI_SUCCESS) {
-        platform_spi_cs_high(DW3000_CS_PIN);
+        platform_spi_cs_high(UWB_PORT_CS_PIN);
         return DWT_ERROR;
     }
 
     // Transmit body if present
     if ((bodyLength > 0U) && (bodyBuffer != NULL)) {
         if (platform_spi_transmit(bodyBuffer, bodyLength) != PLATFORM_SPI_SUCCESS) {
-            platform_spi_cs_high(DW3000_CS_PIN);
+            platform_spi_cs_high(UWB_PORT_CS_PIN);
             return DWT_ERROR;
         }
     }
 
     // Transmit CRC
     if (platform_spi_transmit(&crc8, 1) != PLATFORM_SPI_SUCCESS) {
-        platform_spi_cs_high(DW3000_CS_PIN);
+        platform_spi_cs_high(UWB_PORT_CS_PIN);
         return DWT_ERROR;
     }
 
-    platform_spi_cs_high(DW3000_CS_PIN);
+    platform_spi_cs_high(UWB_PORT_CS_PIN);
 
     return DWT_SUCCESS;
 }
 
-STATIC void dw3000_spi_set_slow_rate(void)
+STATIC void uwb_spi_set_slow_rate(void)
 {
     // Ensure correct SPI peripheral is selected before changing speed
-    platform_spi_cs_low(DW3000_CS_PIN);
+    platform_spi_cs_low(UWB_PORT_CS_PIN);
     platform_spi_set_speed(PLATFORM_SPI_SPEED_SLOW);
-    platform_spi_cs_high(DW3000_CS_PIN);
+    platform_spi_cs_high(UWB_PORT_CS_PIN);
 }
 
-STATIC void dw3000_spi_set_fast_rate(void)
+STATIC void uwb_spi_set_fast_rate(void)
 {
     // Ensure correct SPI peripheral is selected before changing speed
-    platform_spi_cs_low(DW3000_CS_PIN);
+    platform_spi_cs_low(UWB_PORT_CS_PIN);
     platform_spi_set_speed(PLATFORM_SPI_SPEED_FAST);
-    platform_spi_cs_high(DW3000_CS_PIN);
+    platform_spi_cs_high(UWB_PORT_CS_PIN);
 }
 
 /*---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------
- * @file    bmi323_test.h
- * @brief   BMI323 hardware connection test module
+ * @file    imu_test.h
+ * @brief   IMU hardware connection test module
  *---------------------------------------------------------------------------*/
 #pragma once
 
