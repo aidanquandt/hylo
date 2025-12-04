@@ -12,6 +12,9 @@
 #include "uwb_port.h"
 #include "state_machine.h"
 #include "mac_802154.h"
+#include "uart_manager.h"
+#include "imu_test.h"
+#include <inttypes.h>
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -324,6 +327,24 @@ STATIC void uwb_test_state_active_process(void)
                     if (payload_len > 0 && payload_len < MAC_MAX_PAYLOAD_SIZE) {
                         rx_frame->payload[payload_len] = '\0';
                         rx_state.parsed_value = (uint32_t)atoi((char*)rx_frame->payload);
+                        
+                        // Get IMU accelerometer readings
+                        imu_sensor_data_t accel;
+                        bool imu_valid = imu_test_get_accel(&accel);
+                        
+                        // Print parsed value and IMU data via UART
+                        if (imu_valid) {
+                            // Convert float to int (multiply by 1000 to preserve 3 decimal places)
+                            int32_t x_millig = (int32_t)(accel.x * 1000.0f);
+                            int32_t y_millig = (int32_t)(accel.y * 1000.0f);
+                            int32_t z_millig = (int32_t)(accel.z * 1000.0f);
+                            
+                            uart_manager_print("RX: %4" PRIu32 " | Accel: X=%6" PRId32 " Y=%6" PRId32 " Z=%6" PRId32 " mg\r\n", 
+                                             rx_state.parsed_value, 
+                                             x_millig, y_millig, z_millig);
+                        } else {
+                            uart_manager_print("RX: %4" PRIu32 "\r\n", rx_state.parsed_value);
+                        }
                     }
                 }
             }

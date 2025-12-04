@@ -205,3 +205,37 @@ STATIC void imu_test_state_active_process(void)
     // Read sensors in active state
     read_sensors();
 }
+
+/*---------------------------------------------------------------------------
+ * Public Function Implementations
+ *---------------------------------------------------------------------------*/
+
+bool imu_test_get_accel(imu_sensor_data_t *accel)
+{
+    if (accel == NULL || imu_state_machine.curr_state != STATE_ACTIVE) {
+        return false;
+    }
+    
+    *accel = measurements.accel;
+    return true;
+}
+
+bool imu_test_get_gyro(imu_sensor_data_t *gyro)
+{
+    if (gyro == NULL || imu_state_machine.curr_state != STATE_ACTIVE) {
+        return false;
+    }
+    
+    *gyro = measurements.gyro;
+    return true;
+}
+
+float imu_test_get_temperature(void)
+{
+    return measurements.temperature;
+}
+
+bool imu_test_is_ready(void)
+{
+    return (imu_state_machine.curr_state == STATE_ACTIVE);
+}
