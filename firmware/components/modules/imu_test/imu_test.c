@@ -11,6 +11,7 @@
 #include "platform_gpio.h"
 #include "imu_port.h"
 #include "state_machine.h"
+#include "uart_manager.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -18,6 +19,7 @@
 #define IMU_EXPECTED_CHIP_ID_1  (0x43U)  // BMI323 Chip ID
 #define IMU_EXPECTED_CHIP_ID_2  (0x44U)  // BMI330 Chip ID
 #define STARTUP_DELAY_MS        (2000U)  // Wait 2 seconds before probing
+#define PRINT_INTERVAL_MS       (500U)   // Print IMU data every 500ms
 
 // State machine states
 typedef enum {
@@ -93,6 +95,9 @@ STATIC state_machine_s imu_state_machine = {
 // Hardware state
 STATIC imu_dev_t *imu_dev = NULL;
 STATIC imu_measurements_t measurements = {0};
+
+// Print throttling
+STATIC uint32_t print_counter = 0;
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -193,10 +198,10 @@ STATIC void imu_test_state_initialization_on_entry(uint16_t prevState)
         return;
     }
     
-    // Configure accelerometer: ±2g range, 100 Hz ODR, 4-sample averaging
-    imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_2G, IMU_ODR_100HZ, IMU_AVG_4);
+    // Configure accelerometer: ±16g range, 100 Hz ODR, 4-sample averaging
+    imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_16G, IMU_ODR_100HZ, IMU_AVG_4);
     
-    // Configure gyroscope: ±2000 deg/s range, 100 Hz ODR, 4-sample averaging
+    // Configure gyroscope: ±2000 deg/s range (maximum), 100 Hz ODR, 4-sample averaging
     imu_port_configure_gyro(imu_dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_100HZ, IMU_AVG_4);
 }
 
@@ -204,4 +209,31 @@ STATIC void imu_test_state_active_process(void)
 {
     // Read sensors in active state
     read_sensors();
+    
+    // Print IMU data at reduced rate (every 500ms at 100Hz = 50 ticks)
+    print_counter++;
+    if (print_counter >= MS_TO_100HZ_TICKS(PRINT_INTERVAL_MS)) {
+        print_counter = 0;
+        
+        // Convert floats to integers for printing (since %f may not be supported)
+        // Accelerometer: multiply by 1000 to get millig (mg)
+        int32_t acc_x = (int32_t)(measurements.accel.x * 1000.0f);
+        int32_t acc_y = (int32_t)(measurements.accel.y * 1000.0f);
+        int32_t acc_z = (int32_t)(measurements.accel.z * 1000.0f);
+        
+        // Gyroscope: multiply by 100 to get centidegrees/s (cdps)
+        int32_t gyr_x = (int32_t)(measurements.gyro.x * 100.0f);
+        int32_t gyr_y = (int32_t)(measurements.gyro.y * 100.0f);
+        int32_t gyr_z = (int32_t)(measurements.gyro.z * 100.0f);
+        
+        // Temperature: multiply by 10 to get decidegrees
+        int32_t temp = (int32_t)(measurements.temperature * 10.0f);
+        
+        uart_manager_print("IMU [ID:0x%02X] Accel: X=%6d Y=%6d Z=%6d mg | "
+                          "Gyro: X=%7d Y=%7d Z=%7d cdps | Temp: %3d.%01d C\r\n",
+                          measurements.chip_id,
+                          (int)acc_x, (int)acc_y, (int)acc_z,
+                          (int)gyr_x, (int)gyr_y, (int)gyr_z,
+                          (int)(temp / 10), (int)(temp % 10));
+    }
 }
