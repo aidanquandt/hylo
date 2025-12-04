@@ -26,6 +26,14 @@ typedef enum {
     STATE_ACTIVE                // Normal operation - reading sensors
 } imu_state_E;
 
+// IMU measurement data
+typedef struct {
+    imu_sensor_data_t accel;
+    imu_sensor_data_t gyro;
+    float temperature;
+    uint8_t chip_id;
+} imu_measurements_t;
+
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
@@ -36,7 +44,6 @@ STATIC void read_sensors(void);
 STATIC uint16_t imu_test_transition_logic(uint16_t currentState, uint32_t stateTimer);
 
 // State handlers
-STATIC void imu_test_state_startup_process(void);
 STATIC void imu_test_state_initialization_on_entry(uint16_t prevState);
 STATIC void imu_test_state_active_process(void);
 
@@ -44,12 +51,12 @@ STATIC void imu_test_state_active_process(void);
  * Module Functions
  *---------------------------------------------------------------------------*/
 STATIC void imu_test_init(void);
-STATIC void imu_test_process_1Hz(void);
+STATIC void imu_test_process_100Hz(void);
 
 extern const module_S imu_test_module;
 const module_S imu_test_module = {
     .module_init = imu_test_init,
-    .module_process_1Hz = imu_test_process_1Hz,
+    .module_process_100Hz = imu_test_process_100Hz,
 };
 
 /*---------------------------------------------------------------------------
@@ -58,7 +65,7 @@ const module_S imu_test_module = {
 // State machine definition
 STATIC const state_s imu_states[] = {
     [STATE_STARTUP] = {
-        .process = imu_test_state_startup_process,
+        .process = NULL,
         .onEntry = NULL,
         .onExit = NULL
     },
@@ -85,15 +92,7 @@ STATIC state_machine_s imu_state_machine = {
 
 // Hardware state
 STATIC imu_dev_t *imu_dev = NULL;
-STATIC uint8_t chip_id = 0;
-STATIC float temperature = 0.0f;
-STATIC bool hardware_ready = false;
-
-STATIC int probe_result = 0;  // Store probe_and_init return value
-
-STATIC imu_sensor_data_t accel_data = {0};
-STATIC imu_sensor_data_t gyro_data = {0};
-STATIC uint32_t sensor_reads = 0;  // Counter for number of sensor reads
+STATIC imu_measurements_t measurements = {0};
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -112,26 +111,24 @@ STATIC bool verify_chip_id(void)
     }
     
     // Read and store chip ID
-    chip_id = imu_port_read_chip_id(imu_dev);
+    measurements.chip_id = imu_port_read_chip_id(imu_dev);
     
     // Verify it matches expected value (BMI323 or BMI330)
-    return (chip_id == IMU_EXPECTED_CHIP_ID_1 || chip_id == IMU_EXPECTED_CHIP_ID_2);
+    return (measurements.chip_id == IMU_EXPECTED_CHIP_ID_1 || measurements.chip_id == IMU_EXPECTED_CHIP_ID_2);
 }
 
 STATIC void read_sensors(void)
 {
-    if (imu_dev == NULL || !hardware_ready) {
+    if (imu_dev == NULL) {
         return;
     }
     
     // Read temperature
-    temperature = imu_port_read_temperature(imu_dev);
+    // maybe we can poll this one at lower rate? - leaving for now
+    measurements.temperature = imu_port_read_temperature(imu_dev);
     
     // Read both accelerometer and gyroscope in single optimized call
-    int ret = imu_port_read_accel_and_gyro(imu_dev, &accel_data, &gyro_data);
-    if (ret == IMU_PORT_SUCCESS) {
-        sensor_reads++;
-    }
+    imu_port_read_accel_and_gyro(imu_dev, &measurements.accel, &measurements.gyro);
 }
 
 STATIC void imu_test_init(void)
@@ -139,14 +136,9 @@ STATIC void imu_test_init(void)
     // State machine is already initialized with static values
 }
 
-STATIC void imu_test_process_1Hz(void)
+STATIC void imu_test_process_100Hz(void)
 {
-    // Read sensors if hardware is ready
-    if (hardware_ready) {
-        read_sensors();
-    }
-
-    // Run state machine at 1Hz
+    // Run state machine at 100Hz
     state_machine_periodic(&imu_state_machine);
 }
 
@@ -156,17 +148,15 @@ STATIC uint16_t imu_test_transition_logic(uint16_t currentState, uint32_t stateT
     
     switch (currentState) {
         case STATE_STARTUP:
-            // Transition to INITIALIZATION after startup delay
-            if (stateTimer >= MS_TO_S(STARTUP_DELAY_MS)) {
+            // Transition to INITIALIZATION after startup delay (200 ticks at 100Hz = 2000ms)
+            if (stateTimer >= MS_TO_100HZ_TICKS(STARTUP_DELAY_MS)) {
                 nextState = STATE_INITIALIZATION;
             }
             break;
             
         case STATE_INITIALIZATION:
-            // Transition to ACTIVE if hardware is ready
-            if (hardware_ready) {
-                nextState = STATE_ACTIVE;
-            }
+            // Transition to ACTIVE immediately (initialization happens in onEntry)
+            nextState = STATE_ACTIVE;
             break;
             
         case STATE_ACTIVE:
@@ -182,11 +172,6 @@ STATIC uint16_t imu_test_transition_logic(uint16_t currentState, uint32_t stateT
     return nextState;
 }
 
-STATIC void imu_test_state_startup_process(void)
-{
-    // Nothing to do - timer automatically increments
-}
-
 STATIC void imu_test_state_initialization_on_entry(uint16_t prevState)
 {   
     (void)prevState;  // Unused
@@ -194,11 +179,11 @@ STATIC void imu_test_state_initialization_on_entry(uint16_t prevState)
     // Get the port device structure
     imu_dev = imu_port_init();
     if (imu_dev == NULL) {
-        probe_result = -999;  // Debug: port_init failed
         return;
     }
+    
     // Probe and initialize the device (this handles the mode switch and SPI setup)
-    probe_result = imu_port_probe_and_init(imu_dev);
+    int probe_result = imu_port_probe_and_init(imu_dev);
     if (probe_result != IMU_PORT_SUCCESS) {
         return;
     }
@@ -208,20 +193,15 @@ STATIC void imu_test_state_initialization_on_entry(uint16_t prevState)
         return;
     }
     
-    hardware_ready = true;
-    
     // Configure accelerometer: ±2g range, 100 Hz ODR
     imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_2G, IMU_ODR_100HZ);
     
     // Configure gyroscope: ±2000 deg/s range, 100 Hz ODR
     imu_port_configure_gyro(imu_dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_100HZ);
-    
-    // Read initial measurements
-    read_sensors();
 }
 
 STATIC void imu_test_state_active_process(void)
 {
-    // Sensor reading happens in 1Hz periodic callback
-    // This state is just to show the system is running
+    // Read sensors in active state
+    read_sensors();
 }
