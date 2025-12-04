@@ -9,6 +9,7 @@
 #include "imu_test.h"
 #include "module.h"
 #include "platform_gpio.h"
+#include "platform_os.h"
 #include "imu_port.h"
 #include "state_machine.h"
 #include "uart_manager.h"
@@ -128,12 +129,17 @@ STATIC void read_sensors(void)
         return;
     }
     
-    // Read temperature
-    // maybe we can poll this one at lower rate? - leaving for now
-    measurements.temperature = imu_port_read_temperature(imu_dev);
+    // Read sensors separately instead of combined to avoid SPI sync issues
+    // with long jumper wires. Each transaction is independent with its own CS cycle.
     
-    // Read both accelerometer and gyroscope in single optimized call
-    imu_port_read_accel_and_gyro(imu_dev, &measurements.accel, &measurements.gyro);
+    // Read accelerometer
+    imu_port_read_accel(imu_dev, &measurements.accel);
+    
+    // Read gyroscope
+    imu_port_read_gyro(imu_dev, &measurements.gyro);
+    
+    // Read temperature (polled less frequently would be better, but keeping for now)
+    measurements.temperature = imu_port_read_temperature(imu_dev);
 }
 
 STATIC void imu_test_init(void)
@@ -198,8 +204,8 @@ STATIC void imu_test_state_initialization_on_entry(uint16_t prevState)
         return;
     }
     
-    // Configure accelerometer: ±16g range, 100 Hz ODR, 4-sample averaging
-    imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_16G, IMU_ODR_100HZ, IMU_AVG_4);
+    // Configure accelerometer: ±2g range, 100 Hz ODR, 4-sample averaging
+    imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_2G, IMU_ODR_100HZ, IMU_AVG_4);
     
     // Configure gyroscope: ±2000 deg/s range (maximum), 100 Hz ODR, 4-sample averaging
     imu_port_configure_gyro(imu_dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_100HZ, IMU_AVG_4);
