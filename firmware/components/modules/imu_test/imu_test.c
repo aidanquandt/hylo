@@ -193,11 +193,11 @@ STATIC void imu_test_state_initialization_on_entry(uint16_t prevState)
         return;
     }
     
-    // Configure accelerometer: ±2g range, 100 Hz ODR
-    imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_2G, IMU_ODR_100HZ);
+    // Configure accelerometer: ±2g range, 100 Hz ODR, 4-sample averaging
+    imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_2G, IMU_ODR_100HZ, IMU_AVG_4);
     
-    // Configure gyroscope: ±2000 deg/s range, 100 Hz ODR
-    imu_port_configure_gyro(imu_dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_100HZ);
+    // Configure gyroscope: ±2000 deg/s range, 100 Hz ODR, 4-sample averaging
+    imu_port_configure_gyro(imu_dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_100HZ, IMU_AVG_4);
 }
 
 STATIC void imu_test_state_active_process(void)

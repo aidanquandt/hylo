@@ -77,6 +77,17 @@ typedef enum {
     IMU_ODR_6400HZ   = 0x0E   ///< 6400 Hz
 } imu_odr_t;
 
+/** Averaging (filter) settings - number of samples to average */
+typedef enum {
+    IMU_AVG_1  = 0x00,  ///< No averaging (1 sample)
+    IMU_AVG_2  = 0x01,  ///< Average 2 samples
+    IMU_AVG_4  = 0x02,  ///< Average 4 samples
+    IMU_AVG_8  = 0x03,  ///< Average 8 samples
+    IMU_AVG_16 = 0x04,  ///< Average 16 samples
+    IMU_AVG_32 = 0x05,  ///< Average 32 samples
+    IMU_AVG_64 = 0x06   ///< Average 64 samples
+} imu_avg_num_t;
+
 /*---------------------------------------------------------------------------
  * Public Types
  *---------------------------------------------------------------------------*/
@@ -206,13 +217,14 @@ imu_port_status_t imu_port_read_accel_and_gyro(imu_dev_t *dev, imu_sensor_data_t
  * @param[in] dev   Pointer to IMU device handle
  * @param[in] range Accelerometer range (see imu_accel_range_t)
  * @param[in] odr   Output data rate (see imu_odr_t)
+ * @param[in] avg_num Number of samples to average (see imu_avg_num_t)
  * 
  * @return IMU_PORT_SUCCESS on success
  * @return IMU_PORT_ERROR_NULL_PTR if dev is NULL
- * @return IMU_PORT_ERROR_CONFIG if range or odr is invalid
+ * @return IMU_PORT_ERROR_CONFIG if range, odr, or avg_num is invalid
  * @return IMU_PORT_ERROR_COMM_FAIL if configuration fails
  */
-imu_port_status_t imu_port_configure_accel(imu_dev_t *dev, imu_accel_range_t range, imu_odr_t odr);
+imu_port_status_t imu_port_configure_accel(imu_dev_t *dev, imu_accel_range_t range, imu_odr_t odr, imu_avg_num_t avg_num);
 
 /**
  * @brief Configure gyroscope settings
@@ -223,13 +235,52 @@ imu_port_status_t imu_port_configure_accel(imu_dev_t *dev, imu_accel_range_t ran
  * @param[in] dev   Pointer to IMU device handle
  * @param[in] range Gyroscope range (see imu_gyro_range_t)
  * @param[in] odr   Output data rate (see imu_odr_t)
+ * @param[in] avg_num Number of samples to average (see imu_avg_num_t)
  * 
  * @return IMU_PORT_SUCCESS on success
  * @return IMU_PORT_ERROR_NULL_PTR if dev is NULL
- * @return IMU_PORT_ERROR_CONFIG if range or odr is invalid
+ * @return IMU_PORT_ERROR_CONFIG if range, odr, or avg_num is invalid
  * @return IMU_PORT_ERROR_COMM_FAIL if configuration fails
  */
-imu_port_status_t imu_port_configure_gyro(imu_dev_t *dev, imu_gyro_range_t range, imu_odr_t odr);
+imu_port_status_t imu_port_configure_gyro(imu_dev_t *dev, imu_gyro_range_t range, imu_odr_t odr, imu_avg_num_t avg_num);
+
+/**
+ * @brief Configure accelerometer averaging filter
+ * 
+ * Sets the number of samples to average for noise reduction.
+ * Higher averaging reduces noise but increases latency.
+ * 
+ * @param[in] dev Pointer to IMU device handle
+ * @param[in] avg_num Number of samples to average (1, 2, 4, 8, 16, 32, or 64)
+ * 
+ * @return IMU_PORT_SUCCESS on success
+ * @return IMU_PORT_ERROR_NULL_PTR if dev is NULL
+ * @return IMU_PORT_ERROR_CONFIG if avg_num is invalid
+ * @return IMU_PORT_ERROR_COMM_FAIL if SPI communication fails
+ * 
+ * @note The averaging filter reduces noise at the cost of increased latency.
+ *       For 100Hz ODR with AVG_4, effective update rate is still 100Hz but
+ *       each sample is averaged over 4 consecutive measurements.
+ */
+imu_port_status_t imu_port_set_accel_filter(imu_dev_t *dev, imu_avg_num_t avg_num);
+
+/**
+ * @brief Configure gyroscope averaging filter
+ * 
+ * Sets the number of samples to average for noise reduction.
+ * Higher averaging reduces noise but increases latency.
+ * 
+ * @param[in] dev Pointer to IMU device handle
+ * @param[in] avg_num Number of samples to average (1, 2, 4, 8, 16, 32, or 64)
+ * 
+ * @return IMU_PORT_SUCCESS on success
+ * @return IMU_PORT_ERROR_NULL_PTR if dev is NULL
+ * @return IMU_PORT_ERROR_CONFIG if avg_num is invalid
+ * @return IMU_PORT_ERROR_COMM_FAIL if SPI communication fails
+ * 
+ * @note The averaging filter reduces noise at the cost of increased latency.
+ */
+imu_port_status_t imu_port_set_gyro_filter(imu_dev_t *dev, imu_avg_num_t avg_num);
 
 /**
  * @brief Delay function for IMU driver

@@ -33,6 +33,7 @@ STATIC void imu_delay_us(uint32_t period_us, void *intf_ptr);
 STATIC bool validate_accel_range(imu_accel_range_t range);
 STATIC bool validate_gyro_range(imu_gyro_range_t range);
 STATIC bool validate_odr(imu_odr_t odr);
+STATIC bool validate_avg_num(imu_avg_num_t avg_num);
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -231,14 +232,14 @@ imu_port_status_t imu_port_read_accel_and_gyro(imu_dev_t *dev, imu_sensor_data_t
     return IMU_PORT_SUCCESS;
 }
 
-imu_port_status_t imu_port_configure_accel(imu_dev_t *dev, imu_accel_range_t range, imu_odr_t odr)
+imu_port_status_t imu_port_configure_accel(imu_dev_t *dev, imu_accel_range_t range, imu_odr_t odr, imu_avg_num_t avg_num)
 {
     if (dev == NULL) {
         return IMU_PORT_ERROR_NULL_PTR;
     }
     
     // Validate parameters
-    if (!validate_accel_range(range) || !validate_odr(odr)) {
+    if (!validate_accel_range(range) || !validate_odr(odr) || !validate_avg_num(avg_num)) {
         return IMU_PORT_ERROR_CONFIG;
     }
     
@@ -251,9 +252,10 @@ imu_port_status_t imu_port_configure_accel(imu_dev_t *dev, imu_accel_range_t ran
         return IMU_PORT_ERROR_COMM_FAIL;
     }
     
-    // Set new range, ODR, and enable sensor
+    // Set new range, ODR, averaging, and enable sensor
     config.cfg.acc.range = (uint8_t)range;
     config.cfg.acc.odr = (uint16_t)odr;
+    config.cfg.acc.avg_num = (uint8_t)avg_num;
     config.cfg.acc.acc_mode = BMI3_ACC_MODE_NORMAL;  // Enable accelerometer
     
     // Apply configuration
@@ -265,14 +267,14 @@ imu_port_status_t imu_port_configure_accel(imu_dev_t *dev, imu_accel_range_t ran
     return IMU_PORT_SUCCESS;
 }
 
-imu_port_status_t imu_port_configure_gyro(imu_dev_t *dev, imu_gyro_range_t range, imu_odr_t odr)
+imu_port_status_t imu_port_configure_gyro(imu_dev_t *dev, imu_gyro_range_t range, imu_odr_t odr, imu_avg_num_t avg_num)
 {
     if (dev == NULL) {
         return IMU_PORT_ERROR_NULL_PTR;
     }
     
     // Validate parameters
-    if (!validate_gyro_range(range) || !validate_odr(odr)) {
+    if (!validate_gyro_range(range) || !validate_odr(odr) || !validate_avg_num(avg_num)) {
         return IMU_PORT_ERROR_CONFIG;
     }
     
@@ -285,10 +287,75 @@ imu_port_status_t imu_port_configure_gyro(imu_dev_t *dev, imu_gyro_range_t range
         return IMU_PORT_ERROR_COMM_FAIL;
     }
     
-    // Set new range, ODR, and enable sensor
+    // Set new range, ODR, averaging, and enable sensor
     config.cfg.gyr.range = (uint16_t)range;
     config.cfg.gyr.odr = (uint16_t)odr;
+    config.cfg.gyr.avg_num = (uint8_t)avg_num;
     config.cfg.gyr.gyr_mode = BMI3_GYR_MODE_NORMAL;  // Enable gyroscope
+    
+    // Apply configuration
+    rslt = bmi323_set_sensor_config(&config, 1, &dev->bmi_dev);
+    if (rslt != BMI3_OK) {
+        return IMU_PORT_ERROR_COMM_FAIL;
+    }
+    
+    return IMU_PORT_SUCCESS;
+}
+
+imu_port_status_t imu_port_set_accel_filter(imu_dev_t *dev, imu_avg_num_t avg_num)
+{
+    if (dev == NULL) {
+        return IMU_PORT_ERROR_NULL_PTR;
+    }
+    
+    // Validate parameter
+    if (!validate_avg_num(avg_num)) {
+        return IMU_PORT_ERROR_CONFIG;
+    }
+    
+    struct bmi3_sens_config config = {0};
+    config.type = BMI323_ACCEL;
+    
+    // Get current configuration
+    int8_t rslt = bmi323_get_sensor_config(&config, 1, &dev->bmi_dev);
+    if (rslt != BMI3_OK) {
+        return IMU_PORT_ERROR_COMM_FAIL;
+    }
+    
+    // Set averaging filter
+    config.cfg.acc.avg_num = (uint8_t)avg_num;
+    
+    // Apply configuration
+    rslt = bmi323_set_sensor_config(&config, 1, &dev->bmi_dev);
+    if (rslt != BMI3_OK) {
+        return IMU_PORT_ERROR_COMM_FAIL;
+    }
+    
+    return IMU_PORT_SUCCESS;
+}
+
+imu_port_status_t imu_port_set_gyro_filter(imu_dev_t *dev, imu_avg_num_t avg_num)
+{
+    if (dev == NULL) {
+        return IMU_PORT_ERROR_NULL_PTR;
+    }
+    
+    // Validate parameter
+    if (!validate_avg_num(avg_num)) {
+        return IMU_PORT_ERROR_CONFIG;
+    }
+    
+    struct bmi3_sens_config config = {0};
+    config.type = BMI323_GYRO;
+    
+    // Get current configuration
+    int8_t rslt = bmi323_get_sensor_config(&config, 1, &dev->bmi_dev);
+    if (rslt != BMI3_OK) {
+        return IMU_PORT_ERROR_COMM_FAIL;
+    }
+    
+    // Set averaging filter
+    config.cfg.gyr.avg_num = (uint8_t)avg_num;
     
     // Apply configuration
     rslt = bmi323_set_sensor_config(&config, 1, &dev->bmi_dev);
@@ -347,6 +414,22 @@ STATIC bool validate_odr(imu_odr_t odr)
         case IMU_ODR_1600HZ:
         case IMU_ODR_3200HZ:
         case IMU_ODR_6400HZ:
+            return true;
+        default:
+            return false;
+    }
+}
+
+STATIC bool validate_avg_num(imu_avg_num_t avg_num)
+{
+    switch (avg_num) {
+        case IMU_AVG_1:
+        case IMU_AVG_2:
+        case IMU_AVG_4:
+        case IMU_AVG_8:
+        case IMU_AVG_16:
+        case IMU_AVG_32:
+        case IMU_AVG_64:
             return true;
         default:
             return false;
