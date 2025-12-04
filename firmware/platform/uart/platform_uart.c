@@ -7,10 +7,14 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "platform_uart.h"
+#include <stdarg.h>
+#include <stdio.h>
 
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
+
+#define PLATFORM_UART_PRINT_BUFFER_SIZE 256
 
 // UART peripheral handles
 extern UART_HandleTypeDef huart4;  // Printing (USB to UART bridge)
@@ -59,4 +63,27 @@ platform_uart_status_E platform_uart_receive(UART_HandleTypeDef *huart, uint8_t 
         return PLATFORM_UART_TIMEOUT;
     else
         return PLATFORM_UART_ERROR;
+}
+
+platform_uart_status_E platform_uart_print(const char *format, ...)
+{
+    if (format == NULL)
+        return PLATFORM_UART_ERROR;
+
+    char buffer[PLATFORM_UART_PRINT_BUFFER_SIZE];
+    va_list args;
+    va_start(args, format);
+    
+    int length = vsnprintf(buffer, PLATFORM_UART_PRINT_BUFFER_SIZE, format, args); //format the string into a buffer
+    
+    va_end(args);
+    
+    if (length < 0)
+        return PLATFORM_UART_ERROR;
+    
+    // Truncate if buffer was too small
+    if (length >= PLATFORM_UART_PRINT_BUFFER_SIZE)
+        length = PLATFORM_UART_PRINT_BUFFER_SIZE - 1;
+    
+    return platform_uart_transmit(PLATFORM_UART_PRINT, (const uint8_t *)buffer, length);
 }

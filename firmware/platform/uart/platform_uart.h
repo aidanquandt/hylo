@@ -40,4 +40,13 @@ platform_uart_status_E platform_uart_transmit(UART_HandleTypeDef *huart, const u
  */
 platform_uart_status_E platform_uart_receive(UART_HandleTypeDef *huart, uint8_t *data, size_t length);
 
+
+/**
+ * @brief Print formatted string to UART (printf-style)
+ * @param format Format string (printf-style)
+ * @param ... Variable arguments
+ * @return PLATFORM_UART_SUCCESS if OK
+ */
+platform_uart_status_E platform_uart_print(const char *format, ...) __attribute__((format(printf, 1, 2))); //for compile-time format string checking
+
 #endif // PLATFORM_UART_H
