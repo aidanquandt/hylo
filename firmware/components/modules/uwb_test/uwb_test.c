@@ -40,6 +40,40 @@ typedef enum {
     STATE_ACTIVE                // Normal operation (TX/RX)
 } uwb_state_E;
 
+// UWB measurement data
+typedef struct {
+    uint32_t device_id;
+    float temperature;
+    float voltage;
+} uwb_measurements_t;
+
+// 802.15.4 addressing configuration
+typedef struct {
+    uint16_t my_pan_id;
+    uint16_t my_address;
+    uint16_t tx_dest_addr;
+#ifdef UWB_TX_MODE
+    uint8_t tx_sequence;
+#endif
+} uwb_addressing_t;
+
+// RX state
+typedef struct {
+    uint8_t buffer[MAX_MESSAGE_LENGTH];
+    uint16_t length;
+    uint32_t parsed_value;
+    uint32_t count;
+    uint32_t checks;
+} uwb_rx_state_t;
+
+// TX state
+typedef struct {
+    uint32_t attempts;
+#ifdef UWB_TX_MODE
+    uint16_t counter;
+#endif
+} uwb_tx_state_t;
+
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
@@ -99,31 +133,17 @@ STATIC state_machine_s uwb_state_machine = {
 
 // Hardware state
 STATIC uwb_dev_t *uwb_dev = NULL;
-STATIC uint32_t device_id = 0;
-STATIC float temperature = 0.0f;
-STATIC float voltage = 0.0f;
-STATIC bool hardware_ready = false;
-
-// 802.15.4 addressing
-STATIC uint16_t my_pan_id = MAC_DEFAULT_PAN_ID;     // This device's PAN ID
-STATIC uint16_t my_address = MY_ADDRESS;        // This device's short address (from define)
-STATIC uint16_t tx_dest_addr = DEST_ADDRESS;    // Destination address (from define)
+STATIC uwb_measurements_t measurements = {0};
+STATIC uwb_addressing_t addressing = {
+    .my_pan_id = MAC_DEFAULT_PAN_ID,
+    .my_address = MY_ADDRESS,
+    .tx_dest_addr = DEST_ADDRESS,
 #ifdef UWB_TX_MODE
-STATIC uint8_t tx_sequence = 0;                 // Frame sequence number
+    .tx_sequence = 0,
 #endif
-
-// RX state
-STATIC uint8_t rx_buffer[MAX_MESSAGE_LENGTH];
-STATIC uint16_t rx_length = 0;
-STATIC uint32_t rx_parsed_value = 0;   // Parsed number from received message (watch in debugger)
-STATIC uint32_t rx_count = 0;          // Number of messages received
-STATIC uint32_t rx_checks = 0;         // Number of RX checks (debug)
-
-// TX state
-STATIC uint32_t tx_attempts = 0;       // Number of TX attempts (debug)
-#ifdef UWB_TX_MODE
-STATIC uint16_t tx_counter = 0;        // Incrementing counter 0-6699
-#endif
+};
+STATIC uwb_rx_state_t rx_state = {0};
+STATIC uwb_tx_state_t tx_state = {0};
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -142,10 +162,10 @@ STATIC bool verify_device_id(void)
     }
     
     // Read and store device ID
-    device_id = uwb_port_read_device_id(uwb_dev);
+    measurements.device_id = uwb_port_read_device_id(uwb_dev);
     
     // Verify it matches expected value
-    return (device_id == UWB_EXPECTED_DEV_ID);
+    return (measurements.device_id == UWB_EXPECTED_DEV_ID);
 }
 
 STATIC void read_measurements(void)
@@ -154,7 +174,7 @@ STATIC void read_measurements(void)
         return;
     }
     // Read and store IC temperature and voltage (single optimized call)
-    uwb_port_read_temp_and_voltage(uwb_dev, &temperature, &voltage);
+    uwb_port_read_temp_and_voltage(uwb_dev, &measurements.temperature, &measurements.voltage);
 }
 
 STATIC void uwb_test_init(void)
@@ -166,11 +186,6 @@ STATIC void uwb_test_process_1Hz(void)
 {
     // Toggle LED to show we're running
     platform_gpio_toggle_led_green();
-    
-    // Read measurements if hardware is ready
-    if (hardware_ready) {
-        read_measurements();
-    }
     
     // Run state machine at 1Hz
     state_machine_periodic(&uwb_state_machine);
@@ -189,10 +204,8 @@ STATIC uint16_t uwb_test_transition_logic(uint16_t currentState, uint32_t stateT
             break;
             
         case STATE_INITIALIZATION:
-            // Transition to ACTIVE if hardware is ready
-            if (hardware_ready) {
-                nextState = STATE_ACTIVE;
-            }
+            // Transition to ACTIVE immediately (initialization happens in onEntry)
+            nextState = STATE_ACTIVE;
             break;
             
         case STATE_ACTIVE:
@@ -234,22 +247,20 @@ STATIC void uwb_test_state_initialization_on_entry(uint16_t prevState)
         return;
     }
     
-    hardware_ready = true;
-    
     // Set 802.15.4 addressing
-    uwb_port_set_pan_id(uwb_dev, my_pan_id);
-    uwb_port_set_address(uwb_dev, my_address);
+    uwb_port_set_pan_id(uwb_dev, addressing.my_pan_id);
+    uwb_port_set_address(uwb_dev, addressing.my_address);
     
     // Configure TX or RX mode based on compile-time define
 #ifdef UWB_TX_MODE
     uwb_port_configure_tx(uwb_dev, UWB_DEFAULT_CHANNEL);
-    tx_attempts = 0;
+    tx_state.attempts = 0;
 #else
     uwb_port_configure_rx(uwb_dev, UWB_DEFAULT_CHANNEL);
-    rx_length = 0;
-    rx_parsed_value = 0;
-    rx_count = 0;
-    rx_checks = 0;
+    rx_state.length = 0;
+    rx_state.parsed_value = 0;
+    rx_state.count = 0;
+    rx_state.checks = 0;
 #endif
     
     // Read initial measurements
@@ -258,30 +269,33 @@ STATIC void uwb_test_state_initialization_on_entry(uint16_t prevState)
 
 STATIC void uwb_test_state_active_process(void)
 {
+    // Read measurements
+    read_measurements();
+    
 #ifdef UWB_TX_MODE
     // TX mode: send 802.15.4 frame with number 68
-    tx_attempts++;
+    tx_state.attempts++;
     
     // Build 802.15.4 MAC frame
     uint8_t tx_buffer[MAC_MAX_FRAME_SIZE];
     mac_frame_short_t* frame = (mac_frame_short_t*)tx_buffer;
     
     frame->frame_control = MAC_FC_TYPE_DATA | MAC_FC_DST_ADDR_SHORT | MAC_FC_SRC_ADDR_SHORT;;
-    frame->sequence = tx_sequence++;
-    frame->dest_pan_id = my_pan_id;
-    frame->dest_addr = tx_dest_addr;
-    frame->src_addr = my_address;
+    frame->sequence = addressing.tx_sequence++;
+    frame->dest_pan_id = addressing.my_pan_id;
+    frame->dest_addr = addressing.tx_dest_addr;
+    frame->src_addr = addressing.my_address;
     
     // Add payload - incrementing counter 0-6699
     char msg[5];
-    snprintf(msg, sizeof(msg), "%u", tx_counter);
+    snprintf(msg, sizeof(msg), "%u", tx_state.counter);
     uint16_t payload_len = strlen(msg);
     memcpy(frame->payload, msg, payload_len);
     
     // Increment counter (0-6699 wrap around)
-    tx_counter++;
-    if (tx_counter > 6699) {
-        tx_counter = 0;
+    tx_state.counter++;
+    if (tx_state.counter > 6699) {
+        tx_state.counter = 0;
     }
     
     // Send frame (header + payload)
@@ -290,26 +304,26 @@ STATIC void uwb_test_state_active_process(void)
 #else
     // RX mode: check for received 802.15.4 frames and parse
     {
-        rx_checks++;
+        rx_state.checks++;
         uint16_t received = 0;
-        if (uwb_port_receive_message(uwb_dev, rx_buffer, MAX_MESSAGE_LENGTH, &received) == UWB_PORT_SUCCESS) {
+        if (uwb_port_receive_message(uwb_dev, rx_state.buffer, MAX_MESSAGE_LENGTH, &received) == UWB_PORT_SUCCESS) {
             // Check minimum frame size (12 bytes header minimum)
             if (received >= MAC_FRAME_SHORT_HEADER_SIZE) {
-                mac_frame_short_t *rx_frame = (mac_frame_short_t*)rx_buffer;
+                mac_frame_short_t *rx_frame = (mac_frame_short_t*)rx_state.buffer;
                 
                 // Verify this frame is for us (check dest address and PAN ID)
-                if ((rx_frame->dest_addr == my_address || rx_frame->dest_addr == MAC_BROADCAST_ADDR) &&
-                    rx_frame->dest_pan_id == my_pan_id) {
+                if ((rx_frame->dest_addr == addressing.my_address || rx_frame->dest_addr == MAC_BROADCAST_ADDR) &&
+                    rx_frame->dest_pan_id == addressing.my_pan_id) {
                     
-                    rx_length = received;
-                    rx_count++;
+                    rx_state.length = received;
+                    rx_state.count++;
                     
                     // Extract and parse payload
                     uint16_t payload_len = received - MAC_FRAME_SHORT_HEADER_SIZE;
                     
                     if (payload_len > 0 && payload_len < MAC_MAX_PAYLOAD_SIZE) {
                         rx_frame->payload[payload_len] = '\0';
-                        rx_parsed_value = (uint32_t)atoi((char*)rx_frame->payload);
+                        rx_state.parsed_value = (uint32_t)atoi((char*)rx_frame->payload);
                     }
                 }
             }
@@ -325,27 +339,27 @@ STATIC void uwb_test_state_active_process(void)
 bool uwb_test_device_id(void)
 {
     // For backward compatibility - verify device ID is correct
-    return (device_id == UWB_EXPECTED_DEV_ID);
+    return (measurements.device_id == UWB_EXPECTED_DEV_ID);
 }
 
 uint32_t uwb_test_get_device_id(void)
 {
-    return device_id;
+    return measurements.device_id;
 }
 
 float uwb_test_get_temperature(void)
 {
-    return temperature;
+    return measurements.temperature;
 }
 
 float uwb_test_get_voltage(void)
 {
-    return voltage;
+    return measurements.voltage;
 }
 
 bool uwb_test_is_ready(void)
 {
-    return hardware_ready;
+    return (uwb_state_machine.curr_state == STATE_ACTIVE);
 }
 
 uint16_t uwb_test_get_received_message(char *buffer, uint16_t buffer_size)
@@ -354,33 +368,33 @@ uint16_t uwb_test_get_received_message(char *buffer, uint16_t buffer_size)
         return 0;
     }
     
-    uint16_t copy_len = (rx_length < buffer_size - 1) ? rx_length : (buffer_size - 1);
+    uint16_t copy_len = (rx_state.length < buffer_size - 1) ? rx_state.length : (buffer_size - 1);
     if (copy_len > 0) {
-        memcpy(buffer, rx_buffer, copy_len);
+        memcpy(buffer, rx_state.buffer, copy_len);
         buffer[copy_len] = '\0';
     }
     
-    return rx_length;
+    return rx_state.length;
 }
 
 uint32_t uwb_test_get_rx_parsed_value(void)
 {
-    return rx_parsed_value;
+    return rx_state.parsed_value;
 }
 
 uint32_t uwb_test_get_rx_count(void)
 {
-    return rx_count;
+    return rx_state.count;
 }
 
 uint32_t uwb_test_get_tx_attempts(void)
 {
-    return tx_attempts;
+    return tx_state.attempts;
 }
 
 uint32_t uwb_test_get_rx_checks(void)
 {
-    return rx_checks;
+    return rx_state.checks;
 }
 
 bool uwb_test_is_tx_mode(void)
@@ -403,17 +417,17 @@ bool uwb_test_is_rx_mode(void)
 
 void uwb_test_set_address(uint16_t address, uint16_t pan_id)
 {
-    my_address = address;
-    my_pan_id = pan_id;
+    addressing.my_address = address;
+    addressing.my_pan_id = pan_id;
     
-    // Update hardware registers if already initialized
-    if (hardware_ready && uwb_dev != NULL) {
-        uwb_port_set_pan_id(uwb_dev, my_pan_id);
-        uwb_port_set_address(uwb_dev, my_address);
+    // Update hardware registers if in active state
+    if (uwb_state_machine.curr_state == STATE_ACTIVE && uwb_dev != NULL) {
+        uwb_port_set_pan_id(uwb_dev, addressing.my_pan_id);
+        uwb_port_set_address(uwb_dev, addressing.my_address);
     }
 }
 
 void uwb_test_set_dest_address(uint16_t dest_addr)
 {
-    tx_dest_addr = dest_addr;
+    addressing.tx_dest_addr = dest_addr;
 }
