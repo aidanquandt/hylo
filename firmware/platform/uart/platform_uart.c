@@ -23,11 +23,13 @@
  *---------------------------------------------------------------------------*/
 
 #define UART_TX_TIMEOUT_MS  100U    // HAL transmit timeout
+#define UART_RX_TIMEOUT_MS  100U    // HAL receive timeout
 
 // UART peripheral handles
 extern UART_HandleTypeDef huart4;  // Printing (USB to UART bridge)
 
 #define PLATFORM_UART_PRINT (&huart4)
+#define PLATFORM_UART_RX    (&huart4)  // Same UART for RX
 
 /*---------------------------------------------------------------------------*/
 /* Public Function Implementations                                           */
@@ -72,4 +74,33 @@ platform_uart_status_E platform_uart_receive(UART_HandleTypeDef *huart, uint8_t 
     } else {
         return PLATFORM_UART_ERROR;
     }
+}
+
+platform_uart_status_E platform_uart_start_rx_dma(uint8_t *buffer, uint16_t size)
+{
+    // Validate parameters
+    if (buffer == NULL || size == 0U) {
+        return PLATFORM_UART_ERROR;
+    }
+    
+    // Start DMA reception in circular mode
+    HAL_StatusTypeDef status = HAL_UART_Receive_DMA(PLATFORM_UART_RX, buffer, size);
+    
+    if (status == HAL_OK) {
+        return PLATFORM_UART_SUCCESS;
+    } else {
+        return PLATFORM_UART_ERROR;
+    }
+}
+
+uint16_t platform_uart_get_rx_dma_position(void)
+{
+    // Get DMA counter (counts DOWN from buffer size to 0)
+    uint16_t dma_counter = (uint16_t)__HAL_DMA_GET_COUNTER(PLATFORM_UART_RX->hdmarx);
+    
+    // Convert to write position (counts UP from 0 to buffer_size-1)
+    uint16_t buffer_size = PLATFORM_UART_RX->RxXferSize;
+    uint16_t write_pos = buffer_size - dma_counter;
+    
+    return write_pos;
 }

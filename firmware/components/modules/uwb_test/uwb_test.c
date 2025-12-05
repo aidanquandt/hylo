@@ -12,6 +12,9 @@
 #include "uwb_port.h"
 #include "state_machine.h"
 #include "mac_802154.h"
+#include "uart_manager.h"
+#include "uart_cmd_router.h"
+#include <string.h>
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -95,9 +98,14 @@ STATIC void uwb_test_init(void);
 STATIC void uwb_test_process_1Hz(void);
 
 extern const module_S uwb_test_module;
+// Forward declaration of command handler
+STATIC bool uwb_test_cmd_handler(const cmd_parsed_t *parsed);
+
 const module_S uwb_test_module = {
+    .module_name = "uwb_test",
     .module_init = uwb_test_init,
     .module_process_1Hz = uwb_test_process_1Hz,
+    .module_cmd_handler = uwb_test_cmd_handler,
 };
 
 /*---------------------------------------------------------------------------
@@ -430,4 +438,69 @@ void uwb_test_set_address(uint16_t address, uint16_t pan_id)
 void uwb_test_set_dest_address(uint16_t dest_addr)
 {
     addressing.tx_dest_addr = dest_addr;
+}
+
+/*---------------------------------------------------------------------------
+ * Command Handler
+ *---------------------------------------------------------------------------*/
+STATIC bool uwb_test_cmd_handler(const cmd_parsed_t *parsed)
+{
+    switch (parsed->action) {
+        case CMD_ACTION_GET:
+            if (strcmp(parsed->target, "status") == 0) {
+                const char *state_str = (uwb_state_machine.curr_state == STATE_ACTIVE) ? "active" : 
+                                       (uwb_state_machine.curr_state == STATE_INITIALIZATION) ? "init" : "startup";
+                const char *mode_str = 
+#ifdef UWB_TX_MODE
+                    "TX";
+#else
+                    "RX";
+#endif
+                uart_manager_print("UWB status: %s, mode=%s, dev_id=0x%08X\r\n", 
+                                 state_str, mode_str, (unsigned int)measurements.device_id);
+                return true;
+            }
+            else if (strcmp(parsed->target, "addr") == 0) {
+                uart_manager_print("UWB addr: PAN=0x%04X, ADDR=0x%04X, DEST=0x%04X\r\n",
+                                 addressing.my_pan_id, addressing.my_address, addressing.tx_dest_addr);
+                return true;
+            }
+            else if (strcmp(parsed->target, "temp") == 0) {
+                if (uwb_state_machine.curr_state != STATE_ACTIVE) {
+                    uart_manager_print("UWB not active yet\r\n");
+                    return true;
+                }
+                uart_manager_print("UWB temp: %.2f C\r\n", measurements.temperature);
+                return true;
+            }
+            else if (strcmp(parsed->target, "voltage") == 0) {
+                if (uwb_state_machine.curr_state != STATE_ACTIVE) {
+                    uart_manager_print("UWB not active yet\r\n");
+                    return true;
+                }
+                uart_manager_print("UWB voltage: %.2f V\r\n", measurements.voltage);
+                return true;
+            }
+            else if (strcmp(parsed->target, "stats") == 0) {
+                uart_manager_print("UWB stats:\r\n");
+#ifdef UWB_TX_MODE
+                uart_manager_print("  TX attempts: %u\r\n", (unsigned int)tx_state.attempts);
+                uart_manager_print("  TX counter: %u\r\n", tx_state.counter);
+#else
+                uart_manager_print("  RX count: %u\r\n", (unsigned int)rx_state.count);
+                uart_manager_print("  RX checks: %u\r\n", (unsigned int)rx_state.checks);
+                uart_manager_print("  Last value: %u\r\n", (unsigned int)rx_state.parsed_value);
+#endif
+                return true;
+            }
+            break;
+            
+        case CMD_ACTION_SET:
+        case CMD_ACTION_REQ:
+        case CMD_ACTION_UNKNOWN:
+        default:
+            break;
+    }
+    
+    return false;
 }

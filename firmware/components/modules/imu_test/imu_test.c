@@ -11,6 +11,10 @@
 #include "platform_gpio.h"
 #include "imu_port.h"
 #include "state_machine.h"
+#include "uart_manager.h"
+#include "uart_cmd_router.h"
+#include <string.h>
+#include <stdlib.h>
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -54,9 +58,14 @@ STATIC void imu_test_init(void);
 STATIC void imu_test_process_100Hz(void);
 
 extern const module_S imu_test_module;
+// Forward declaration of command handler
+STATIC bool imu_test_cmd_handler(const cmd_parsed_t *parsed);
+
 const module_S imu_test_module = {
+    .module_name = "imu_test",
     .module_init = imu_test_init,
     .module_process_100Hz = imu_test_process_100Hz,
+    .module_cmd_handler = imu_test_cmd_handler,
 };
 
 /*---------------------------------------------------------------------------
@@ -204,4 +213,67 @@ STATIC void imu_test_state_active_process(void)
 {
     // Read sensors in active state
     read_sensors();
+}
+
+/*---------------------------------------------------------------------------
+ * Command Handler
+ *---------------------------------------------------------------------------*/
+STATIC bool imu_test_cmd_handler(const cmd_parsed_t *parsed)
+{
+    switch (parsed->action) {
+        case CMD_ACTION_GET:
+            if (strcmp(parsed->target, "status") == 0) {
+                const char *state_str = (imu_state_machine.curr_state == STATE_ACTIVE) ? "active" : 
+                                       (imu_state_machine.curr_state == STATE_INITIALIZATION) ? "init" : "startup";
+                uart_manager_print("IMU status: %s, chip_id=0x%02X\r\n", state_str, measurements.chip_id);
+                return true;
+            }
+            else if (strcmp(parsed->target, "data") == 0) {
+                if (imu_state_machine.curr_state != STATE_ACTIVE) {
+                    uart_manager_print("IMU not active yet\r\n");
+                    return true;
+                }
+                uart_manager_print("Accel: X=%.3f Y=%.3f Z=%.3f m/s^2\r\n",
+                                 measurements.accel.x, measurements.accel.y, measurements.accel.z);
+                uart_manager_print("Gyro:  X=%.3f Y=%.3f Z=%.3f deg/s\r\n",
+                                 measurements.gyro.x, measurements.gyro.y, measurements.gyro.z);
+                uart_manager_print("Temp:  %.2f C\r\n", measurements.temperature);
+                return true;
+            }
+            else if (strcmp(parsed->target, "accel") == 0) {
+                if (imu_state_machine.curr_state != STATE_ACTIVE) {
+                    uart_manager_print("IMU not active yet\r\n");
+                    return true;
+                }
+                uart_manager_print("Accel: X=%.3f Y=%.3f Z=%.3f m/s^2\r\n",
+                                 measurements.accel.x, measurements.accel.y, measurements.accel.z);
+                return true;
+            }
+            else if (strcmp(parsed->target, "gyro") == 0) {
+                if (imu_state_machine.curr_state != STATE_ACTIVE) {
+                    uart_manager_print("IMU not active yet\r\n");
+                    return true;
+                }
+                uart_manager_print("Gyro: X=%.3f Y=%.3f Z=%.3f deg/s\r\n",
+                                 measurements.gyro.x, measurements.gyro.y, measurements.gyro.z);
+                return true;
+            }
+            else if (strcmp(parsed->target, "temp") == 0) {
+                if (imu_state_machine.curr_state != STATE_ACTIVE) {
+                    uart_manager_print("IMU not active yet\r\n");
+                    return true;
+                }
+                uart_manager_print("Temp: %.2f C\r\n", measurements.temperature);
+                return true;
+            }
+            break;
+            
+        case CMD_ACTION_SET:
+        case CMD_ACTION_REQ:
+        case CMD_ACTION_UNKNOWN:
+        default:
+            break;
+    }
+    
+    return false;
 }

@@ -5,6 +5,13 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "common.h"
+#include <stdbool.h>
+
+/*---------------------------------------------------------------------------
+ * Forward Declarations
+ *---------------------------------------------------------------------------*/
+typedef struct cmd_parsed_s cmd_parsed_t;
+typedef bool (*cmd_handler_fn_t)(const cmd_parsed_t *parsed);
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -27,15 +34,20 @@ typedef enum
  * 1. module_init: Create RTOS resources (queues, semaphores) before scheduler starts
  * 2. module_create_task: Spawn tasks after scheduler is running
  * 3. module_process_*: Periodic callbacks driven by main application loop
+ * 4. module_cmd_*: Optional UART command handler (auto-registered if non-NULL)
  */
 typedef struct 
 {
+    const char *module_name;               // Module name (e.g., "imu_test", "uwb_test") - used for both display and commands
     void (*module_init)(void);
     void (*module_create_task)(void);
     void (*module_process_1Hz)(void);
     void (*module_process_10Hz)(void);
     void (*module_process_100Hz)(void);
     void (*module_process_1kHz)(void);
+    
+    // Optional: UART command interface
+    cmd_handler_fn_t module_cmd_handler;   // Command handler function or NULL
 } module_S;
 
 /*---------------------------------------------------------------------------

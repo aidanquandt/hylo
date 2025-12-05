@@ -10,6 +10,7 @@
 STATIC void sensor_fusion_init(void);
 extern const module_S sensor_fusion_module;
 const module_S sensor_fusion_module = { 
+        .module_name = "sensor_fusion",
         .module_init = sensor_fusion_init,
 };
 
