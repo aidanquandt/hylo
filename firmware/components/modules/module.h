@@ -25,7 +25,7 @@ typedef enum
     TDMA_MODULE,
     TWR_MODULE,
     UWB_TEST_MODULE,
-    IMU_TEST_MODULE,
+    IMU_MODULE,
     NUM_MODULES
 } modules_E;
 
@@ -38,7 +38,7 @@ typedef enum
  */
 typedef struct 
 {
-    const char *module_name;               // Module name (e.g., "imu_test", "uwb_test") - used for both display and commands
+    const char *module_name;
     void (*module_init)(void);
     void (*module_create_task)(void);
     void (*module_process_1Hz)(void);
