@@ -12,6 +12,10 @@
 #include "module.h"
 #include "platform_uart.h"
 #include "uart_cmd_router.h"
+#include "platform_system.h"
+#include "platform_os.h"
+#include "uwb.h"
+#include "imu.h"
 #include "cmsis_os2.h"
 #include <string.h>
 #include <stdio.h>
@@ -182,7 +186,33 @@ STATIC void uart_manager_init(void)
 STATIC void uart_manager_default_cmd_handler(const char *cmd, uint16_t length)
 {
     (void)length;  // Unused - cmd is null-terminated
-    uart_cmd_router_dispatch(cmd);
+    
+    // Intercept 'system_reset' command and perform MCU reset directly
+    if (strcmp(cmd, "system_reset") == 0) 
+    {
+        uart_manager_print("\r\nSystem Resetting...\r\n");
+        
+        // Perform soft resets on peripherals before MCU reset
+        // Use module-level functions which handle device state checking
+        if (uwb_soft_reset()) {
+            uart_manager_print("UWB soft reset completed\r\n");
+        }
+        
+        if (imu_soft_reset()) {
+            uart_manager_print("IMU soft reset completed\r\n");
+        }
+        
+        // Small delay to allow reset messages to be transmitted
+        platform_os_delay_ms(10);
+
+        uart_manager_print("Performing MCU reset... \r\n");
+        platform_system_reset();
+    }
+    else 
+    {
+        // Otherwise, route to command router
+        uart_cmd_router_dispatch(cmd);
+    }
 }
 
 /**

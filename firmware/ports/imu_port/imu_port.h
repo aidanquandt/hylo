@@ -232,6 +232,23 @@ imu_port_status_t imu_port_configure_accel(imu_dev_t *dev, imu_accel_range_t ran
 imu_port_status_t imu_port_configure_gyro(imu_dev_t *dev, imu_gyro_range_t range, imu_odr_t odr);
 
 /**
+ * @brief Perform a soft reset on the IMU device
+ * 
+ * Performs a software reset of the IMU chip. This resets all registers
+ * to their default values and requires re-initialization afterward.
+ * 
+ * @param[in] dev Pointer to IMU device handle
+ * 
+ * @pre dev must not be NULL
+ * @pre Device must have been initialized (imu_port_probe_and_init() must have been called)
+ * 
+ * @return IMU_PORT_SUCCESS on success
+ * @return IMU_PORT_ERROR_NULL_PTR if dev is NULL
+ * @return IMU_PORT_ERROR_COMM_FAIL if reset command fails
+ */
+imu_port_status_t imu_port_soft_reset(imu_dev_t *dev);
+
+/**
  * @brief Delay function for IMU driver
  * @param period_us Delay period in microseconds
  * @param intf_ptr Interface pointer (unused)

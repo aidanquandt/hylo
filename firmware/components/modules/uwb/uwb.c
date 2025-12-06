@@ -530,6 +530,18 @@ void uwb_set_dest_address(uint16_t dest_addr)
     addressing.tx_dest_addr = dest_addr;
 }
 
+bool uwb_soft_reset(void)
+{
+    // Check if device is initialized and ready
+    if (uwb_dev == NULL || !uwb_is_ready()) {
+        return false;
+    }
+    
+    // Perform soft reset through port layer
+    uwb_port_status_t ret = uwb_port_soft_reset(uwb_dev);
+    return (ret == UWB_PORT_SUCCESS);
+}
+
 /*---------------------------------------------------------------------------
  * Command Handler
  *---------------------------------------------------------------------------*/

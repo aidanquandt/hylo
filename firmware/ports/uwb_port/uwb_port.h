@@ -105,6 +105,23 @@ uwb_port_status_t uwb_port_probe_and_init(uwb_dev_t *dev);
 void uwb_port_wakeup_device(uwb_dev_t *dev);
 
 /**
+ * @brief Perform a soft reset on the UWB device
+ * 
+ * Performs a software reset of the UWB chip. This should be called after
+ * the device has been probed (to identify the chip type) but before full
+ * initialization.
+ * 
+ * @param[in] dev Pointer to UWB device handle
+ * 
+ * @pre dev must not be NULL
+ * @pre Device must have been probed (uwb_port_probe_and_init() must have been called)
+ * 
+ * @return UWB_PORT_SUCCESS on success
+ * @return UWB_PORT_ERROR_NULL_PTR if dev is NULL
+ */
+uwb_port_status_t uwb_port_soft_reset(uwb_dev_t *dev);
+
+/**
  * @brief Check if UWB device ID matches expected value
  * 
  * @param[in] dev Pointer to UWB device handle

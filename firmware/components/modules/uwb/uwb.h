@@ -118,3 +118,13 @@ void uwb_set_address(uint16_t address, uint16_t pan_id);
  * @param dest_addr 16-bit destination address (0xFFFF = broadcast)
  */
 void uwb_set_dest_address(uint16_t dest_addr);
+
+/**
+ * @brief Perform a soft reset on the UWB device
+ * 
+ * Performs a software reset of the UWB chip. This should only be called
+ * if the device has been initialized and is ready.
+ * 
+ * @return true if reset was successful, false if device is not ready or reset failed
+ */
+bool uwb_soft_reset(void);
