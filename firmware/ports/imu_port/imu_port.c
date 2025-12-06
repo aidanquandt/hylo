@@ -149,7 +149,7 @@ float imu_port_read_temperature(imu_dev_t *dev)
     
     // Convert raw temperature to degrees Celsius
     // Current IMU (BMI323) formula: temp_deg_c = (temp_data / 512.0) + 23.0
-    return (sensor_data.sens_data.temp.x / 512.0f) + 23.0f;
+    return ((int16_t)sensor_data.sens_data.temp.temp_data / 512.0f) + 23.0f;
 }
 
 imu_port_status_t imu_port_read_accel(imu_dev_t *dev, imu_sensor_data_t *accel)

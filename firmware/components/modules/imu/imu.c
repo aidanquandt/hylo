@@ -1,12 +1,12 @@
 /*---------------------------------------------------------------------------
- * @file    imu_test.c
+ * @file    imu.c
  * @brief   IMU hardware connection test module
  *---------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
-#include "imu_test.h"
+#include "imu.h"
 #include "module.h"
 #include "platform_gpio.h"
 #include "imu_port.h"
@@ -27,8 +27,25 @@
 typedef enum {
     STATE_STARTUP,              // Waiting for startup delay
     STATE_INITIALIZATION,       // Initializing hardware
-    STATE_ACTIVE                // Normal operation - reading sensors
+    STATE_ACTIVE,               // Normal operation - reading sensors
+    STATE_FAULTED               // Error state - initialization or communication failed
 } imu_state_E;
+
+// Fault codes
+typedef enum {
+    FAULT_NONE = 0,
+    FAULT_INIT_NULL_DEV,        // Device init returned NULL
+    FAULT_PROBE_FAILED,         // Probe and init failed
+    FAULT_CHIP_ID_INVALID,      // Chip ID verification failed
+    FAULT_ACCEL_CONFIG_FAILED,  // Accelerometer config failed
+    FAULT_GYRO_CONFIG_FAILED,   // Gyroscope config failed
+    FAULT_READ_FAILED           // Sensor read failed in active state
+} imu_fault_code_e;
+
+typedef struct {
+    bool fault_present;
+    bool init_device_completed;
+} imu_state_machine_inputs_t;
 
 // IMU measurement data
 typedef struct {
@@ -43,29 +60,27 @@ typedef struct {
  *---------------------------------------------------------------------------*/
 STATIC bool verify_chip_id(void);
 STATIC void read_sensors(void);
-
-// State machine transition logic
-STATIC uint16_t imu_test_transition_logic(uint16_t currentState, uint32_t stateTimer);
-
-// State handlers
-STATIC void imu_test_state_initialization_on_entry(uint16_t prevState);
-STATIC void imu_test_state_active_process(void);
+STATIC void imu_state_machine_sample_inputs(void);
+STATIC uint16_t imu_transition_logic(uint16_t currentState, uint32_t stateTimer);
+STATIC void imu_state_initialization_on_entry(uint16_t prevState);
+STATIC void imu_state_active_process(void);
+STATIC void imu_state_faulted_on_entry(uint16_t prevState);
 
 /*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
-STATIC void imu_test_init(void);
-STATIC void imu_test_process_100Hz(void);
+STATIC void imu_init(void);
+STATIC void imu_process_100Hz(void);
 
-extern const module_S imu_test_module;
+extern const module_S imu_module;
 // Forward declaration of command handler
-STATIC bool imu_test_cmd_handler(const cmd_parsed_t *parsed);
+STATIC bool imu_cmd_handler(const cmd_parsed_t *parsed);
 
-const module_S imu_test_module = {
-    .module_name = "imu_test",
-    .module_init = imu_test_init,
-    .module_process_100Hz = imu_test_process_100Hz,
-    .module_cmd_handler = imu_test_cmd_handler,
+const module_S imu_module = {
+    .module_name = "imu",
+    .module_init = imu_init,
+    .module_process_100Hz = imu_process_100Hz,
+    .module_cmd_handler = imu_cmd_handler,
 };
 
 /*---------------------------------------------------------------------------
@@ -80,12 +95,17 @@ STATIC const state_s imu_states[] = {
     },
     [STATE_INITIALIZATION] = {
         .process = NULL,
-        .onEntry = imu_test_state_initialization_on_entry,
+        .onEntry = imu_state_initialization_on_entry,
         .onExit = NULL
     },
     [STATE_ACTIVE] = {
-        .process = imu_test_state_active_process,
+        .process = imu_state_active_process,
         .onEntry = NULL,
+        .onExit = NULL
+    },
+    [STATE_FAULTED] = {
+        .process = NULL,
+        .onEntry = imu_state_faulted_on_entry,
         .onExit = NULL
     }
 };
@@ -95,13 +115,15 @@ STATIC state_machine_s imu_state_machine = {
     .curr_state = STATE_STARTUP,
     .next_state = STATE_STARTUP,
     .timer = 0,
-    .transitionLogic = imu_test_transition_logic,
+    .transitionLogic = imu_transition_logic,
     .states = imu_states
 };
 
 // Hardware state
 STATIC imu_dev_t *imu_dev = NULL;
+STATIC imu_state_machine_inputs_t imu_state_machine_inputs = {0};
 STATIC imu_measurements_t measurements = {0};
+STATIC imu_fault_code_e imu_fault_code = FAULT_NONE;
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -129,6 +151,7 @@ STATIC bool verify_chip_id(void)
 STATIC void read_sensors(void)
 {
     if (imu_dev == NULL) {
+        imu_fault_code = FAULT_READ_FAILED;
         return;
     }
     
@@ -137,21 +160,31 @@ STATIC void read_sensors(void)
     measurements.temperature = imu_port_read_temperature(imu_dev);
     
     // Read both accelerometer and gyroscope in single optimized call
-    imu_port_read_accel_and_gyro(imu_dev, &measurements.accel, &measurements.gyro);
+    int result = imu_port_read_accel_and_gyro(imu_dev, &measurements.accel, &measurements.gyro);
+    if (result != IMU_PORT_SUCCESS) {
+        imu_fault_code = FAULT_READ_FAILED;
+    }
 }
 
-STATIC void imu_test_init(void)
+STATIC void imu_init(void)
 {
     // State machine is already initialized with static values
 }
 
-STATIC void imu_test_process_100Hz(void)
+STATIC void imu_process_100Hz(void)
 {
     // Run state machine at 100Hz
+    imu_state_machine_sample_inputs();
     state_machine_periodic(&imu_state_machine);
 }
 
-STATIC uint16_t imu_test_transition_logic(uint16_t currentState, uint32_t stateTimer)
+STATIC void imu_state_machine_sample_inputs(void)
+{
+    imu_state_machine_inputs.fault_present = (imu_fault_code != FAULT_NONE);
+    imu_state_machine_inputs.init_device_completed = (imu_dev != NULL);
+}
+
+STATIC uint16_t imu_transition_logic(uint16_t currentState, uint32_t stateTimer)
 {
     uint16_t nextState = currentState;
     
@@ -161,71 +194,132 @@ STATIC uint16_t imu_test_transition_logic(uint16_t currentState, uint32_t stateT
             if (stateTimer >= MS_TO_100HZ_TICKS(STARTUP_DELAY_MS)) {
                 nextState = STATE_INITIALIZATION;
             }
+            else 
+            {
+                // stay in STARTUP state
+            }
             break;
             
         case STATE_INITIALIZATION:
-            // Transition to ACTIVE immediately (initialization happens in onEntry)
-            nextState = STATE_ACTIVE;
+            if (imu_state_machine_inputs.fault_present) {
+                nextState = STATE_FAULTED;
+            } 
+            else 
+            {
+                nextState = STATE_ACTIVE;
+            }
             break;
             
         case STATE_ACTIVE:
-            // Stay in ACTIVE state
-            nextState = STATE_ACTIVE;
+            if (imu_state_machine_inputs.fault_present) {
+                nextState = STATE_FAULTED;
+            } 
+            else 
+            {
+                // stay in ACTIVE state
+            }
+            break;
+            
+        case STATE_FAULTED:
+            // Stay in FAULTED state (would need external reset/recovery command to exit)
+            nextState = STATE_FAULTED;
             break;
             
         default:
-            nextState = STATE_STARTUP;
+            nextState = STATE_FAULTED;
             break;
     }
     
     return nextState;
 }
 
-STATIC void imu_test_state_initialization_on_entry(uint16_t prevState)
+STATIC void imu_state_initialization_on_entry(uint16_t prevState)
 {   
     (void)prevState;  // Unused
+    
+    // Clear any previous fault
+    imu_fault_code = FAULT_NONE;
     
     // Get the port device structure
     imu_dev = imu_port_init();
     if (imu_dev == NULL) {
+        imu_fault_code = FAULT_INIT_NULL_DEV;
         return;
     }
     
     // Probe and initialize the device (this handles the mode switch and SPI setup)
     int probe_result = imu_port_probe_and_init(imu_dev);
     if (probe_result != IMU_PORT_SUCCESS) {
+        imu_fault_code = FAULT_PROBE_FAILED;
         return;
     }
     
     // Verify chip ID through port layer
     if (!verify_chip_id()) {
+        imu_fault_code = FAULT_CHIP_ID_INVALID;
         return;
     }
     
     // Configure accelerometer: ±2g range, 100 Hz ODR
-    imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_2G, IMU_ODR_100HZ);
+    int accel_result = imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_2G, IMU_ODR_100HZ);
+    if (accel_result != IMU_PORT_SUCCESS) {
+        imu_fault_code = FAULT_ACCEL_CONFIG_FAILED;
+        return;
+    }
     
     // Configure gyroscope: ±2000 deg/s range, 100 Hz ODR
-    imu_port_configure_gyro(imu_dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_100HZ);
+    int gyro_result = imu_port_configure_gyro(imu_dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_100HZ);
+    if (gyro_result != IMU_PORT_SUCCESS) {
+        imu_fault_code = FAULT_GYRO_CONFIG_FAILED;
+        return;
+    }
 }
 
-STATIC void imu_test_state_active_process(void)
+STATIC void imu_state_active_process(void)
 {
     // Read sensors in active state
     read_sensors();
 }
 
+STATIC void imu_state_faulted_on_entry(uint16_t prevState)
+{
+    (void)prevState;  // Unused
+    
+    // Log fault information
+    const char *fault_str;
+    switch (imu_fault_code) {
+        case FAULT_INIT_NULL_DEV:       fault_str = "Device init failed (NULL)"; break;
+        case FAULT_PROBE_FAILED:        fault_str = "Probe/init failed"; break;
+        case FAULT_CHIP_ID_INVALID:     fault_str = "Invalid chip ID"; break;
+        case FAULT_ACCEL_CONFIG_FAILED: fault_str = "Accel config failed"; break;
+        case FAULT_GYRO_CONFIG_FAILED:  fault_str = "Gyro config failed"; break;
+        case FAULT_READ_FAILED:         fault_str = "Sensor read failed"; break;
+        default:                        fault_str = "Unknown fault"; break;
+    }
+    
+    uart_manager_print("IMU FAULT: %s (code=%u)\r\n", fault_str, imu_fault_code);
+}
+
 /*---------------------------------------------------------------------------
  * Command Handler
  *---------------------------------------------------------------------------*/
-STATIC bool imu_test_cmd_handler(const cmd_parsed_t *parsed)
+STATIC bool imu_cmd_handler(const cmd_parsed_t *parsed)
 {
     switch (parsed->action) {
         case CMD_ACTION_GET:
             if (strcmp(parsed->target, "status") == 0) {
-                const char *state_str = (imu_state_machine.curr_state == STATE_ACTIVE) ? "active" : 
-                                       (imu_state_machine.curr_state == STATE_INITIALIZATION) ? "init" : "startup";
-                uart_manager_print("IMU status: %s, chip_id=0x%02X\r\n", state_str, measurements.chip_id);
+                const char *state_str;
+                switch (imu_state_machine.curr_state) {
+                    case STATE_ACTIVE:         state_str = "active"; break;
+                    case STATE_INITIALIZATION: state_str = "init"; break;
+                    case STATE_FAULTED:        state_str = "FAULTED"; break;
+                    default:                   state_str = "startup"; break;
+                }
+                uart_manager_print("IMU status: %s, chip_id=0x%02X", state_str, measurements.chip_id);
+                if (imu_fault_code != FAULT_NONE) {
+                    uart_manager_print(", imu_fault_code=%u", imu_fault_code);
+                }
+                uart_manager_print("\r\n");
                 return true;
             }
             else if (strcmp(parsed->target, "data") == 0) {
