@@ -17,6 +17,7 @@
 #include "twr.h"
 #include "uwb_test.h"
 #include "uart_manager.h"
+#include "uart_cmd_router.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -106,8 +107,8 @@ STATIC void app_initialize_modules(void)
 
 STATIC void app_create_module_tasks(void)
 {
-    STATIC uint8_t task_num = 1U; // we will use task 0 as idle task in datalogger so just set this 1 as first task
-    char task_name[16];
+    char task_name[32];  // Match configMAX_TASK_NAME_LEN
+    BaseType_t result;
 
     // First, create any standalone module tasks (like UART_TX)
     for (modules_E module_idx = (modules_E)0U; module_idx < NUM_MODULES; module_idx++) 
@@ -123,10 +124,10 @@ STATIC void app_create_module_tasks(void)
     {
         if (modules[module_idx]->module_process_1kHz != NULL)
         {
-            snprintf(task_name, sizeof(task_name), "TASK_%u", task_num);
-            task_num++;
+            snprintf(task_name, sizeof(task_name), "%s_1k", 
+                     modules[module_idx]->module_name ? modules[module_idx]->module_name : "MOD");
 
-            xTaskCreate(
+            result = xTaskCreate(
                 module_task_1kHz, 
                 task_name,
                 TASK_STACK_MEDIUM,
@@ -134,14 +135,18 @@ STATIC void app_create_module_tasks(void)
                 PRIORITY_1KHZ_TASK,
                 NULL
             );
+            if (result != pdPASS) {
+                // Task creation failed - halt for debugging
+                for(;;);
+            }
         }
 
         if (modules[module_idx]->module_process_100Hz != NULL)
         {
-            snprintf(task_name, sizeof(task_name), "TASK_%u", task_num);
-            task_num++;
+            snprintf(task_name, sizeof(task_name), "%s_100", 
+                     modules[module_idx]->module_name ? modules[module_idx]->module_name : "MOD");
 
-            xTaskCreate(
+            result = xTaskCreate(
                 module_task_100Hz, 
                 task_name,
                 TASK_STACK_MEDIUM,
@@ -149,29 +154,35 @@ STATIC void app_create_module_tasks(void)
                 PRIORITY_100HZ_TASK,
                 NULL
             );
+            if (result != pdPASS) {
+                for(;;);
+            }
         }
 
         if (modules[module_idx]->module_process_10Hz != NULL)
         {
-            snprintf(task_name, sizeof(task_name), "TASK_%u", task_num);
-            task_num++;
+            snprintf(task_name, sizeof(task_name), "%s_10", 
+                     modules[module_idx]->module_name ? modules[module_idx]->module_name : "MOD");
 
-            xTaskCreate(
+            result = xTaskCreate(
                 module_task_10Hz, 
                 task_name,
                 TASK_STACK_MEDIUM,
                 (void *)(uintptr_t)module_idx, 
                 PRIORITY_10HZ_TASK,
                 NULL
-            ); 
+            );
+            if (result != pdPASS) {
+                for(;;);
+            }
         }
 
         if (modules[module_idx]->module_process_1Hz != NULL)
         {
-            snprintf(task_name, sizeof(task_name), "TASK_%u", task_num);
-            task_num++;
+            snprintf(task_name, sizeof(task_name), "%s_1", 
+                     modules[module_idx]->module_name ? modules[module_idx]->module_name : "MOD");
             
-            xTaskCreate(
+            result = xTaskCreate(
                 module_task_1Hz, 
                 task_name,
                 TASK_STACK_MEDIUM,
@@ -179,6 +190,9 @@ STATIC void app_create_module_tasks(void)
                 PRIORITY_1HZ_TASK,
                 NULL
             );
+            if (result != pdPASS) {
+                for(;;);
+            }
         }
 
     }
@@ -186,6 +200,14 @@ STATIC void app_create_module_tasks(void)
 
 STATIC void app_post_module_initialization(void)
 {
+    // Register all module command handlers with UART router
+    for (modules_E i = (modules_E)0; i < NUM_MODULES; i++) {
+        if (modules[i]->module_cmd_handler != NULL && modules[i]->module_name != NULL) {
+            uart_cmd_router_register(modules[i]->module_name, modules[i]->module_cmd_handler);
+        }
+    }
+    
+    // Update datalogger with task handles
     datalogger_update_task_handles();
 }
 

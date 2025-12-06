@@ -42,4 +42,21 @@ platform_uart_status_E platform_uart_transmit_blocking(const uint8_t *data, size
  */
 platform_uart_status_E platform_uart_receive(UART_HandleTypeDef *huart, uint8_t *data, size_t length);
 
+/**
+ * @brief Start UART RX DMA in circular mode
+ * @param buffer Pointer to circular receive buffer
+ * @param size Size of buffer in bytes
+ * @return PLATFORM_UART_SUCCESS if started, PLATFORM_UART_ERROR on failure
+ * @note DMA runs continuously in circular mode until stopped
+ * @note Used by uart_manager for command reception
+ */
+platform_uart_status_E platform_uart_start_rx_dma(uint8_t *buffer, uint16_t size);
+
+/**
+ * @brief Get current DMA RX write position
+ * @return Current position (0 to buffer_size-1) where DMA will write next byte
+ * @note Used for polling DMA buffer in uart_manager
+ */
+uint16_t platform_uart_get_rx_dma_position(void);
+
 #endif // PLATFORM_UART_H

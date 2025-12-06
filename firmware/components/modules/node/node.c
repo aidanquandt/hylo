@@ -13,11 +13,10 @@ STATIC void node_process_100Hz(void);
 
 extern const module_S node_module;
 const module_S node_module = {
-        .module_init = node_init,
-        .module_process_100Hz = node_process_100Hz,
-};
-
-/*---------------------------------------------------------------------------
+    .module_name = "node",
+    .module_init = node_init,
+    .module_process_100Hz = node_process_100Hz,
+};/*---------------------------------------------------------------------------
  * Public function implementations
  *---------------------------------------------------------------------------*/
 STATIC void node_init(void) {
