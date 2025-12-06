@@ -15,7 +15,7 @@
 #include "sensor_fusion.h"
 #include "tdma.h"
 #include "twr.h"
-#include "uwb_test.h"
+#include "uwb.h"
 #include "uart_manager.h"
 #include "uart_cmd_router.h"
 

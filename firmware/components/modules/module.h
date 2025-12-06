@@ -24,7 +24,7 @@ typedef enum
     NODE_MODULE,
     TDMA_MODULE,
     TWR_MODULE,
-    UWB_TEST_MODULE,
+    UWB_MODULE,
     IMU_MODULE,
     NUM_MODULES
 } modules_E;
