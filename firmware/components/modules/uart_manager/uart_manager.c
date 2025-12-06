@@ -413,7 +413,7 @@ STATIC void uart_manager_process_10Hz(void)
     // Send welcome message on first call (after TX task is running)
     if (!startup_message_sent) {
         startup_message_sent = true;
-        uart_manager_print("\r\n=== UART Command System Ready ===\r\n");
+        uart_manager_print("\r\nUART Ready\r\n");
         uart_manager_print("Type 'help' for available commands\r\n\r\n");
     }
     
