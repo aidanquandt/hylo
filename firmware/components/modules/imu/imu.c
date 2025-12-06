@@ -301,6 +301,22 @@ STATIC void imu_state_faulted_on_entry(uint16_t prevState)
 }
 
 /*---------------------------------------------------------------------------
+ * Public Function Implementations
+ *---------------------------------------------------------------------------*/
+
+bool imu_soft_reset(void)
+{
+    // Check if device is initialized and in active state
+    if (imu_dev == NULL || imu_state_machine.curr_state != STATE_ACTIVE) {
+        return false;
+    }
+    
+    // Perform soft reset through port layer
+    imu_port_status_t ret = imu_port_soft_reset(imu_dev);
+    return (ret == IMU_PORT_SUCCESS);
+}
+
+/*---------------------------------------------------------------------------
  * Command Handler
  *---------------------------------------------------------------------------*/
 STATIC bool imu_cmd_handler(const cmd_parsed_t *parsed)

@@ -93,6 +93,16 @@ uwb_port_status_t uwb_port_probe_and_init(uwb_dev_t *dev)
         return UWB_PORT_ERROR_COMM_FAIL;
     }
     
+    // Perform soft reset on startup to ensure clean state
+    // Note: dwt_softreset() uses global dw pointer set during probe
+    // For DW3000, reset_semaphore parameter is ignored (only used for DW3720)
+    // Pass 0 to reset without semaphore (works for both devices)
+    dwt_softreset(0);
+    
+    // Wait for device to stabilize after reset (DW3000 needs ~1.5ms, DW3720 needs ~2ms)
+    // Using 3ms for safety margin
+    platform_os_delay_ms(3);
+    
     // Initialize device and load factory calibration values from OTP (One-Time Programmable) memory
     // This includes antenna delay, crystal trim, and transmit power calibration
     ret = dwt_initialise(DWT_READ_OTP_ALL);
@@ -109,6 +119,25 @@ void uwb_port_wakeup_device(uwb_dev_t *dev)
         return;
     }
     uwb_wakeup_device_impl();
+}
+
+uwb_port_status_t uwb_port_soft_reset(uwb_dev_t *dev)
+{
+    if (dev == NULL) {
+        return UWB_PORT_ERROR_NULL_PTR;
+    }
+    
+    // Perform soft reset using driver API
+    // Note: dwt_softreset() uses a global dw pointer that is set during dwt_probe()
+    // For DW3000, reset_semaphore parameter is ignored (only used for DW3720)
+    // Pass 0 to reset without semaphore (works for both devices)
+    dwt_softreset(0);
+    
+    // Wait for device to stabilize after reset (DW3000 needs ~1.5ms, DW3720 needs ~2ms)
+    // Using 3ms for safety margin
+    platform_os_delay_ms(3);
+    
+    return UWB_PORT_SUCCESS;
 }
 
 STATIC void uwb_wakeup_device_impl(void)

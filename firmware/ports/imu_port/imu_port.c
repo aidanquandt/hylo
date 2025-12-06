@@ -299,6 +299,25 @@ imu_port_status_t imu_port_configure_gyro(imu_dev_t *dev, imu_gyro_range_t range
     return IMU_PORT_SUCCESS;
 }
 
+imu_port_status_t imu_port_soft_reset(imu_dev_t *dev)
+{
+    if (dev == NULL) {
+        return IMU_PORT_ERROR_NULL_PTR;
+    }
+    
+    // Perform soft reset using BMI3 driver API
+    int8_t rslt = bmi3_soft_reset(&dev->bmi_dev);
+    if (rslt != BMI3_OK) {
+        return IMU_PORT_ERROR_COMM_FAIL;
+    }
+    
+    // Wait for device to stabilize after reset
+    // BMI3 soft reset delay is handled internally by the driver, but we add a small margin
+    platform_os_delay_ms(5);
+    
+    return IMU_PORT_SUCCESS;
+}
+
 /*---------------------------------------------------------------------------
  * Private Function Implementations (Validation Helpers)
  *---------------------------------------------------------------------------*/

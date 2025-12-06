@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------
- * @file    imu.h
- * @brief   IMU hardware connection test module
+ * @file    platform_system.h
+ * @brief   Platform system utilities (reset, etc.)
  *---------------------------------------------------------------------------*/
 #pragma once
 
@@ -10,15 +10,10 @@
 #include "common.h"
 
 /*---------------------------------------------------------------------------
- * Public Function Prototypes
+ * Public API
  *---------------------------------------------------------------------------*/
 
 /**
- * @brief Perform a soft reset on the IMU device
- * 
- * Performs a software reset of the IMU chip. This should only be called
- * if the device has been initialized and is ready.
- * 
- * @return true if reset was successful, false if device is not ready or reset failed
+ * @brief Perform a software MCU reset (system reset)
  */
-bool imu_soft_reset(void);
+void platform_system_reset(void);
