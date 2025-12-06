@@ -11,7 +11,7 @@
             "origin": "snippet",
             "cwd": "${workspaceFolder}",
             "preBuild": "${command:st-stm32-ide-debug-launch.build}",
-            "runEntry": "main",
+            "stopOnEntry": false,
             "liveWatch": {
                 "enabled": true,
                 "samplesPerSecond": "4"
