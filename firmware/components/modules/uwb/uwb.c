@@ -69,28 +69,19 @@ typedef struct
 {
     uint16_t my_pan_id;
     uint16_t my_address;
-    uint16_t tx_dest_addr;
     uint8_t tx_sequence;
 } uwb_addressing_t;
 
-// RX state
-typedef struct
-{
-    uint8_t buffer[MAX_MESSAGE_LENGTH];
-    uint16_t length;
-    uint32_t parsed_value;
-    uint32_t count;
-    uint32_t checks;
-} uwb_rx_state_t;
+// RX callback function type
+typedef void (*uwb_rx_callback_t)(const uint8_t* data, uint16_t length, uint16_t src_addr);
 
-// TX state
+// RX statistics
 typedef struct
 {
-    uint32_t attempts;
-    uint16_t counter;
-    bool auto_increment; // If true, counter auto-increments; if false, use fixed value
-    bool enabled;        // If true, node transmits periodically; if false, RX only
-} uwb_tx_state_t;
+    uint32_t received;  // Valid frames received and delivered to callback
+    uint32_t rx_errors; // Hardware RX errors
+    uint32_t filtered;  // Frames filtered (wrong address/PAN)
+} uwb_rx_stats_t;
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -108,6 +99,7 @@ STATIC void uwb_state_faulted_on_entry(uint16_t prevState);
  *---------------------------------------------------------------------------*/
 STATIC void uwb_init(void);
 STATIC void uwb_process_1Hz(void);
+STATIC void uwb_process_100Hz(void);
 
 extern const module_S uwb_module;
 STATIC bool uwb_cmd_handler(const cmd_parsed_t* parsed);
@@ -116,6 +108,7 @@ const module_S uwb_module = {
     .module_name = "uwb",
     .module_init = uwb_init,
     .module_process_1Hz = uwb_process_1Hz,
+    .module_process_100Hz = uwb_process_100Hz,
     .module_cmd_handler = uwb_cmd_handler,
 };
 
@@ -128,7 +121,7 @@ STATIC const state_s uwb_states[] = {
     [STATE_INITIALIZATION] = {.process = NULL,
                               .onEntry = uwb_state_initialization_on_entry,
                               .onExit = NULL},
-    [STATE_ACTIVE] = {.process = uwb_state_active_process, .onEntry = NULL, .onExit = NULL},
+    [STATE_ACTIVE] = {.process = NULL, .onEntry = NULL, .onExit = NULL},
     [STATE_FAULTED] = {.process = NULL, .onEntry = uwb_state_faulted_on_entry, .onExit = NULL}};
 
 STATIC state_machine_s uwb_state_machine = {.prev_state = STATE_OFF,
@@ -146,12 +139,12 @@ STATIC uwb_state_machine_inputs_t sm_inputs = {0};
 STATIC uwb_addressing_t addressing = {
     .my_pan_id = MAC_DEFAULT_PAN_ID,
     .my_address = DEFAULT_NODE_ADDRESS,
-    .tx_dest_addr = MAC_BROADCAST_ADDR, // Default to broadcast
     .tx_sequence = 0,
 };
-STATIC uwb_rx_state_t rx_state = {0};
-STATIC uwb_tx_state_t tx_state = {.auto_increment = true,
-                                  .enabled = false}; // TX disabled by default
+
+// RX statistics and callback
+STATIC uwb_rx_stats_t rx_stats = {0};
+STATIC uwb_rx_callback_t rx_callback = NULL;
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -211,6 +204,21 @@ STATIC void uwb_process_1Hz(void)
 
     // Run state machine at 1Hz
     state_machine_periodic(&uwb_state_machine);
+
+    // Read measurements at 1Hz (temperature, voltage)
+    if (uwb_state_machine.curr_state == STATE_ACTIVE)
+    {
+        read_measurements();
+    }
+}
+
+STATIC void uwb_process_100Hz(void)
+{
+    // Run active process at 100Hz for responsive RX polling
+    if (uwb_state_machine.curr_state == STATE_ACTIVE)
+    {
+        uwb_state_active_process();
+    }
 }
 
 STATIC uint16_t uwb_transition_logic(uint16_t currentState, uint32_t stateTimer)
@@ -320,13 +328,8 @@ STATIC void uwb_state_initialization_on_entry(uint16_t prevState)
         return;
     }
 
-    // Initialize state counters
-    tx_state.attempts = 0;
-    tx_state.counter = 0;
-    rx_state.length = 0;
-    rx_state.parsed_value = 0;
-    rx_state.count = 0;
-    rx_state.checks = 0;
+    // Initialize RX statistics
+    rx_stats = (uwb_rx_stats_t){0};
 
     // Read initial measurements
     read_measurements();
@@ -334,82 +337,54 @@ STATIC void uwb_state_initialization_on_entry(uint16_t prevState)
 
 STATIC void uwb_state_active_process(void)
 {
-    // Read measurements
-    read_measurements();
-
-    // All nodes continuously listen for incoming messages
-    rx_state.checks++;
+    // All nodes continuously listen for incoming messages (polled at 100Hz)
+    uint8_t rx_buffer[MAX_MESSAGE_LENGTH];
     uint16_t received = 0;
     uwb_port_status_t rx_result =
-        uwb_port_receive_message(uwb_dev, rx_state.buffer, MAX_MESSAGE_LENGTH, &received);
+        uwb_port_receive_message(uwb_dev, rx_buffer, MAX_MESSAGE_LENGTH, &received);
 
     if (rx_result == UWB_PORT_SUCCESS)
     {
         // Check minimum frame size (12 bytes header minimum)
         if (received >= MAC_FRAME_SHORT_HEADER_SIZE)
         {
-            mac_frame_short_t* rx_frame = (mac_frame_short_t*)rx_state.buffer;
+            mac_frame_short_t* rx_frame = (mac_frame_short_t*)rx_buffer;
 
             // Verify this frame is for us (check dest address and PAN ID)
             if ((rx_frame->dest_addr == addressing.my_address ||
                  rx_frame->dest_addr == MAC_BROADCAST_ADDR) &&
                 rx_frame->dest_pan_id == addressing.my_pan_id)
             {
-                rx_state.length = received;
-                rx_state.count++;
+                rx_stats.received++;
 
-                // Extract and parse payload
-                uint16_t payload_len = received - MAC_FRAME_SHORT_HEADER_SIZE;
-
-                if (payload_len > 0 && payload_len < MAC_MAX_PAYLOAD_SIZE)
+                // Invoke RX callback if registered
+                if (rx_callback != NULL)
                 {
-                    rx_frame->payload[payload_len] = '\0';
-                    rx_state.parsed_value = (uint32_t)atoi((char*)rx_frame->payload);
+                    // Extract payload (skip MAC header)
+                    uint16_t payload_len = received - MAC_FRAME_SHORT_HEADER_SIZE;
+
+                    // Safety: Validate payload size before invoking callback
+                    if (payload_len <= MAC_MAX_PAYLOAD_SIZE)
+                    {
+                        rx_callback(rx_frame->payload, payload_len, rx_frame->src_addr);
+                    }
                 }
+            }
+            else
+            {
+                // Frame not for us (filtered by address/PAN)
+                rx_stats.filtered++;
             }
         }
     }
     else if (rx_result != UWB_PORT_ERROR_NO_DATA)
     {
-        // Only fault on real errors, not just "no data available"
+        // Real RX error (not just "no data available")
+        rx_stats.rx_errors++;
         fault_code = FAULT_RX_FAILED;
     }
 
-    // Transmit if enabled (can be controlled via UART: uwb.set txenable on/off)
-    if (tx_state.enabled)
-    {
-        tx_state.attempts++;
-
-        // Build 802.15.4 MAC frame
-        uint8_t tx_buffer[MAC_MAX_FRAME_SIZE];
-        mac_frame_short_t* frame = (mac_frame_short_t*)tx_buffer;
-
-        frame->frame_control = MAC_FC_TYPE_DATA | MAC_FC_DST_ADDR_SHORT | MAC_FC_SRC_ADDR_SHORT;
-        frame->sequence = addressing.tx_sequence++;
-        frame->dest_pan_id = addressing.my_pan_id;
-        frame->dest_addr = addressing.tx_dest_addr;
-        frame->src_addr = addressing.my_address;
-
-        // Add payload - counter value (auto-increment or fixed)
-        char msg[6]; // Max 5 digits for uint16_t (65535) + null terminator
-        snprintf(msg, sizeof(msg), "%u", tx_state.counter);
-        uint16_t payload_len = strlen(msg);
-        memcpy(frame->payload, msg, payload_len);
-
-        // Increment counter if auto-increment is enabled (wraps at 65535)
-        if (tx_state.auto_increment)
-        {
-            tx_state.counter++; // Naturally wraps at 65536 back to 0
-        }
-
-        // Send frame (header + payload)
-        uint16_t frame_len = MAC_FRAME_SHORT_HEADER_SIZE + payload_len;
-        uwb_port_status_t tx_result = uwb_port_send_message(uwb_dev, tx_buffer, frame_len);
-        if (tx_result != UWB_PORT_SUCCESS)
-        {
-            fault_code = FAULT_TX_FAILED;
-        }
-    }
+    // Note: Application modules call uwb_send_message() to transmit
 }
 
 STATIC void uwb_state_faulted_on_entry(uint16_t prevState)
@@ -476,41 +451,14 @@ bool uwb_is_ready(void)
     return (uwb_state_machine.curr_state == STATE_ACTIVE);
 }
 
-uint16_t uwb_get_received_message(char* buffer, uint16_t buffer_size)
+void uwb_start(void)
 {
-    if (buffer == NULL || buffer_size == 0)
-    {
-        return 0;
-    }
-
-    uint16_t copy_len = (rx_state.length < buffer_size - 1) ? rx_state.length : (buffer_size - 1);
-    if (copy_len > 0)
-    {
-        memcpy(buffer, rx_state.buffer, copy_len);
-        buffer[copy_len] = '\0';
-    }
-
-    return rx_state.length;
+    sm_inputs.start_requested = true;
 }
 
-uint32_t uwb_get_rx_parsed_value(void)
+void uwb_stop(void)
 {
-    return rx_state.parsed_value;
-}
-
-uint32_t uwb_get_rx_count(void)
-{
-    return rx_state.count;
-}
-
-uint32_t uwb_get_tx_attempts(void)
-{
-    return tx_state.attempts;
-}
-
-uint32_t uwb_get_rx_checks(void)
-{
-    return rx_state.checks;
+    sm_inputs.stop_requested = true;
 }
 
 void uwb_set_address(uint16_t address, uint16_t pan_id)
@@ -526,11 +474,6 @@ void uwb_set_address(uint16_t address, uint16_t pan_id)
     }
 }
 
-void uwb_set_dest_address(uint16_t dest_addr)
-{
-    addressing.tx_dest_addr = dest_addr;
-}
-
 bool uwb_soft_reset(void)
 {
     // Check if device is initialized and ready
@@ -544,14 +487,72 @@ bool uwb_soft_reset(void)
     return (ret == UWB_PORT_SUCCESS);
 }
 
-void uwb_set_tx_enable(bool enable)
+bool uwb_send_message(const uint8_t* data, uint16_t length, uint16_t dest_addr)
 {
-    tx_state.enabled = enable;
+    // Check if device is ready
+    if (!uwb_is_ready())
+    {
+        uart_manager_print("[UWB] Send failed: not ready\r\n");
+        return false;
+    }
+
+    if (uwb_dev == NULL)
+    {
+        uart_manager_print("[UWB] Send failed: dev is NULL\r\n");
+        return false;
+    }
+
+    // Validate parameters
+    if (data == NULL)
+    {
+        uart_manager_print("[UWB] Send failed: data is NULL\r\n");
+        return false;
+    }
+
+    if (length == 0)
+    {
+        uart_manager_print("[UWB] Send failed: length is 0\r\n");
+        return false;
+    }
+
+    if (length > MAC_MAX_PAYLOAD_SIZE)
+    {
+        uart_manager_print("[UWB] Send failed: length too large (%u > %u)\r\n", length,
+                           MAC_MAX_PAYLOAD_SIZE);
+        return false;
+    }
+
+    // Build 802.15.4 MAC frame
+    uint8_t tx_buffer[MAC_MAX_FRAME_SIZE];
+    mac_frame_short_t* frame = (mac_frame_short_t*)tx_buffer;
+
+    frame->frame_control = MAC_FC_TYPE_DATA | MAC_FC_DST_ADDR_SHORT | MAC_FC_SRC_ADDR_SHORT;
+    frame->sequence = addressing.tx_sequence++;
+    frame->dest_pan_id = addressing.my_pan_id;
+    frame->dest_addr = dest_addr;
+    frame->src_addr = addressing.my_address;
+
+    // Copy payload
+    memcpy(frame->payload, data, length);
+
+    // Send frame (header + payload)
+    uint16_t frame_len = MAC_FRAME_SHORT_HEADER_SIZE + length;
+    uart_manager_print("[UWB] Sending: src=0x%04X dst=0x%04X len=%u\r\n", addressing.my_address,
+                       dest_addr, frame_len);
+    uwb_port_status_t result = uwb_port_send_message(uwb_dev, tx_buffer, frame_len);
+
+    if (result != UWB_PORT_SUCCESS)
+    {
+        uart_manager_print("[UWB] Port send failed: %d\r\n", result);
+        return false;
+    }
+
+    return true;
 }
 
-bool uwb_get_tx_enabled(void)
+void uwb_register_rx_callback(uwb_rx_callback_t callback)
 {
-    return tx_state.enabled;
+    rx_callback = callback;
 }
 
 /*---------------------------------------------------------------------------
@@ -594,9 +595,8 @@ STATIC bool uwb_cmd_handler(const cmd_parsed_t* parsed)
             }
             else if (strcmp(parsed->target, "addr") == 0)
             {
-                uart_manager_print("UWB addr: PAN=0x%04X, ADDR=0x%04X, DEST=0x%04X\r\n",
-                                   addressing.my_pan_id, addressing.my_address,
-                                   addressing.tx_dest_addr);
+                uart_manager_print("UWB addr: PAN=0x%04X, ADDR=0x%04X\r\n", addressing.my_pan_id,
+                                   addressing.my_address);
                 return true;
             }
             else if (strcmp(parsed->target, "temp") == 0)
@@ -621,87 +621,28 @@ STATIC bool uwb_cmd_handler(const cmd_parsed_t* parsed)
             }
             else if (strcmp(parsed->target, "stats") == 0)
             {
-                uart_manager_print("UWB stats:\r\n");
-                uart_manager_print("  TX enabled: %s\r\n", tx_state.enabled ? "yes" : "no");
-                uart_manager_print("  TX attempts: %u\r\n", (unsigned int)tx_state.attempts);
-                uart_manager_print("  TX counter: %u (%s)\r\n", tx_state.counter,
-                                   tx_state.auto_increment ? "auto" : "fixed");
-                uart_manager_print("  RX count: %u\r\n", (unsigned int)rx_state.count);
-                uart_manager_print("  RX checks: %u\r\n", (unsigned int)rx_state.checks);
-                uart_manager_print("  Last value: %u\r\n", (unsigned int)rx_state.parsed_value);
-                return true;
-            }
-            else if (strcmp(parsed->target, "txval") == 0)
-            {
-                uart_manager_print("TX value: %u (%s)\r\n", tx_state.counter,
-                                   tx_state.auto_increment ? "auto-increment" : "fixed");
-                return true;
-            }
-            else if (strcmp(parsed->target, "txenable") == 0)
-            {
-                uart_manager_print("TX enabled: %s\r\n", tx_state.enabled ? "yes" : "no");
+                uart_manager_print("UWB RX stats:\r\n");
+                uart_manager_print("  Received:  %u frames\r\n", (unsigned int)rx_stats.received);
+                uart_manager_print("  Errors:    %u\r\n", (unsigned int)rx_stats.rx_errors);
+                uart_manager_print("  Filtered:  %u (wrong addr/PAN)\r\n",
+                                   (unsigned int)rx_stats.filtered);
+
+                // Calculate and display success rate
+                uint32_t total_attempts = rx_stats.received + rx_stats.rx_errors;
+                if (total_attempts > 0)
+                {
+                    float success_rate = (100.0f * rx_stats.received) / total_attempts;
+                    uart_manager_print("  Success:   %.1f%%\r\n", success_rate);
+                }
+
+                uart_manager_print("  Callback:  %s\r\n", rx_callback ? "registered" : "none");
+                uart_manager_print("\r\nNote: Use 'beacon.get stats' for TX statistics\r\n");
                 return true;
             }
             break;
 
         case CMD_ACTION_SET:
-            if (strcmp(parsed->target, "txenable") == 0)
-            {
-                // Enable/disable TX: "uwb.set txenable on" or "uwb.set txenable off"
-                if (!uwb_is_ready())
-                {
-                    uart_manager_print("UWB not ready yet\r\n");
-                    return true;
-                }
-
-                if (strcmp(parsed->args, "on") == 0 || strcmp(parsed->args, "1") == 0)
-                {
-                    tx_state.enabled = true;
-                    uart_manager_print("TX enabled - node will transmit at 1Hz\r\n");
-                    return true;
-                }
-                else if (strcmp(parsed->args, "off") == 0 || strcmp(parsed->args, "0") == 0)
-                {
-                    tx_state.enabled = false;
-                    uart_manager_print("TX disabled - node is RX only\r\n");
-                    return true;
-                }
-                else
-                {
-                    uart_manager_print("Invalid argument. Use 'on' or 'off'\r\n");
-                    return true;
-                }
-            }
-            else if (strcmp(parsed->target, "txval") == 0)
-            {
-                // Set TX value: "uwb.set txval 1234" or "uwb.set txval auto"
-                if (!uwb_is_ready())
-                {
-                    uart_manager_print("UWB not ready yet\r\n");
-                    return true;
-                }
-
-                if (strcmp(parsed->args, "auto") == 0)
-                {
-                    tx_state.auto_increment = true;
-                    uart_manager_print("TX auto-increment enabled\r\n");
-                    return true;
-                }
-                else
-                {
-                    // Parse numeric value
-                    int value = atoi(parsed->args);
-                    if (value < 0 || value > 65535)
-                    {
-                        uart_manager_print("Invalid value. Range: 0-65535\r\n");
-                        return true;
-                    }
-                    tx_state.counter = (uint16_t)value;
-                    tx_state.auto_increment = false;
-                    uart_manager_print("TX value set to %u (auto-increment disabled)\r\n", value);
-                    return true;
-                }
-            }
+            // No SET commands currently supported
             break;
 
         case CMD_ACTION_REQ:
@@ -731,6 +672,13 @@ STATIC bool uwb_cmd_handler(const cmd_parsed_t* parsed)
                 // Stop UWB radio: "uwb.req stop"
                 sm_inputs.stop_requested = true;
                 uart_manager_print("UWB stop requested\r\n");
+                return true;
+            }
+            else if (strcmp(parsed->target, "resetstats") == 0)
+            {
+                // Reset RX statistics: "uwb.req resetstats"
+                rx_stats = (uwb_rx_stats_t){0};
+                uart_manager_print("RX statistics reset\r\n");
                 return true;
             }
             break;

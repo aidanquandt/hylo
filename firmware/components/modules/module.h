@@ -27,6 +27,7 @@ typedef enum
     TWR_MODULE,
     UWB_MODULE,
     IMU_MODULE,
+    TEST_BEACON_MODULE,
     NUM_MODULES
 } modules_E;
 

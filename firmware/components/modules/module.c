@@ -8,6 +8,7 @@
 #include "node.h"
 #include "sensor_fusion.h"
 #include "tdma.h"
+#include "test_beacon.h"
 #include "twr.h"
 #include "uart_manager.h"
 #include "uwb.h"
@@ -24,6 +25,7 @@ extern const module_S tdma_module;
 extern const module_S twr_module;
 extern const module_S uwb_module;
 extern const module_S imu_module;
+extern const module_S test_beacon_module;
 
 const module_S* const modules[NUM_MODULES] = {
     [UART_MANAGER_MODULE] = &uart_manager_module,   // First! (other modules may print during init)
@@ -35,4 +37,5 @@ const module_S* const modules[NUM_MODULES] = {
     [TWR_MODULE] = &twr_module,
     [UWB_MODULE] = &uwb_module,
     [IMU_MODULE] = &imu_module,
+    [TEST_BEACON_MODULE] = &test_beacon_module,
 };

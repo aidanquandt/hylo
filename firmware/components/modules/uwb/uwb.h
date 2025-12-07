@@ -14,6 +14,25 @@
 #include "common.h"
 
 /*---------------------------------------------------------------------------
+ * Typedefs
+ *---------------------------------------------------------------------------*/
+
+/**
+ * @brief RX callback function type
+ *
+ * Called when a valid UWB message is received (at 100Hz polling rate).
+ * The callback is invoked from the UWB module's 100Hz processing context.
+ *
+ * @param data Pointer to received payload data (MAC header already stripped)
+ * @param length Length of payload in bytes
+ * @param src_addr Source address of the sender (16-bit 802.15.4 address)
+ *
+ * @note The data pointer is only valid during the callback - copy if needed
+ * @note This is called at 100Hz rate - keep processing brief
+ */
+typedef void (*uwb_rx_callback_t)(const uint8_t* data, uint16_t length, uint16_t src_addr);
+
+/*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
 
@@ -48,36 +67,16 @@ float uwb_get_voltage(void);
 bool uwb_is_ready(void);
 
 /**
- * @brief Get last received message
- * @param buffer Buffer to store message
- * @param buffer_size Size of buffer
- * @return Number of bytes received, or 0 if no message
+ * @brief Request UWB radio to start
+ * @note This is asynchronous - radio will initialize and become active
+ * @note Check uwb_is_ready() to verify when radio is active
  */
-uint16_t uwb_get_received_message(char* buffer, uint16_t buffer_size);
+void uwb_start(void);
 
 /**
- * @brief Get the parsed numeric value from last received message (watch in debugger)
- * @return Parsed number (e.g., 68)
+ * @brief Request UWB radio to stop
  */
-uint32_t uwb_get_rx_parsed_value(void);
-
-/**
- * @brief Get count of received messages
- * @return Number of messages received
- */
-uint32_t uwb_get_rx_count(void);
-
-/**
- * @brief Get count of TX attempts (debug)
- * @return Number of times TX was attempted
- */
-uint32_t uwb_get_tx_attempts(void);
-
-/**
- * @brief Get count of RX checks (debug)
- * @return Number of times RX was checked
- */
-uint32_t uwb_get_rx_checks(void);
+void uwb_stop(void);
 
 /**
  * @brief Set this device's 802.15.4 address and PAN ID
@@ -85,12 +84,6 @@ uint32_t uwb_get_rx_checks(void);
  * @param pan_id 16-bit PAN identifier (default 0xDECA)
  */
 void uwb_set_address(uint16_t address, uint16_t pan_id);
-
-/**
- * @brief Set destination address for transmission
- * @param dest_addr 16-bit destination address (0xFFFF = broadcast)
- */
-void uwb_set_dest_address(uint16_t dest_addr);
 
 /**
  * @brief Perform a soft reset on the UWB device
@@ -103,14 +96,43 @@ void uwb_set_dest_address(uint16_t dest_addr);
 bool uwb_soft_reset(void);
 
 /**
- * @brief Enable or disable periodic transmission
- * @param enable true to enable TX (node transmits at 1Hz), false to disable (RX only)
- * @note All nodes are always listening. This controls whether they also transmit.
+ * @brief Send a message via UWB
+ *
+ * Sends arbitrary data to a destination node using 802.15.4 framing.
+ * This is the main API for applications to transmit messages.
+ *
+ * @param data Pointer to payload data to send
+ * @param length Length of payload in bytes (max MAC_MAX_PAYLOAD_SIZE)
+ * @param dest_addr Destination 16-bit address (use MAC_BROADCAST_ADDR for broadcast)
+ *
+ * @return true if message sent successfully, false if:
+ *         - UWB not ready/active
+ *         - Invalid parameters (NULL pointer, length too large/small)
+ *         - Transmission failed
+ *
+ * @note This function blocks until transmission completes (~1ms)
+ * @note 802.15.4 header is added automatically (source addr, PAN ID, etc.)
+ * @note Application modules should call this to send messages
  */
-void uwb_set_tx_enable(bool enable);
+bool uwb_send_message(const uint8_t* data, uint16_t length, uint16_t dest_addr);
 
 /**
- * @brief Check if periodic transmission is enabled
- * @return true if TX enabled, false if RX only
+ * @brief Register a callback for received UWB messages
+ *
+ * Applications register a callback to be notified when UWB messages are received.
+ * Only one callback can be registered at a time (last registration wins).
+ *
+ * @param callback Function to call when message received, or NULL to unregister
+ *
+ * @note Callback is invoked at 100Hz polling rate when messages arrive
+ * @note Keep callback processing brief - copy data if needed for later processing
+ * @note Payload has MAC header stripped - only application data is passed
+ *
+ * @example
+ * void my_rx_handler(const uint8_t* data, uint16_t len, uint16_t src) {
+ *     // Process received message
+ *     printf("Got %u bytes from 0x%04X\n", len, src);
+ * }
+ * uwb_register_rx_callback(my_rx_handler);
  */
-bool uwb_get_tx_enabled(void);
+void uwb_register_rx_callback(uwb_rx_callback_t callback);
