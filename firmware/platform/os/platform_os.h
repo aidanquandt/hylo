@@ -15,6 +15,7 @@
  * Type Definitions
  *---------------------------------------------------------------------------*/
 typedef uint32_t platform_os_critical_state_t;
+typedef void* platform_os_mutex_t;
 
 /*---------------------------------------------------------------------------
  * Public function prototypes
@@ -61,3 +62,26 @@ platform_os_critical_state_t platform_os_critical_enter(void);
  * @param state Previous interrupt state from platform_os_critical_enter()
  */
 void platform_os_critical_exit(platform_os_critical_state_t state);
+
+/**
+ * @brief Create a mutex for synchronization
+ * @return Mutex handle, or NULL on failure
+ * @note Must be called before scheduler starts
+ */
+platform_os_mutex_t platform_os_mutex_create(void);
+
+/**
+ * @brief Acquire mutex with timeout
+ * @param mutex Mutex handle
+ * @param timeout_ms Timeout in milliseconds (0 = no wait, UINT32_MAX = wait forever)
+ * @return true if mutex acquired, false on timeout
+ * @note Safe to call from task context only (not ISR)
+ */
+bool platform_os_mutex_take(platform_os_mutex_t mutex, uint32_t timeout_ms);
+
+/**
+ * @brief Release mutex
+ * @param mutex Mutex handle
+ * @note Safe to call from task context only (not ISR)
+ */
+void platform_os_mutex_give(platform_os_mutex_t mutex);

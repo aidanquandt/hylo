@@ -7,6 +7,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "uart_cmd_router.h"
+#include "error_handler.h"
 #include "uart_manager.h"
 #include <ctype.h>
 #include <string.h>
@@ -121,9 +122,8 @@ bool uart_cmd_router_register(const char* module_name, cmd_handler_fn_t handler)
 
     if (num_registered >= MAX_REGISTERED_MODULES)
     {
-        // Log failure - registration table full
-        uart_manager_print("ERROR: Module registration full (%u/%u)\r\n", num_registered,
-                           MAX_REGISTERED_MODULES);
+        error_handler_log(ERROR_SEVERITY_ERROR, "uart_cmd", "Module registration full (%u/%u)",
+                          num_registered, MAX_REGISTERED_MODULES);
         return false;
     }
 
@@ -132,7 +132,8 @@ bool uart_cmd_router_register(const char* module_name, cmd_handler_fn_t handler)
     {
         if (strcmp(registered_modules[i].module_name, module_name) == 0)
         {
-            uart_manager_print("WARN: Module '%s' already registered\r\n", module_name);
+            error_handler_log(ERROR_SEVERITY_WARNING, "uart_cmd", "Module '%s' already registered",
+                              module_name);
             return false;
         }
     }

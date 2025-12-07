@@ -7,6 +7,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "imu.h"
+#include "error_handler.h"
 #include "imu_port.h"
 #include "module.h"
 #include "platform_gpio.h"
@@ -313,7 +314,7 @@ STATIC void imu_state_faulted_on_entry(uint16_t prevState)
             break;
     }
 
-    uart_manager_print("IMU FAULT: %s (code=%u)\r\n", fault_str, imu_fault_code);
+    error_handler_log(ERROR_SEVERITY_ERROR, "imu", "%s (code=%u)", fault_str, imu_fault_code);
 }
 
 /*---------------------------------------------------------------------------
