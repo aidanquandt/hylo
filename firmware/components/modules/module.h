@@ -11,14 +11,14 @@
  * Forward Declarations
  *---------------------------------------------------------------------------*/
 typedef struct cmd_parsed_s cmd_parsed_t;
-typedef bool (*cmd_handler_fn_t)(const cmd_parsed_t *parsed);
+typedef bool (*cmd_handler_fn_t)(const cmd_parsed_t* parsed);
 
 /*---------------------------------------------------------------------------
  * Typedefs
  *---------------------------------------------------------------------------*/
 typedef enum
 {
-    UART_MANAGER_MODULE = 0U,  // Must initialize first (other modules may use UART)
+    UART_MANAGER_MODULE = 0U, // Must initialize first (other modules may use UART)
     SENSOR_FUSION_MODULE,
     DATALOGGER_MODULE,
     NODE_MODULE,
@@ -36,18 +36,18 @@ typedef enum
  * 3. module_process_*: Periodic callbacks driven by main application loop
  * 4. module_cmd_*: Optional UART command handler (auto-registered if non-NULL)
  */
-typedef struct 
+typedef struct
 {
-    const char *module_name;
+    const char* module_name;
     void (*module_init)(void);
     void (*module_create_task)(void);
     void (*module_process_1Hz)(void);
     void (*module_process_10Hz)(void);
     void (*module_process_100Hz)(void);
     void (*module_process_1kHz)(void);
-    
+
     // Optional: UART command interface
-    cmd_handler_fn_t module_cmd_handler;   // Command handler function or NULL
+    cmd_handler_fn_t module_cmd_handler; // Command handler function or NULL
 } module_S;
 
 /*---------------------------------------------------------------------------

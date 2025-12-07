@@ -2,22 +2,22 @@
  * Includes :) :)
  *---------------------------------------------------------------------------*/
 #include "app.h" // hello guys
+#include "cmsis_os.h"
 #include "cmsis_os2.h"
 #include "common.h"
-#include "module.h"
-#include "main.h"
-#include "platform_os.h"
-#include "platform_gpio.h"
-#include "cmsis_os.h"
-#include "task.h"
 #include "datalogger.h"
+#include "main.h"
+#include "module.h"
 #include "node.h"
+#include "platform_gpio.h"
+#include "platform_os.h"
 #include "sensor_fusion.h"
+#include "task.h"
 #include "tdma.h"
 #include "twr.h"
-#include "uwb.h"
-#include "uart_manager.h"
 #include "uart_cmd_router.h"
+#include "uart_manager.h"
+#include "uwb.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -39,10 +39,10 @@
 /*---------------------------------------------------------------------------
  * Private function prototypes
  *---------------------------------------------------------------------------*/
-STATIC void module_task_1Hz(void *argument);
-STATIC void module_task_10Hz(void *argument);
-STATIC void module_task_100Hz(void *argument);
-STATIC void module_task_1kHz(void *argument);
+STATIC void module_task_1Hz(void* argument);
+STATIC void module_task_10Hz(void* argument);
+STATIC void module_task_100Hz(void* argument);
+STATIC void module_task_1kHz(void* argument);
 STATIC void app_initialize_modules(void);
 STATIC void app_create_module_tasks(void);
 STATIC void app_post_module_initialization(void);
@@ -50,44 +50,44 @@ STATIC void app_post_module_initialization(void);
 /*---------------------------------------------------------------------------
  * Private function implementations
  *---------------------------------------------------------------------------*/
-STATIC void module_task_1Hz(void *argument) 
+STATIC void module_task_1Hz(void* argument)
 {
     modules_E module = (modules_E)(uintptr_t)argument;
     TickType_t lastWake = xTaskGetTickCount();
-    for(;;)
+    for (;;)
     {
         modules[module]->module_process_1Hz();
         vTaskDelayUntil(&lastWake, TASK_RATE_1HZ);
     }
 }
 
-STATIC void module_task_10Hz(void *argument) 
+STATIC void module_task_10Hz(void* argument)
 {
     modules_E module = (modules_E)(uintptr_t)argument;
     TickType_t lastWake = xTaskGetTickCount();
-    for(;;)
+    for (;;)
     {
         modules[module]->module_process_10Hz();
         vTaskDelayUntil(&lastWake, TASK_RATE_10HZ);
     }
 }
 
-STATIC void module_task_100Hz(void *argument) 
+STATIC void module_task_100Hz(void* argument)
 {
     modules_E module = (modules_E)(uintptr_t)argument;
     TickType_t lastWake = xTaskGetTickCount();
-    for(;;)
+    for (;;)
     {
         modules[module]->module_process_100Hz();
         vTaskDelayUntil(&lastWake, TASK_RATE_100HZ);
     }
 }
 
-STATIC void module_task_1kHz(void *argument) 
+STATIC void module_task_1kHz(void* argument)
 {
     modules_E module = (modules_E)(uintptr_t)argument;
     TickType_t lastWake = xTaskGetTickCount();
-    for(;;)
+    for (;;)
     {
         modules[module]->module_process_1kHz();
         vTaskDelayUntil(&lastWake, TASK_RATE_1KHZ);
@@ -96,7 +96,7 @@ STATIC void module_task_1kHz(void *argument)
 
 STATIC void app_initialize_modules(void)
 {
-    for (modules_E module_idx = (modules_E)0U; module_idx < NUM_MODULES; module_idx++) 
+    for (modules_E module_idx = (modules_E)0U; module_idx < NUM_MODULES; module_idx++)
     {
         if (modules[module_idx]->module_init != NULL)
         {
@@ -107,11 +107,11 @@ STATIC void app_initialize_modules(void)
 
 STATIC void app_create_module_tasks(void)
 {
-    char task_name[32];  // Match configMAX_TASK_NAME_LEN
+    char task_name[32]; // Match configMAX_TASK_NAME_LEN
     BaseType_t result;
 
     // First, create any standalone module tasks (like UART_TX)
-    for (modules_E module_idx = (modules_E)0U; module_idx < NUM_MODULES; module_idx++) 
+    for (modules_E module_idx = (modules_E)0U; module_idx < NUM_MODULES; module_idx++)
     {
         if (modules[module_idx]->module_create_task != NULL)
         {
@@ -120,93 +120,78 @@ STATIC void app_create_module_tasks(void)
     }
 
     // Then create periodic processing tasks
-    for (modules_E module_idx = (modules_E)0U; module_idx < NUM_MODULES; module_idx++) 
+    for (modules_E module_idx = (modules_E)0U; module_idx < NUM_MODULES; module_idx++)
     {
         if (modules[module_idx]->module_process_1kHz != NULL)
         {
-            snprintf(task_name, sizeof(task_name), "%s_1k", 
+            snprintf(task_name, sizeof(task_name), "%s_1k",
                      modules[module_idx]->module_name ? modules[module_idx]->module_name : "MOD");
 
-            result = xTaskCreate(
-                module_task_1kHz, 
-                task_name,
-                TASK_STACK_MEDIUM,
-                (void *)(uintptr_t)module_idx, 
-                PRIORITY_1KHZ_TASK,
-                NULL
-            );
-            if (result != pdPASS) {
+            result = xTaskCreate(module_task_1kHz, task_name, TASK_STACK_MEDIUM,
+                                 (void*)(uintptr_t)module_idx, PRIORITY_1KHZ_TASK, NULL);
+            if (result != pdPASS)
+            {
                 // Task creation failed - halt for debugging
-                for(;;);
+                for (;;)
+                    ;
             }
         }
 
         if (modules[module_idx]->module_process_100Hz != NULL)
         {
-            snprintf(task_name, sizeof(task_name), "%s_100", 
+            snprintf(task_name, sizeof(task_name), "%s_100",
                      modules[module_idx]->module_name ? modules[module_idx]->module_name : "MOD");
 
-            result = xTaskCreate(
-                module_task_100Hz, 
-                task_name,
-                TASK_STACK_MEDIUM,
-                (void *)(uintptr_t)module_idx, 
-                PRIORITY_100HZ_TASK,
-                NULL
-            );
-            if (result != pdPASS) {
-                for(;;);
+            result = xTaskCreate(module_task_100Hz, task_name, TASK_STACK_MEDIUM,
+                                 (void*)(uintptr_t)module_idx, PRIORITY_100HZ_TASK, NULL);
+            if (result != pdPASS)
+            {
+                for (;;)
+                    ;
             }
         }
 
         if (modules[module_idx]->module_process_10Hz != NULL)
         {
-            snprintf(task_name, sizeof(task_name), "%s_10", 
+            snprintf(task_name, sizeof(task_name), "%s_10",
                      modules[module_idx]->module_name ? modules[module_idx]->module_name : "MOD");
 
-            result = xTaskCreate(
-                module_task_10Hz, 
-                task_name,
-                TASK_STACK_MEDIUM,
-                (void *)(uintptr_t)module_idx, 
-                PRIORITY_10HZ_TASK,
-                NULL
-            );
-            if (result != pdPASS) {
-                for(;;);
+            result = xTaskCreate(module_task_10Hz, task_name, TASK_STACK_MEDIUM,
+                                 (void*)(uintptr_t)module_idx, PRIORITY_10HZ_TASK, NULL);
+            if (result != pdPASS)
+            {
+                for (;;)
+                    ;
             }
         }
 
         if (modules[module_idx]->module_process_1Hz != NULL)
         {
-            snprintf(task_name, sizeof(task_name), "%s_1", 
+            snprintf(task_name, sizeof(task_name), "%s_1",
                      modules[module_idx]->module_name ? modules[module_idx]->module_name : "MOD");
-            
-            result = xTaskCreate(
-                module_task_1Hz, 
-                task_name,
-                TASK_STACK_MEDIUM,
-                (void *)(uintptr_t)module_idx, 
-                PRIORITY_1HZ_TASK,
-                NULL
-            );
-            if (result != pdPASS) {
-                for(;;);
+
+            result = xTaskCreate(module_task_1Hz, task_name, TASK_STACK_MEDIUM,
+                                 (void*)(uintptr_t)module_idx, PRIORITY_1HZ_TASK, NULL);
+            if (result != pdPASS)
+            {
+                for (;;)
+                    ;
             }
         }
-
     }
 }
 
 STATIC void app_post_module_initialization(void)
 {
     // Register all module command handlers with UART router
-    for (modules_E i = (modules_E)0; i < NUM_MODULES; i++) {
-        if (modules[i]->module_cmd_handler != NULL && modules[i]->module_name != NULL) {
+    for (modules_E i = (modules_E)0; i < NUM_MODULES; i++)
+    {
+        if (modules[i]->module_cmd_handler != NULL && modules[i]->module_name != NULL)
+        {
             uart_cmd_router_register(modules[i]->module_name, modules[i]->module_cmd_handler);
         }
     }
-    
+
     // Update datalogger with task handles
     datalogger_update_task_handles();
 }
@@ -214,11 +199,11 @@ STATIC void app_post_module_initialization(void)
 /*---------------------------------------------------------------------------
  * Public function implementations
  *---------------------------------------------------------------------------*/
-void app_init(void) 
+void app_init(void)
 {
     // Phase 1: Initialize modules (create queues, semaphores, etc.)
     app_initialize_modules();
-    
+
     // Phase 2: Create all module tasks (now that RTOS primitives exist)
     app_create_module_tasks();
 

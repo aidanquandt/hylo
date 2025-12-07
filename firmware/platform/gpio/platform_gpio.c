@@ -8,6 +8,7 @@
 /*---------------------------------------------------------------------------
  * Public function implementations
  *---------------------------------------------------------------------------*/
-void platform_gpio_toggle_led_green(void){
+void platform_gpio_toggle_led_green(void)
+{
     BSP_LED_Toggle(LED_GREEN);
 }

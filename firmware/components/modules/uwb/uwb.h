@@ -1,7 +1,7 @@
 /*---------------------------------------------------------------------------
  * @file    uwb.h
  * @brief   UWB radio hardware test module
- * 
+ *
  * @note    TX/RX mode is configured at compile time in uwb.c
  *          Define UWB_TX_MODE for transmitter, or comment it out for receiver
  *---------------------------------------------------------------------------*/
@@ -68,7 +68,7 @@ bool uwb_enable_rx(uint8_t channel);
  * @param buffer_size Size of buffer
  * @return Number of bytes received, or 0 if no message
  */
-uint16_t uwb_get_received_message(char *buffer, uint16_t buffer_size);
+uint16_t uwb_get_received_message(char* buffer, uint16_t buffer_size);
 
 /**
  * @brief Get the parsed numeric value from last received message (watch in debugger)
@@ -121,10 +121,10 @@ void uwb_set_dest_address(uint16_t dest_addr);
 
 /**
  * @brief Perform a soft reset on the UWB device
- * 
+ *
  * Performs a software reset of the UWB chip. This should only be called
  * if the device has been initialized and is ready.
- * 
+ *
  * @return true if reset was successful, false if device is not ready or reset failed
  */
 bool uwb_soft_reset(void);

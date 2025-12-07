@@ -9,18 +9,18 @@
  *---------------------------------------------------------------------------*/
 STATIC void sensor_fusion_init(void);
 extern const module_S sensor_fusion_module;
-const module_S sensor_fusion_module = { 
-        .module_name = "sensor_fusion",
-        .module_init = sensor_fusion_init,
+const module_S sensor_fusion_module = {
+    .module_name = "sensor_fusion",
+    .module_init = sensor_fusion_init,
 };
 
 /*---------------------------------------------------------------------------
  * Public function implementations
  *---------------------------------------------------------------------------*/
-STATIC void sensor_fusion_init(void) {
-
+STATIC void sensor_fusion_init(void)
+{
 }
 
-void sensor_fusion_isr(void) {
-
+void sensor_fusion_isr(void)
+{
 }
