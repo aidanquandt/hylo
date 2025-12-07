@@ -8,8 +8,8 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include <stdbool.h>
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
@@ -21,7 +21,7 @@
  * @param threshold Threshold value to check against
  * @return true if counter reached threshold (counter is reset to 0), false otherwise
  */
-bool counter_uint8_t(uint8_t *counter, uint8_t threshold);
+bool counter_uint8_t(uint8_t* counter, uint8_t threshold);
 
 /**
  * @brief Increment uint16_t counter and check if threshold reached
@@ -29,7 +29,7 @@ bool counter_uint8_t(uint8_t *counter, uint8_t threshold);
  * @param threshold Threshold value to check against
  * @return true if counter reached threshold (counter is reset to 0), false otherwise
  */
-bool counter_uint16_t(uint16_t *counter, uint16_t threshold);
+bool counter_uint16_t(uint16_t* counter, uint16_t threshold);
 
 /**
  * @brief Increment uint32_t counter and check if threshold reached
@@ -37,4 +37,4 @@ bool counter_uint16_t(uint16_t *counter, uint16_t threshold);
  * @param threshold Threshold value to check against
  * @return true if counter reached threshold (counter is reset to 0), false otherwise
  */
-bool counter_uint32_t(uint32_t *counter, uint32_t threshold);
+bool counter_uint32_t(uint32_t* counter, uint32_t threshold);

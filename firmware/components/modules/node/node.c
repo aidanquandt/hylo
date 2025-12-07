@@ -16,13 +16,13 @@ const module_S node_module = {
     .module_name = "node",
     .module_init = node_init,
     .module_process_100Hz = node_process_100Hz,
-};/*---------------------------------------------------------------------------
- * Public function implementations
- *---------------------------------------------------------------------------*/
-STATIC void node_init(void) {
-
+}; /*---------------------------------------------------------------------------
+    * Public function implementations
+    *---------------------------------------------------------------------------*/
+STATIC void node_init(void)
+{
 }
 
-STATIC void node_process_100Hz(void) {
-
+STATIC void node_process_100Hz(void)
+{
 }

@@ -4,9 +4,9 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "common.h"
-#include <stdint.h>
-#include <stdbool.h>
 #include <stdarg.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 /*---------------------------------------------------------------------------
  * Public function prototypes
@@ -20,7 +20,7 @@
  * @note Thread-safe: Can be called from any task or ISR context
  * @note Message is queued and transmitted asynchronously by UART task
  */
-bool uart_manager_transmit(const uint8_t *data, size_t length);
+bool uart_manager_transmit(const uint8_t* data, size_t length);
 
 /**
  * @brief Print formatted string to UART (printf-style, thread-safe)
@@ -30,7 +30,7 @@ bool uart_manager_transmit(const uint8_t *data, size_t length);
  * @note Maximum formatted output length is 256 characters (truncated if longer)
  * @note Thread-safe: Can be called from any task or ISR context
  */
-bool uart_manager_print(const char *format, ...) __attribute__((format(printf, 1, 2)));
+bool uart_manager_print(const char* format, ...) __attribute__((format(printf, 1, 2)));
 
 /**
  * @brief Get number of messages waiting in UART transmit queue
@@ -61,7 +61,7 @@ uint32_t uart_manager_get_tx_errors(void);
  * @param cmd Null-terminated command string
  * @param length Length of command (excluding null terminator)
  */
-typedef void (*uart_cmd_callback_t)(const char *cmd, uint16_t length);
+typedef void (*uart_cmd_callback_t)(const char* cmd, uint16_t length);
 
 /**
  * @brief Register callback for received commands
@@ -70,7 +70,7 @@ typedef void (*uart_cmd_callback_t)(const char *cmd, uint16_t length);
  * @note Commands are delimited by newline ('\n') or carriage return ('\r')
  * @note CR+LF pairs (\r\n) are treated as a single delimiter
  * @note Callback execution blocks RX processing - keep handlers short
- * 
+ *
  * @example
  * void my_cmd_handler(const char *cmd, uint16_t length) {
  *     if (strcmp(cmd, "hello") == 0) {
@@ -79,7 +79,7 @@ typedef void (*uart_cmd_callback_t)(const char *cmd, uint16_t length);
  *         uart_manager_print("System OK\\n");
  *     }
  * }
- * 
+ *
  * // In your init:
  * uart_manager_register_cmd_callback(my_cmd_handler);
  */

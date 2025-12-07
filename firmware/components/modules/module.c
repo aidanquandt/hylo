@@ -2,14 +2,14 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "module.h"
-#include "uart_manager.h"
 #include "datalogger.h"
+#include "imu.h"
 #include "node.h"
 #include "sensor_fusion.h"
 #include "tdma.h"
 #include "twr.h"
+#include "uart_manager.h"
 #include "uwb.h"
-#include "imu.h"
 
 /*---------------------------------------------------------------------------
  * Public variables
@@ -24,12 +24,12 @@ extern const module_S uwb_module;
 extern const module_S imu_module;
 
 const module_S* const modules[NUM_MODULES] = {
-    [UART_MANAGER_MODULE]  = &uart_manager_module,  // First! (other modules may print during init)
+    [UART_MANAGER_MODULE] = &uart_manager_module, // First! (other modules may print during init)
     [SENSOR_FUSION_MODULE] = &sensor_fusion_module,
-    [DATALOGGER_MODULE]    = &datalogger_module,
-    [NODE_MODULE]          = &node_module,
-    [TDMA_MODULE]          = &tdma_module,
-    [TWR_MODULE]           = &twr_module,
-    [UWB_MODULE]           = &uwb_module,
-    [IMU_MODULE]           = &imu_module,
+    [DATALOGGER_MODULE] = &datalogger_module,
+    [NODE_MODULE] = &node_module,
+    [TDMA_MODULE] = &tdma_module,
+    [TWR_MODULE] = &twr_module,
+    [UWB_MODULE] = &uwb_module,
+    [IMU_MODULE] = &imu_module,
 };
