@@ -7,6 +7,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "uwb.h"
+#include "error_handler.h"
 #include "mac_802154.h"
 #include "module.h"
 #include "platform_gpio.h"
@@ -453,7 +454,7 @@ STATIC void uwb_state_faulted_on_entry(uint16_t prevState)
             break;
     }
 
-    uart_manager_print("UWB FAULT: %s (code=%u)\r\n", fault_str, fault_code);
+    error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "%s (code=%u)", fault_str, fault_code);
 }
 
 /*---------------------------------------------------------------------------

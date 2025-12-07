@@ -10,6 +10,7 @@
  *---------------------------------------------------------------------------*/
 #include "uart_manager.h"
 #include "cmsis_os2.h"
+#include "error_handler.h"
 #include "imu.h"
 #include "module.h"
 #include "platform_os.h"
@@ -237,9 +238,8 @@ STATIC void uart_manager_create_task(void)
     uart_tx_task_handle = osThreadNew(uart_tx_task, NULL, &task_attr);
     if (uart_tx_task_handle == NULL)
     {
-        // Fatal error - halt for debugging
-        for (;;)
-            ;
+        // Note: UART won't work for this error (task not running), but LED will blink
+        error_handler_fatal("uart_manager", "Failed to create UART TX task");
     }
 }
 

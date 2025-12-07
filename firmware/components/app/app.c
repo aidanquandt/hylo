@@ -6,6 +6,7 @@
 #include "cmsis_os2.h"
 #include "common.h"
 #include "datalogger.h"
+#include "error_handler.h"
 #include "main.h"
 #include "module.h"
 #include "node.h"
@@ -131,9 +132,7 @@ STATIC void app_create_module_tasks(void)
                                  (void*)(uintptr_t)module_idx, PRIORITY_1KHZ_TASK, NULL);
             if (result != pdPASS)
             {
-                // Task creation failed - halt for debugging
-                for (;;)
-                    ;
+                error_handler_fatal("app", "Failed to create task '%s' (1kHz)", task_name);
             }
         }
 
@@ -146,8 +145,7 @@ STATIC void app_create_module_tasks(void)
                                  (void*)(uintptr_t)module_idx, PRIORITY_100HZ_TASK, NULL);
             if (result != pdPASS)
             {
-                for (;;)
-                    ;
+                error_handler_fatal("app", "Failed to create task '%s' (100Hz)", task_name);
             }
         }
 
@@ -160,8 +158,7 @@ STATIC void app_create_module_tasks(void)
                                  (void*)(uintptr_t)module_idx, PRIORITY_10HZ_TASK, NULL);
             if (result != pdPASS)
             {
-                for (;;)
-                    ;
+                error_handler_fatal("app", "Failed to create task '%s' (10Hz)", task_name);
             }
         }
 
@@ -174,8 +171,7 @@ STATIC void app_create_module_tasks(void)
                                  (void*)(uintptr_t)module_idx, PRIORITY_1HZ_TASK, NULL);
             if (result != pdPASS)
             {
-                for (;;)
-                    ;
+                error_handler_fatal("app", "Failed to create task '%s' (1Hz)", task_name);
             }
         }
     }

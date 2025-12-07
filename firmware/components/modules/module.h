@@ -19,6 +19,7 @@ typedef bool (*cmd_handler_fn_t)(const cmd_parsed_t* parsed);
 typedef enum
 {
     UART_MANAGER_MODULE = 0U, // Must initialize first (other modules may use UART)
+    ERROR_HANDLER_MODULE,     // Initialize early (other modules may log errors)
     SENSOR_FUSION_MODULE,
     DATALOGGER_MODULE,
     NODE_MODULE,
