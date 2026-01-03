@@ -18,38 +18,52 @@
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
 
-/**
- * @brief Enable or disable the test beacon responder (deprecated - use beacon.set mode)
- * @param enable true for responder mode, false for master mode
- * @note Use UART command "beacon.set mode responder/master" instead
- * @deprecated Use mode setting via UART commands
- */
-void test_beacon_enable(bool enable);
+/*---------------------------------------------------------------------------
+ * Public API
+ *---------------------------------------------------------------------------*/
 
 /**
- * @brief Check if test beacon is in responder mode
- * @return true if in responder mode, false if in master mode
+ * @brief Beacon operating mode
  */
-bool test_beacon_is_enabled(void);
+typedef enum
+{
+    BEACON_MODE_RESPONDER, ///< Auto-respond to incoming messages
+    BEACON_MODE_MASTER     ///< Only listen, don't auto-respond
+} beacon_mode_e;
 
 /**
- * @brief Set the beacon counter value
- * @param value Counter value to use for next response (0-65535)
- * @note Counter increments automatically after each response sent
+ * @brief Beacon status information
  */
-void test_beacon_set_value(uint16_t value);
+typedef struct
+{
+    beacon_mode_e mode;     ///< Current operating mode
+    uint16_t counter;       ///< Current counter value
+    uint32_t rx_count;      ///< Messages received
+    uint32_t tx_count;      ///< Responses sent
+    uint16_t last_src_addr; ///< Last sender's address
+} beacon_status_t;
 
 /**
- * @brief Enable or disable auto-increment mode (deprecated)
- * @param enable Ignored - counter always auto-increments
- * @note This function is deprecated. Counter always increments on each response.
+ * @brief Get current beacon status
+ * @param status Output: status information
  */
-void test_beacon_set_auto_increment(bool enable);
+void test_beacon_get_status(beacon_status_t* status);
 
 /**
- * @brief Get current beacon statistics
- * @param counter Output: current counter value (next response number)
- * @param attempts Output: number of responses sent
- * @param auto_inc Output: always true (counter always auto-increments)
+ * @brief Set beacon operating mode
+ * @param mode Operating mode (responder or master)
  */
-void test_beacon_get_stats(uint16_t* counter, uint32_t* attempts, bool* auto_inc);
+void test_beacon_set_mode(beacon_mode_e mode);
+
+/**
+ * @brief Set beacon counter value
+ * @param value Counter value (0-65535)
+ */
+void test_beacon_set_counter(uint16_t value);
+
+/**
+ * @brief Send ping message to specified address
+ * @param dest_addr Destination address (use 0xFFFF for broadcast)
+ * @return true if sent successfully, false otherwise
+ */
+bool test_beacon_send_ping(uint16_t dest_addr);

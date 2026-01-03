@@ -18,6 +18,41 @@
  *---------------------------------------------------------------------------*/
 
 /**
+ * @brief UWB state
+ */
+typedef enum
+{
+    UWB_STATE_OFF,            ///< Radio off
+    UWB_STATE_INITIALIZATION, ///< Initializing hardware
+    UWB_STATE_ACTIVE,         ///< Active and ready
+    UWB_STATE_FAULTED         ///< Error state
+} uwb_state_e;
+
+/**
+ * @brief UWB status information
+ */
+typedef struct
+{
+    uwb_state_e state;   ///< Current state
+    uint32_t device_id;  ///< Device ID
+    float temperature;   ///< Temperature (degrees C)
+    float voltage;       ///< Voltage (V)
+    uint32_t fault_code; ///< Fault code (0 = no fault)
+    uint16_t my_address; ///< Our 802.15.4 address
+    uint16_t my_pan_id;  ///< Our PAN ID
+} uwb_status_t;
+
+/**
+ * @brief UWB RX statistics
+ */
+typedef struct
+{
+    uint32_t received;  ///< Valid frames received
+    uint32_t rx_errors; ///< RX errors
+    uint32_t filtered;  ///< Frames filtered (wrong addr/PAN)
+} uwb_rx_stats_t;
+
+/**
  * @brief RX callback function type
  *
  * Called when a valid UWB message is received (at 100Hz polling rate).
@@ -37,28 +72,21 @@ typedef void (*uwb_rx_callback_t)(const uint8_t* data, uint16_t length, uint16_t
  *---------------------------------------------------------------------------*/
 
 /**
- * @brief Test UWB radio SPI communication and device ID
- * @return true if device responds correctly, false otherwise
+ * @brief Get current UWB status
+ * @param status Output: status information
  */
-bool uwb_device_id(void);
+void uwb_get_status(uwb_status_t* status);
 
 /**
- * @brief Get the last measured device ID
- * @return 32-bit device ID value, or 0 if not yet read
+ * @brief Get UWB RX statistics
+ * @param stats Output: RX statistics
  */
-uint32_t uwb_get_device_id(void);
+void uwb_get_rx_stats(uwb_rx_stats_t* stats);
 
 /**
- * @brief Get the last measured temperature
- * @return Temperature in degrees Celsius, or 0.0f if not yet read
+ * @brief Reset RX statistics to zero
  */
-float uwb_get_temperature(void);
-
-/**
- * @brief Get the last measured voltage
- * @return Voltage in volts, or 0.0f if not yet read
- */
-float uwb_get_voltage(void);
+void uwb_reset_rx_stats(void);
 
 /**
  * @brief Check if hardware is ready
