@@ -281,7 +281,7 @@ STATIC bool validate_channel(const uwb_channel_t channel)
  * UWB Configuration and Communication Functions
  *---------------------------------------------------------------------------*/
 
-uwb_port_status_t uwb_port_configure_tx(uwb_dev_t* dev, uwb_channel_t channel)
+uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel)
 {
     if (dev == NULL)
     {
@@ -292,6 +292,12 @@ uwb_port_status_t uwb_port_configure_tx(uwb_dev_t* dev, uwb_channel_t channel)
     {
         return UWB_PORT_ERROR_CONFIG;
     }
+
+    // Stop any active TX/RX operation before reconfiguring
+    dwt_forcetrxoff();
+
+    // Clear all RX status flags to start with clean state
+    dwt_writesysstatuslo(SYS_STATUS_ALL_RX_GOOD | SYS_STATUS_ALL_RX_ERR);
 
     dwt_config_t config = {.chan = (uint8_t)channel,
                            .txPreambLength = DWT_PLEN_128,
@@ -319,24 +325,7 @@ uwb_port_status_t uwb_port_configure_tx(uwb_dev_t* dev, uwb_channel_t channel)
     dwt_txconfig_t txconfig = {.PGdly = 0x34, .power = 0xFEFEFEFEUL};
     dwt_configuretxrf(&txconfig);
 
-    return UWB_PORT_SUCCESS;
-}
-
-uwb_port_status_t uwb_port_configure_rx(uwb_dev_t* dev, uwb_channel_t channel)
-{
-    if (dev == NULL)
-    {
-        return UWB_PORT_ERROR_NULL_PTR;
-    }
-
-    // Use same config as TX
-    uwb_port_status_t status = uwb_port_configure_tx(dev, channel);
-    if (status != UWB_PORT_SUCCESS)
-    {
-        return status;
-    }
-
-    // Enable receiver
+    // Enable receiver - all nodes listen continuously for incoming messages
     if (dwt_rxenable(DWT_START_RX_IMMEDIATE) != DWT_SUCCESS)
     {
         return UWB_PORT_ERROR_COMM_FAIL;
@@ -357,6 +346,12 @@ uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uin
         return UWB_PORT_ERROR_CONFIG;
     }
 
+    // Stop receiver before transmitting
+    dwt_forcetrxoff();
+
+    // Clear any pending TX status flags
+    dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
+
     // Write data to TX buffer
     dwt_writetxdata(length, (uint8_t*)data, 0);
 
@@ -366,12 +361,14 @@ uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uin
     // Start transmission (immediate, no response expected)
     if (dwt_starttx(DWT_START_TX_IMMEDIATE) != DWT_SUCCESS)
     {
+        // Re-enable receiver before returning
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
         return UWB_PORT_ERROR_TX_FAIL;
     }
 
     // Wait for TX to complete by polling status
     uint32_t status = 0;
-    uint32_t timeout = 1000; // 1000 iterations
+    uint32_t timeout = 1000; // 1000 iterations (~10ms)
     while (timeout--)
     {
         status = dwt_readsysstatuslo();
@@ -379,12 +376,16 @@ uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uin
         {
             // TX complete - clear flag
             dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
+
+            // Re-enable receiver for continuous listening
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
             return UWB_PORT_SUCCESS;
         }
         platform_os_delay_us_blocking(10);
     }
 
-    // Timeout
+    // Timeout - re-enable receiver and return error
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
     return UWB_PORT_ERROR_TIMEOUT;
 }
 

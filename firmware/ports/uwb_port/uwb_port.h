@@ -201,7 +201,11 @@ void uwb_port_set_pan_id(uwb_dev_t* dev, uint16_t pan_id);
 void uwb_port_set_address(uwb_dev_t* dev, uint16_t address);
 
 /**
- * @brief Configure UWB for basic message transmission
+ * @brief Configure UWB radio for bidirectional communication
+ *
+ * Configures the radio parameters and enables the receiver. After this call,
+ * the device is ready to both transmit and receive messages. All nodes should
+ * be configured identically.
  *
  * @param[in] dev Pointer to UWB device handle
  * @param[in] channel UWB channel (see uwb_channel_t)
@@ -213,22 +217,7 @@ void uwb_port_set_address(uwb_dev_t* dev, uint16_t address);
  * @return UWB_PORT_ERROR_CONFIG if channel is invalid
  * @return UWB_PORT_ERROR_COMM_FAIL if configuration fails
  */
-uwb_port_status_t uwb_port_configure_tx(uwb_dev_t* dev, uwb_channel_t channel);
-
-/**
- * @brief Configure UWB for message reception
- *
- * @param[in] dev Pointer to UWB device handle
- * @param[in] channel UWB channel (must match transmitter)
- *
- * @pre dev must not be NULL
- *
- * @return UWB_PORT_SUCCESS on success
- * @return UWB_PORT_ERROR_NULL_PTR if dev is NULL
- * @return UWB_PORT_ERROR_CONFIG if channel is invalid
- * @return UWB_PORT_ERROR_COMM_FAIL if configuration fails
- */
-uwb_port_status_t uwb_port_configure_rx(uwb_dev_t* dev, uwb_channel_t channel);
+uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel);
 
 /**
  * @brief Send a message via UWB
