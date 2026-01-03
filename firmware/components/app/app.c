@@ -179,17 +179,6 @@ STATIC void app_create_module_tasks(void)
 
 STATIC void app_post_module_initialization(void)
 {
-    // Register all module command handlers with UART router
-    for (modules_E i = (modules_E)0; i < NUM_MODULES; i++)
-    {
-        if (modules[i]->module_cmd_handler != NULL && modules[i]->module_name != NULL)
-        {
-            uart_cmd_router_register(modules[i]->module_name, modules[i]->module_cmd_handler);
-        }
-    }
-
-    // Update datalogger with task handles
-    datalogger_update_task_handles();
 }
 
 /*---------------------------------------------------------------------------

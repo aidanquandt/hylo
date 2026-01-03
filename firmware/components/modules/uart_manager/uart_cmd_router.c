@@ -1,65 +1,49 @@
 /*---------------------------------------------------------------------------
  * @file    uart_cmd_router.c
- * @brief   UART command routing and dispatch implementation
+ * @brief   UART command router - parses commands and calls module APIs
  *---------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
 #include "uart_cmd_router.h"
+#include "datalogger.h"
 #include "error_handler.h"
+#include "imu.h"
+#include "test_beacon.h"
 #include "uart_manager.h"
+#include "uwb.h"
 #include <ctype.h>
+#include <stdlib.h>
 #include <string.h>
 
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define MAX_REGISTERED_MODULES 16U // Max number of module handlers
-#define MAX_TOKEN_LENGTH 32U       // Max length for module/action/target
-#define MAX_CMD_LENGTH 128U        // Max command length
-
-/*---------------------------------------------------------------------------
- * Private Variables
- *---------------------------------------------------------------------------*/
-STATIC cmd_module_entry_t registered_modules[MAX_REGISTERED_MODULES];
-STATIC uint8_t num_registered = 0U;
-STATIC bool router_initialized = false; // Guard against multiple init calls
+#define MAX_CMD_LENGTH 128U
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
-STATIC cmd_action_e parse_action(const char* action_str);
 STATIC const char* skip_whitespace(const char* str);
-STATIC void uart_cmd_router_handle_builtin(const cmd_parsed_t* parsed);
+STATIC void uart_cmd_router_handle_help(void);
+STATIC void uart_cmd_router_handle_list(void);
+STATIC void uart_cmd_router_handle_beacon(const char* action, const char* target, const char* args);
+STATIC void uart_cmd_router_handle_imu(const char* action, const char* target, const char* args);
+STATIC void uart_cmd_router_handle_uwb(const char* action, const char* target, const char* args);
+STATIC void uart_cmd_router_handle_error(const char* action, const char* target, const char* args);
+STATIC void uart_cmd_router_handle_datalogger(const char* action, const char* target,
+                                              const char* args);
+
+/*---------------------------------------------------------------------------
+ * Private Variables
+ *---------------------------------------------------------------------------*/
+STATIC bool router_initialized = false;
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
 
-/**
- * @brief Parse action string to enum
- */
-STATIC cmd_action_e parse_action(const char* action_str)
-{
-    if (strcmp(action_str, "get") == 0)
-    {
-        return CMD_ACTION_GET;
-    }
-    else if (strcmp(action_str, "set") == 0)
-    {
-        return CMD_ACTION_SET;
-    }
-    else if (strcmp(action_str, "req") == 0)
-    {
-        return CMD_ACTION_REQ;
-    }
-    return CMD_ACTION_UNKNOWN;
-}
-
-/**
- * @brief Skip leading whitespace
- */
 STATIC const char* skip_whitespace(const char* str)
 {
     while (*str && isspace((unsigned char)*str))
@@ -69,30 +53,370 @@ STATIC const char* skip_whitespace(const char* str)
     return str;
 }
 
-/**
- * @brief Handle built-in commands (help, list)
- */
-STATIC void uart_cmd_router_handle_builtin(const cmd_parsed_t* parsed)
+STATIC void uart_cmd_router_handle_help(void)
 {
-    if (strcmp(parsed->module, "help") == 0)
+    uart_manager_print("\r\nAvailable Commands:\r\n");
+    uart_manager_print("  help  - Show this help message\r\n");
+    uart_manager_print("  list  - List all available modules\r\n");
+    uart_manager_print("\r\nCommand format: <module>.<action>.<target> [args]\r\n");
+    uart_manager_print("Example: beacon.get.status\r\n");
+    uart_manager_print("Example: beacon.set.mode responder\r\n");
+    uart_manager_print("Example: beacon.req.ping 0x0002\r\n\r\n");
+}
+
+STATIC void uart_cmd_router_handle_list(void)
+{
+    uart_manager_print("\r\nAvailable Modules:\r\n");
+    uart_manager_print("  beacon     - Test beacon module\r\n");
+    uart_manager_print("  imu        - IMU sensor module\r\n");
+    uart_manager_print("  uwb        - UWB radio module\r\n");
+    uart_manager_print("  error      - Error handler module\r\n");
+    uart_manager_print("  datalogger - System monitoring\r\n\r\n");
+}
+
+STATIC void uart_cmd_router_handle_beacon(const char* action, const char* target, const char* args)
+{
+    if (strcmp(action, "get") == 0)
     {
-        uart_manager_print("\r\nCommands: <module>.<action> <target> [args]\r\n");
-        uart_manager_print("Actions: get, set, req\r\n\r\n");
-        uart_manager_print("Modules (%u):  ", num_registered);
-        for (uint8_t i = 0; i < num_registered; i++)
+        if (strcmp(target, "status") == 0)
         {
-            uart_manager_print("%s%s", registered_modules[i].module_name,
-                               (i < num_registered - 1) ? ", " : "\r\n");
+            beacon_status_t status;
+            test_beacon_get_status(&status);
+            const char* mode_str = (status.mode == BEACON_MODE_RESPONDER) ? "responder" : "master";
+            uart_manager_print("Beacon mode: %s\r\n", mode_str);
         }
-        uart_manager_print("Built-in: help, list\r\n");
+        else if (strcmp(target, "stats") == 0)
+        {
+            beacon_status_t status;
+            test_beacon_get_status(&status);
+            const char* mode_str = (status.mode == BEACON_MODE_RESPONDER) ? "responder" : "master";
+            uart_manager_print("Beacon stats:\r\n");
+            uart_manager_print("  Mode: %s\r\n", mode_str);
+            uart_manager_print("  Counter: %u\r\n", status.counter);
+            uart_manager_print("  RX: %u, TX: %u\r\n", (unsigned int)status.rx_count,
+                               (unsigned int)status.tx_count);
+            uart_manager_print("  Last sender: 0x%04X\r\n", status.last_src_addr);
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
     }
-    else if (strcmp(parsed->module, "list") == 0)
+    else if (strcmp(action, "set") == 0)
     {
-        uart_manager_print("\r\nModules (%u):\r\n", num_registered);
-        for (uint8_t i = 0; i < num_registered; i++)
+        if (strcmp(target, "mode") == 0)
         {
-            uart_manager_print("  %u: %s\r\n", i + 1, registered_modules[i].module_name);
+            if (args == NULL || *args == '\0')
+            {
+                uart_manager_print("Usage: beacon.set.mode <responder|master>\r\n");
+                return;
+            }
+            beacon_mode_e mode;
+            if (strcmp(args, "responder") == 0)
+            {
+                mode = BEACON_MODE_RESPONDER;
+            }
+            else if (strcmp(args, "master") == 0)
+            {
+                mode = BEACON_MODE_MASTER;
+            }
+            else
+            {
+                uart_manager_print("ERR: Invalid mode. Use 'responder' or 'master'\r\n");
+                return;
+            }
+            test_beacon_set_mode(mode);
+            uart_manager_print("Mode set to %s\r\n", args);
         }
+        else if (strcmp(target, "counter") == 0)
+        {
+            if (args == NULL || *args == '\0')
+            {
+                uart_manager_print("Usage: beacon.set.counter <value>\r\n");
+                return;
+            }
+            int value = atoi(args);
+            if (value < 0 || value > 65535)
+            {
+                uart_manager_print("ERR: Value out of range (0-65535)\r\n");
+                return;
+            }
+            test_beacon_set_counter((uint16_t)value);
+            uart_manager_print("Counter set to %u\r\n", value);
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else if (strcmp(action, "req") == 0)
+    {
+        if (strcmp(target, "ping") == 0)
+        {
+            uint16_t dest_addr = 0xFFFF;
+            if (args != NULL && *args != '\0')
+            {
+                dest_addr = (uint16_t)strtol(args, NULL, 0);
+            }
+            uart_manager_print("Sending ping to 0x%04X...\r\n", dest_addr);
+            if (test_beacon_send_ping(dest_addr))
+            {
+                uart_manager_print("Ping sent\r\n");
+            }
+            else
+            {
+                uart_manager_print("Ping failed\r\n");
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else
+    {
+        uart_manager_print("ERR: Unknown action '%s'\r\n", action);
+    }
+}
+
+STATIC void uart_cmd_router_handle_imu(const char* action, const char* target, const char* args)
+{
+    (void)args;
+
+    if (strcmp(action, "get") == 0)
+    {
+        if (strcmp(target, "status") == 0)
+        {
+            imu_status_t status;
+            imu_get_status(&status);
+            const char* state_str;
+            switch (status.state)
+            {
+                case IMU_STATE_ACTIVE:
+                    state_str = "active";
+                    break;
+                case IMU_STATE_INITIALIZATION:
+                    state_str = "init";
+                    break;
+                case IMU_STATE_FAULTED:
+                    state_str = "FAULTED";
+                    break;
+                default:
+                    state_str = "startup";
+                    break;
+            }
+            uart_manager_print("IMU: %s, chip_id=0x%02X\r\n", state_str, status.chip_id);
+        }
+        else if (strcmp(target, "data") == 0)
+        {
+            imu_data_t data;
+            if (imu_get_data(&data))
+            {
+                uart_manager_print("Accel: X=%.3f Y=%.3f Z=%.3f m/s^2\r\n", data.accel.x,
+                                   data.accel.y, data.accel.z);
+                uart_manager_print("Gyro:  X=%.3f Y=%.3f Z=%.3f deg/s\r\n", data.gyro.x,
+                                   data.gyro.y, data.gyro.z);
+                uart_manager_print("Temp:  %.2f C\r\n", data.temperature);
+            }
+            else
+            {
+                uart_manager_print("IMU not active\r\n");
+            }
+        }
+        else if (strcmp(target, "accel") == 0)
+        {
+            imu_vector3_t accel;
+            if (imu_get_accel(&accel))
+            {
+                uart_manager_print("Accel: X=%.3f Y=%.3f Z=%.3f m/s^2\r\n", accel.x, accel.y,
+                                   accel.z);
+            }
+            else
+            {
+                uart_manager_print("IMU not active\r\n");
+            }
+        }
+        else if (strcmp(target, "gyro") == 0)
+        {
+            imu_vector3_t gyro;
+            if (imu_get_gyro(&gyro))
+            {
+                uart_manager_print("Gyro: X=%.3f Y=%.3f Z=%.3f deg/s\r\n", gyro.x, gyro.y, gyro.z);
+            }
+            else
+            {
+                uart_manager_print("IMU not active\r\n");
+            }
+        }
+        else if (strcmp(target, "temp") == 0)
+        {
+            float temp;
+            if (imu_get_temp(&temp))
+            {
+                uart_manager_print("Temp: %.2f C\r\n", temp);
+            }
+            else
+            {
+                uart_manager_print("IMU not active\r\n");
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else
+    {
+        uart_manager_print("ERR: Unknown action '%s'\r\n", action);
+    }
+}
+
+STATIC void uart_cmd_router_handle_uwb(const char* action, const char* target, const char* args)
+{
+    (void)args;
+
+    if (strcmp(action, "get") == 0)
+    {
+        if (strcmp(target, "status") == 0)
+        {
+            uwb_status_t status;
+            uwb_get_status(&status);
+            const char* state_str;
+            switch (status.state)
+            {
+                case UWB_STATE_ACTIVE:
+                    state_str = "active";
+                    break;
+                case UWB_STATE_INITIALIZATION:
+                    state_str = "init";
+                    break;
+                case UWB_STATE_OFF:
+                    state_str = "off";
+                    break;
+                case UWB_STATE_FAULTED:
+                    state_str = "FAULTED";
+                    break;
+                default:
+                    state_str = "unknown";
+                    break;
+            }
+            uart_manager_print("UWB: %s, dev_id=0x%08X\r\n", state_str,
+                               (unsigned int)status.device_id);
+        }
+        else if (strcmp(target, "addr") == 0)
+        {
+            uwb_status_t status;
+            uwb_get_status(&status);
+            uart_manager_print("Addr: PAN=0x%04X, ADDR=0x%04X\r\n", status.my_pan_id,
+                               status.my_address);
+        }
+        else if (strcmp(target, "stats") == 0)
+        {
+            uwb_rx_stats_t stats;
+            uwb_get_rx_stats(&stats);
+            uart_manager_print("RX: %u received, %u errors, %u filtered\r\n",
+                               (unsigned int)stats.received, (unsigned int)stats.rx_errors,
+                               (unsigned int)stats.filtered);
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else if (strcmp(action, "req") == 0)
+    {
+        if (strcmp(target, "start") == 0)
+        {
+            uwb_start();
+            uart_manager_print("UWB start requested\r\n");
+        }
+        else if (strcmp(target, "stop") == 0)
+        {
+            uwb_stop();
+            uart_manager_print("UWB stop requested\r\n");
+        }
+        else if (strcmp(target, "resetstats") == 0)
+        {
+            uwb_reset_rx_stats();
+            uart_manager_print("Stats reset\r\n");
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else
+    {
+        uart_manager_print("ERR: Unknown action '%s'\r\n", action);
+    }
+}
+
+STATIC void uart_cmd_router_handle_error(const char* action, const char* target, const char* args)
+{
+    (void)args;
+
+    if (strcmp(action, "get") == 0)
+    {
+        if (strcmp(target, "status") == 0)
+        {
+            uart_manager_print("\r\nError Status:\r\n");
+            uart_manager_print("INFO:    %lu\r\n",
+                               (unsigned long)error_handler_get_count(ERROR_SEVERITY_INFO));
+            uart_manager_print("WARNING: %lu\r\n",
+                               (unsigned long)error_handler_get_count(ERROR_SEVERITY_WARNING));
+            uart_manager_print("ERROR:   %lu\r\n",
+                               (unsigned long)error_handler_get_count(ERROR_SEVERITY_ERROR));
+            uart_manager_print("FATAL:   %lu\r\n",
+                               (unsigned long)error_handler_get_count(ERROR_SEVERITY_FATAL));
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else if (strcmp(action, "set") == 0)
+    {
+        if (strcmp(target, "clear") == 0)
+        {
+            error_handler_clear_history();
+            uart_manager_print("Error history cleared\r\n");
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else
+    {
+        uart_manager_print("ERR: Unknown action '%s'\r\n", action);
+    }
+}
+
+STATIC void uart_cmd_router_handle_datalogger(const char* action, const char* target,
+                                              const char* args)
+{
+    (void)args;
+
+    if (strcmp(action, "get") == 0)
+    {
+        if (strcmp(target, "tasks") == 0)
+        {
+            uart_manager_print("\r\nTask List:\r\n");
+            task_cpu_info_t tasks[20];
+            uint32_t count = datalogger_get_task_usage(tasks, 20);
+            for (uint32_t i = 0; i < count; i++)
+            {
+                uart_manager_print("%-20s %5.2f%%\r\n", tasks[i].task_name, tasks[i].cpu_percent);
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else
+    {
+        uart_manager_print("ERR: Unknown action '%s'\r\n", action);
     }
 }
 
@@ -102,66 +426,26 @@ STATIC void uart_cmd_router_handle_builtin(const cmd_parsed_t* parsed)
 
 void uart_cmd_router_init(void)
 {
-    // Guard against multiple initialization
     if (router_initialized)
     {
         return;
     }
-
-    num_registered = 0U;
-    memset(registered_modules, 0, sizeof(registered_modules));
     router_initialized = true;
 }
 
-bool uart_cmd_router_register(const char* module_name, cmd_handler_fn_t handler)
+void uart_cmd_router_dispatch(const char* cmd_string)
 {
-    if (module_name == NULL || handler == NULL)
+    if (cmd_string == NULL)
     {
-        return false;
+        uart_manager_print("ERR: Invalid command\r\n");
+        return;
     }
 
-    if (num_registered >= MAX_REGISTERED_MODULES)
-    {
-        error_handler_log(ERROR_SEVERITY_ERROR, "uart_cmd", "Module registration full (%u/%u)",
-                          num_registered, MAX_REGISTERED_MODULES);
-        return false;
-    }
+    char local_buffer[MAX_CMD_LENGTH];
+    strncpy(local_buffer, cmd_string, sizeof(local_buffer) - 1);
+    local_buffer[sizeof(local_buffer) - 1] = '\0';
 
-    // Check for duplicate registration
-    for (uint8_t i = 0; i < num_registered; i++)
-    {
-        if (strcmp(registered_modules[i].module_name, module_name) == 0)
-        {
-            error_handler_log(ERROR_SEVERITY_WARNING, "uart_cmd", "Module '%s' already registered",
-                              module_name);
-            return false;
-        }
-    }
-
-    registered_modules[num_registered].module_name = module_name;
-    registered_modules[num_registered].handler = handler;
-    num_registered++;
-
-    return true;
-}
-
-bool uart_cmd_router_parse(const char* cmd_string, cmd_parsed_t* parsed)
-{
-    if (cmd_string == NULL || parsed == NULL)
-    {
-        return false;
-    }
-
-    // Clear output structure
-    memset(parsed, 0, sizeof(cmd_parsed_t));
-
-    // Use local buffer instead of static to avoid re-entrancy issues
-    char local_parse_buffer[MAX_CMD_LENGTH];
-    strncpy(local_parse_buffer, cmd_string, sizeof(local_parse_buffer) - 1);
-    local_parse_buffer[sizeof(local_parse_buffer) - 1] = '\0';
-
-    // Skip leading whitespace
-    char* p = local_parse_buffer;
+    char* p = local_buffer;
     while (*p && isspace((unsigned char)*p))
     {
         p++;
@@ -169,139 +453,69 @@ bool uart_cmd_router_parse(const char* cmd_string, cmd_parsed_t* parsed)
 
     if (*p == '\0')
     {
-        return false; // Empty command
+        return;
     }
 
-    // Parse module name (before '.')
-    char* dot = strchr(p, '.');
-    if (dot == NULL)
+    if (strcmp(p, "help") == 0)
     {
-        // No dot - treat entire command as module (for built-ins like "help")
-        strncpy(parsed->module, p, sizeof(parsed->module) - 1);
-        parsed->module[sizeof(parsed->module) - 1] = '\0';
-        parsed->action = CMD_ACTION_UNKNOWN;
-        return true;
+        uart_cmd_router_handle_help();
+        return;
     }
-
-    // Extract module
-    size_t module_len = dot - p;
-    if (module_len >= sizeof(parsed->module))
+    if (strcmp(p, "list") == 0)
     {
-        module_len = sizeof(parsed->module) - 1;
+        uart_cmd_router_handle_list();
+        return;
     }
-    strncpy(parsed->module, p, module_len);
-    parsed->module[module_len] = '\0';
 
-    // Move past dot
-    p = dot + 1;
+    char* module = p;
+    char* dot1 = strchr(module, '.');
+    if (dot1 == NULL)
+    {
+        uart_manager_print("ERR: Invalid format. Use module.action.target\r\n");
+        return;
+    }
+    *dot1 = '\0';
+    char* action = dot1 + 1;
 
-    // Parse action (get/set/req) - use local buffer
-    char local_action_buf[MAX_TOKEN_LENGTH];
-    char* space = strchr(p, ' ');
+    char* dot2 = strchr(action, '.');
+    if (dot2 == NULL)
+    {
+        uart_manager_print("ERR: Invalid format. Use module.action.target\r\n");
+        return;
+    }
+    *dot2 = '\0';
+    char* target = dot2 + 1;
+
+    char* args = NULL;
+    char* space = strchr(target, ' ');
     if (space != NULL)
     {
-        size_t action_len = space - p;
-        if (action_len >= sizeof(local_action_buf))
-        {
-            action_len = sizeof(local_action_buf) - 1;
-        }
-        strncpy(local_action_buf, p, action_len);
-        local_action_buf[action_len] = '\0';
-        p = space + 1;
+        *space = '\0';
+        args = (char*)skip_whitespace(space + 1);
+    }
+
+    if (strcmp(module, "beacon") == 0)
+    {
+        uart_cmd_router_handle_beacon(action, target, args);
+    }
+    else if (strcmp(module, "imu") == 0)
+    {
+        uart_cmd_router_handle_imu(action, target, args);
+    }
+    else if (strcmp(module, "uwb") == 0)
+    {
+        uart_cmd_router_handle_uwb(action, target, args);
+    }
+    else if (strcmp(module, "error") == 0)
+    {
+        uart_cmd_router_handle_error(action, target, args);
+    }
+    else if (strcmp(module, "datalogger") == 0)
+    {
+        uart_cmd_router_handle_datalogger(action, target, args);
     }
     else
     {
-        // No space - action is rest of string
-        strncpy(local_action_buf, p, sizeof(local_action_buf) - 1);
-        local_action_buf[sizeof(local_action_buf) - 1] = '\0';
-        p = NULL;
+        uart_manager_print("ERR: Unknown module '%s'\r\n", module);
     }
-
-    parsed->action = parse_action(local_action_buf);
-
-    // Parse target (next token)
-    if (p != NULL)
-    {
-        p = (char*)skip_whitespace(p);
-        space = strchr(p, ' ');
-
-        if (space != NULL)
-        {
-            size_t target_len = space - p;
-            if (target_len >= sizeof(parsed->target))
-            {
-                target_len = sizeof(parsed->target) - 1;
-            }
-            strncpy(parsed->target, p, target_len);
-            parsed->target[target_len] = '\0';
-
-            // Rest is arguments
-            p = space + 1;
-            p = (char*)skip_whitespace(p);
-            strncpy(parsed->args, p, sizeof(parsed->args) - 1);
-            parsed->args[sizeof(parsed->args) - 1] = '\0';
-        }
-        else
-        {
-            // No more tokens - this is the target
-            strncpy(parsed->target, p, sizeof(parsed->target) - 1);
-            parsed->target[sizeof(parsed->target) - 1] = '\0';
-            // args already zeroed by memset
-        }
-    }
-
-    return true;
-}
-
-void uart_cmd_router_dispatch(const char* cmd_string)
-{
-    cmd_parsed_t parsed;
-
-    if (!uart_cmd_router_parse(cmd_string, &parsed))
-    {
-        uart_manager_print("ERR: Invalid format\r\n");
-        return;
-    }
-
-    // Handle built-in commands
-    if (strcmp(parsed.module, "help") == 0 || strcmp(parsed.module, "list") == 0)
-    {
-        uart_cmd_router_handle_builtin(&parsed);
-        return;
-    }
-
-    // Check if action is valid (not UNKNOWN)
-    if (parsed.action == CMD_ACTION_UNKNOWN)
-    {
-        uart_manager_print("ERR: Unknown action (use get/set/req)\r\n");
-        return;
-    }
-
-    // Check if target is provided for commands that need it
-    if (strlen(parsed.target) == 0)
-    {
-        uart_manager_print("ERR: Missing target\r\n");
-        return;
-    }
-
-    // Find and call registered handler
-    for (uint8_t i = 0; i < num_registered; i++)
-    {
-        if (strcmp(registered_modules[i].module_name, parsed.module) == 0)
-        {
-            bool handled = registered_modules[i].handler(&parsed);
-            if (!handled)
-            {
-                const char* action_str = (parsed.action == CMD_ACTION_GET)   ? "get"
-                                         : (parsed.action == CMD_ACTION_SET) ? "set"
-                                                                             : "req";
-                uart_manager_print("ERR: '%s' no cmd '%s %s'\r\n", parsed.module, action_str,
-                                   parsed.target);
-            }
-            return;
-        }
-    }
-
-    // No handler found
-    uart_manager_print("ERR: Unknown module '%s'\r\n", parsed.module);
 }

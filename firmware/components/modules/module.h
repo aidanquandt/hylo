@@ -8,12 +8,6 @@
 #include <stdbool.h>
 
 /*---------------------------------------------------------------------------
- * Forward Declarations
- *---------------------------------------------------------------------------*/
-typedef struct cmd_parsed_s cmd_parsed_t;
-typedef bool (*cmd_handler_fn_t)(const cmd_parsed_t* parsed);
-
-/*---------------------------------------------------------------------------
  * Typedefs
  *---------------------------------------------------------------------------*/
 typedef enum
@@ -36,7 +30,8 @@ typedef enum
  * 1. module_init: Create RTOS resources (queues, semaphores) before scheduler starts
  * 2. module_create_task: Spawn tasks after scheduler is running
  * 3. module_process_*: Periodic callbacks driven by main application loop
- * 4. module_cmd_*: Optional UART command handler (auto-registered if non-NULL)
+ *
+ * Note: UART command routing handled by uart_cmd_router which directly calls module APIs
  */
 typedef struct
 {
@@ -47,9 +42,6 @@ typedef struct
     void (*module_process_10Hz)(void);
     void (*module_process_100Hz)(void);
     void (*module_process_1kHz)(void);
-
-    // Optional: UART command interface
-    cmd_handler_fn_t module_cmd_handler; // Command handler function or NULL
 } module_S;
 
 /*---------------------------------------------------------------------------

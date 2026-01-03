@@ -8,7 +8,6 @@
 #include "main.h"
 #include "module.h"
 #include "task.h"
-#include "uart_cmd_router.h"
 #include "uart_manager.h"
 #include <string.h>
 
@@ -22,16 +21,12 @@
  *---------------------------------------------------------------------------*/
 STATIC void datalogger_init(void);
 STATIC void datalogger_process_1Hz(void);
-STATIC void datalogger_process_100Hz(void);
-STATIC bool datalogger_cmd_handler(const cmd_parsed_t* parsed);
 
 extern const module_S datalogger_module;
 const module_S datalogger_module = {
     .module_name = "datalogger",
     .module_init = datalogger_init,
     .module_process_1Hz = datalogger_process_1Hz,
-    .module_process_100Hz = datalogger_process_100Hz,
-    .module_cmd_handler = datalogger_cmd_handler,
 };
 
 /*---------------------------------------------------------------------------
@@ -128,16 +123,11 @@ STATIC void datalogger_monitor_rtos_usage(void)
 }
 
 /*---------------------------------------------------------------------------
- * Public function implementations
+ * Module Implementation
  *---------------------------------------------------------------------------*/
-void datalogger_update_task_handles(void)
-{
-    // No longer needed - we get task info dynamically in monitor function
-}
 
 STATIC void datalogger_init(void)
 {
-    // init
 }
 
 STATIC void datalogger_process_1Hz(void)
@@ -147,66 +137,39 @@ STATIC void datalogger_process_1Hz(void)
 }
 
 /*---------------------------------------------------------------------------
- * Command Handler
+ * Public API Implementation
  *---------------------------------------------------------------------------*/
-STATIC bool datalogger_cmd_handler(const cmd_parsed_t* parsed)
+
+uint32_t datalogger_get_task_usage(task_cpu_info_t* tasks, uint32_t max_tasks)
 {
-    switch (parsed->action)
+    if (tasks == NULL || max_tasks == 0)
     {
-        case CMD_ACTION_GET:
-            if (strcmp(parsed->target, "tasks") == 0)
-            {
-                uart_manager_print("\r\nTask List (CPU Usage):\r\n");
-                uart_manager_print("%-20s %6s\r\n", "Task Name", "CPU %");
-                uart_manager_print("-----------------------------\r\n");
-
-                // Print all tasks using the snapshot from last monitoring cycle
-                for (UBaseType_t i = 0; i < num_tracked_tasks; i++)
-                {
-                    const char* task_name = task_status_array[i].pcTaskName;
-                    uart_manager_print("%-20s %5.2f%%\r\n", task_name, cpu_usage[i]);
-                }
-
-                uart_manager_print("\r\n");
-                return true;
-            }
-            break;
-
-        case CMD_ACTION_SET:
-        case CMD_ACTION_REQ:
-        case CMD_ACTION_UNKNOWN:
-        default:
-            break;
+        return 0;
     }
 
-    return false;
+    uint32_t count = (num_tracked_tasks < max_tasks) ? num_tracked_tasks : max_tasks;
+    for (uint32_t i = 0; i < count; i++)
+    {
+        tasks[i].task_name = task_status_array[i].pcTaskName;
+        tasks[i].cpu_percent = cpu_usage[i];
+    }
+
+    return count;
 }
 
-STATIC void datalogger_process_100Hz(void)
-{
-}
-
-/**
- * @brief Monitor UART queue health and report anomalies
- * @details Tracks queue depth and dropped messages to detect logging storms
- */
 STATIC void datalogger_monitor_uart_health(void)
 {
     uint32_t queue_count = uart_manager_get_queue_count();
     STATIC uint32_t prev_dropped = 0U;
     uint32_t dropped = uart_manager_get_dropped_count();
 
-    // Check if messages were dropped since last check
     if (dropped > prev_dropped)
     {
         uint32_t new_drops = dropped - prev_dropped;
-        // Note: This will attempt to print, might drop if queue still full
-        // In production, could set an error LED instead
         uart_manager_print("[UART] %u messages dropped!\n", (unsigned int)new_drops);
         prev_dropped = dropped;
     }
 
-    // Warn if queue is filling up (>75% full = 24/32 messages)
     if (queue_count > 24U)
     {
         uart_manager_print("[UART] Queue high: %u/32\n", (unsigned int)queue_count);
