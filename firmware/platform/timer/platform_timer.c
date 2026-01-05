@@ -9,9 +9,17 @@
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-// Hardware timer configuration: TIM5 with prescaler 2399 at 240MHz
-// Results in: 240MHz / 2400 = 100kHz timer clock = 10µs per tick
-#define PLATFORM_TIMER_US_PER_TICK (10U)
+// Hardware timer selection: TIM5 chosen for 32-bit counter and availability
+// Configuration: prescaler 2749 at 275MHz APB1 timer clock
+// Results in: 275MHz / 2750 = 100kHz timer clock
+// Each timer tick = 10µs
+#define PLATFORM_TIMER_US_PER_TICK (10U) // Microseconds per timer tick
+#define PLATFORM_TIMESTAMP_TIMER htim5   // Hardware timer used for timestamps
+
+/*---------------------------------------------------------------------------
+ * External Variables
+ *---------------------------------------------------------------------------*/
+extern TIM_HandleTypeDef PLATFORM_TIMESTAMP_TIMER;
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations
@@ -19,7 +27,7 @@
 
 uint32_t platform_get_timestamp(void)
 {
-    return TIM5->CNT;
+    return __HAL_TIM_GET_COUNTER(&PLATFORM_TIMESTAMP_TIMER);
 }
 
 uint32_t platform_get_elapsed_us(uint32_t start_timestamp, uint32_t end_timestamp)
