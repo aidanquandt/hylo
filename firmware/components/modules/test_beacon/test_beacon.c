@@ -13,8 +13,12 @@
 #include "test_beacon.h"
 #include "mac_802154.h"
 #include "module.h"
+#include "platform_timer.h"
 #include "uart_manager.h"
 #include "uwb.h"
+#include "uwb_port.h"
+#include "uwb_protocol_messages.h"
+#include "uwb_protocol_router.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -31,10 +35,14 @@ typedef struct
 } beacon_state_t;
 
 /*---------------------------------------------------------------------------
+ * Private Function Prototypes
+ *---------------------------------------------------------------------------*/
+STATIC void beacon_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr);
+
+/*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
 STATIC void test_beacon_init(void);
-STATIC void test_beacon_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr);
 
 extern const module_S test_beacon_module;
 
@@ -60,30 +68,56 @@ STATIC beacon_state_t beacon = {
  *---------------------------------------------------------------------------*/
 STATIC void test_beacon_init(void)
 {
-    // Register callback to receive UWB messages
-    uwb_register_rx_callback(test_beacon_rx_callback);
+    // Register DATA protocol handler with router
+    uwb_protocol_router_register_handler(PROTOCOL_TYPE_DATA, beacon_protocol_handler);
 
     // Automatically start UWB radio
     uwb_start();
 }
 
-STATIC void test_beacon_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr)
+STATIC void beacon_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr)
 {
     beacon.rx_count++;
     beacon.last_src_addr = src_addr;
 
-    // Responder mode: send auto-incrementing counter back
-    if (beacon.mode == BEACON_MODE_RESPONDER && uwb_is_ready())
-    {
-        char response[6];
-        snprintf(response, sizeof(response), "%u", beacon.counter);
-        uint16_t response_len = strlen(response);
+    // Capture device time and RX message timestamp
+    // NOTE: read_device_time() returns DTUH (high 32-bits only)
+    //       get_last_rx_timestamp() returns DTU (full 40-bit value)
+    uint32_t device_time_dtuh = (uint32_t)uwb_port_read_device_time();
+    uwb_dev_t* dev = uwb_get_device();
+    uint64_t rx_msg_timestamp_dtu = (dev != NULL) ? uwb_port_get_last_rx_timestamp(dev) : 0;
+    uint32_t rx_msg_timestamp_dtuh = (uint32_t)(rx_msg_timestamp_dtu >> 8);
 
-        if (uwb_send_message((uint8_t*)response, response_len, src_addr))
-        {
-            beacon.tx_count++;
-            beacon.counter++;
-        }
+    // Validate minimum message size
+    if (length < sizeof(protocol_header_t))
+    {
+        uart_manager_print("Beacon RX: Invalid message (too short)\r\n");
+        return;
+    }
+
+    const protocol_header_t* hdr = (const protocol_header_t*)data;
+
+    // Only handle beacon messages
+    if (hdr->msg_type != DATA_MSG_TYPE_BEACON)
+    {
+        return;
+    }
+
+    // Parse beacon message
+    if (length >= sizeof(protocol_data_beacon_msg_t))
+    {
+        const protocol_data_beacon_msg_t* msg = (const protocol_data_beacon_msg_t*)data;
+        uart_manager_print("Beacon RX: From 0x%04X, Seq=%u, Counter=%u, DevTime=%lu (dtuh), "
+                           "RxTime=%lu DTU (dtuh=%lu)\r\n",
+                           src_addr, hdr->sequence, msg->counter, device_time_dtuh,
+                           (uint32_t)rx_msg_timestamp_dtu, rx_msg_timestamp_dtuh);
+    }
+    else
+    {
+        uart_manager_print(
+            "Beacon RX: From 0x%04X, Seq=%u, DevTime=%lu (dtuh), RxTime=%lu DTU (dtuh=%lu)\r\n",
+            src_addr, hdr->sequence, device_time_dtuh, (uint32_t)rx_msg_timestamp_dtu,
+            rx_msg_timestamp_dtuh);
     }
 }
 
@@ -122,6 +156,55 @@ bool test_beacon_send_ping(uint16_t dest_addr)
         return false;
     }
 
-    const char* ping_msg = "ping";
-    return uwb_send_message((uint8_t*)ping_msg, strlen(ping_msg), dest_addr);
+    protocol_data_beacon_msg_t ping;
+    ping.header.protocol_type = PROTOCOL_TYPE_DATA;
+    ping.header.msg_type = DATA_MSG_TYPE_BEACON;
+    ping.header.sequence = beacon.counter++;
+    ping.counter = beacon.counter;
+
+    return uwb_send_message((uint8_t*)&ping, sizeof(ping), dest_addr);
+}
+
+bool test_beacon_send_ping_delayed(uint16_t dest_addr)
+{
+    uint32_t time1 = platform_get_timestamp();
+    if (!uwb_is_ready())
+    {
+        return false;
+    }
+
+    protocol_data_beacon_msg_t ping;
+    ping.header.protocol_type = PROTOCOL_TYPE_DATA;
+    ping.header.msg_type = DATA_MSG_TYPE_BEACON;
+    ping.header.sequence = beacon.counter++;
+    ping.counter = beacon.counter;
+
+    // Read current system time and calculate absolute TX time
+    uwb_dev_t* dev = uwb_get_device();
+    if (dev == NULL)
+    {
+        return false;
+    }
+
+    // NOTE: read_device_time() returns DTUH (high 32-bits only)
+    // For delayed TX, we need to pass DTUH to uwb_send_message_delayed()
+    uint32_t current_time_dtuh = (uint32_t)uwb_port_read_device_time();
+    uint32_t delay_dtuh = (uint32_t)UWB_MS_TO_DTUH(20);
+    uint32_t tx_time_dtuh = current_time_dtuh + delay_dtuh; // Add DTUH + DTUH
+
+    uart_manager_print("Beacon delayed TX: curr_dtuh=%lu, delay_dtuh=%lu, tx_dtuh=%lu\r\n",
+                       current_time_dtuh, delay_dtuh, tx_time_dtuh);
+
+    uint32_t time2 = platform_get_timestamp();
+    // Pass DTUH (tx_time_dtuh) to delayed send function
+    bool result = uwb_send_message_delayed((uint8_t*)&ping, sizeof(ping), dest_addr, tx_time_dtuh);
+
+    uint32_t time3 = platform_get_timestamp();
+
+    uint32_t elapsed1 = platform_get_elapsed_us(time1, time2);
+    uint32_t elapsed2 = platform_get_elapsed_us(time2, time3);
+
+    uart_manager_print("Beacon delayed TX: prep=%lu us, send=%lu us\r\n", elapsed1, elapsed2);
+
+    return result;
 }

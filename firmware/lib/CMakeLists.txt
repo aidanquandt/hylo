@@ -5,6 +5,7 @@ target_sources(lib
     PRIVATE
         counter/counter.c
         state_machine/state_machine.c
+        uwb_protocol/uwb_protocol_router.c
 )
 
 target_include_directories(lib
@@ -13,4 +14,5 @@ target_include_directories(lib
         counter
         state_machine
         mac_802154
+        uwb_protocol
 )

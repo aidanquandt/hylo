@@ -12,6 +12,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "common.h"
+#include "uwb_port.h"
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -114,6 +115,12 @@ void uwb_stop(void);
 void uwb_set_address(uint16_t address, uint16_t pan_id);
 
 /**
+ * @brief Get current UWB address
+ * @return Current node address
+ */
+uint16_t uwb_get_address(void);
+
+/**
  * @brief Perform a soft reset on the UWB device
  *
  * Performs a software reset of the UWB chip. This should only be called
@@ -145,6 +152,25 @@ bool uwb_soft_reset(void);
 bool uwb_send_message(const uint8_t* data, uint16_t length, uint16_t dest_addr);
 
 /**
+ * @brief Send message with delayed transmission (for TWR ranging)
+ *
+ * Used for ranging protocols (DS-TWR) where TX timestamp must be known before sending.
+ * Accepts an absolute 40-bit device timestamp for precise timing control.
+ *
+ * @param data Pointer to payload data (may be modified to update timestamps)
+ * @param length Length of payload in bytes (max MAC_MAX_PAYLOAD_SIZE)
+ * @param dest_addr Destination 16-bit address
+ * @param tx_timestamp_dtuh ABSOLUTE transmission time in Device Time Units (DTU)
+ *
+ * @return true if message sent successfully, false if transmission failed
+ *
+ * @pre tx_timestamp_dtuh must be at least 500µs in the future from current device time
+ * @note Used for ranging responses where TX time is calculated from RX timestamp
+ */
+bool uwb_send_message_delayed(const uint8_t* data, uint16_t length, uint16_t dest_addr,
+                              uint64_t tx_timestamp_dtuh);
+
+/**
  * @brief Register a callback for received UWB messages
  *
  * Applications register a callback to be notified when UWB messages are received.
@@ -164,3 +190,9 @@ bool uwb_send_message(const uint8_t* data, uint16_t length, uint16_t dest_addr);
  * uwb_register_rx_callback(my_rx_handler);
  */
 void uwb_register_rx_callback(uwb_rx_callback_t callback);
+
+/**
+ * @brief Get the UWB device handle
+ * @return Pointer to UWB device, or NULL if not initialized
+ */
+uwb_dev_t* uwb_get_device(void);

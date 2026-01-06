@@ -27,7 +27,7 @@
 typedef struct uwb_dev_s uwb_dev_t;
 
 /*---------------------------------------------------------------------------
- * Defines
+ * Defines - UWB Port Configuration
  *---------------------------------------------------------------------------*/
 #define UWB_PORT_CS_PIN PLATFORM_SPI_CS_UWB
 #define UWB_MAX_MESSAGE_LENGTH (127U) ///< Maximum UWB message length per IEEE 802.15.4
@@ -234,8 +234,36 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel);
  * @return UWB_PORT_ERROR_NULL_PTR if dev or data is NULL
  * @return UWB_PORT_ERROR_CONFIG if length is invalid
  * @return UWB_PORT_ERROR_TX_FAIL if transmission fails
+ *
+ * @note TX timestamp can be read after this call using uwb_port_get_last_tx_timestamp()
  */
 uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uint16_t length);
+
+/**
+ * @brief Send message with delayed transmission at a specific time
+ *
+ * Sends a message using DW3000 delayed TX mode. The tx_timestamp_dtu parameter
+ * specifies the HIGH 32-BITS of the 40-bit system time counter at which to transmit.
+ * The DW3000 hardware uses this to schedule the transmission.
+ *
+ * @param[in] dev Pointer to UWB device handle
+ * @param[in] data Pointer to message data (including frame header)
+ * @param[in] length Length of data including 802.15.4 header
+ * @param[in] tx_timestamp_dtu HIGH 32-BITS of the 40-bit device time (Device Time Units)
+ *           The low 8 bits are ignored by hardware. Units: ~8 ns per count.
+ *
+ * @pre dev must not be NULL
+ * @pre data must not be NULL
+ * @pre length must be valid (see uwb_port_send_message for constraints)
+ * @pre tx_timestamp_dtu must be at least 500µs in the future
+ *
+ * @return UWB_PORT_SUCCESS if message sent successfully
+ * @return UWB_PORT_ERROR_NULL_PTR if dev or data is NULL
+ * @return UWB_PORT_ERROR_CONFIG if length is invalid
+ * @return UWB_PORT_ERROR_TX_FAIL if transmission fails (scheduled time has passed)
+ */
+uwb_port_status_t uwb_port_send_message_delayed(uwb_dev_t* dev, const uint8_t* data,
+                                                uint16_t length, uint64_t tx_timestamp_dtuh);
 
 /**
  * @brief Check if a message has been received
@@ -253,9 +281,128 @@ uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uin
  * @return UWB_PORT_ERROR_NULL_PTR if any pointer is NULL
  * @return UWB_PORT_ERROR_NO_DATA if no message available
  * @return UWB_PORT_ERROR_RX_FAIL if reception failed
+ *
+ * @note RX timestamp can be read after this call using uwb_port_get_last_rx_timestamp()
  */
 uwb_port_status_t uwb_port_receive_message(uwb_dev_t* dev, uint8_t* data, uint16_t max_length,
                                            uint16_t* received_length);
+
+/*---------------------------------------------------------------------------
+ * System Time Functions
+ *---------------------------------------------------------------------------*/
+
+/**
+ * @brief Read the current device system time counter
+ * @details Reads the 40-bit system time counter from the DW3000.
+ *          The counter runs at 249.6 MHz (DTU frequency) and is used
+ *          for precise timing of TX/RX operations and delayed transmissions.
+ *
+ * @return Current device time in DTU (Device Time Units)
+ */
+uint64_t uwb_port_read_device_time(void);
+
+/*---------------------------------------------------------------------------
+ * Timestamp Functions (for TWR ranging)
+ *---------------------------------------------------------------------------*/
+
+/**
+ * @brief Read TX timestamp from last transmission
+ * @details Reads the 40-bit timestamp of when the last frame was transmitted.
+ *          Must be called shortly after uwb_port_send_message() completes.
+ *
+ * @param[in] dev Pointer to UWB device handle
+ * @param[out] timestamp_bytes 5-byte buffer to store timestamp (40-bit)
+ *
+ * @pre dev must not be NULL
+ * @pre timestamp_bytes must not be NULL
+ * @pre Must be called after successful TX
+ *
+ * @return UWB_PORT_SUCCESS on success
+ * @return UWB_PORT_ERROR_NULL_PTR if pointers are NULL
+ */
+uwb_port_status_t uwb_port_read_tx_timestamp(uwb_dev_t* dev, uint8_t timestamp_bytes[5]);
+
+/**
+ * @brief Read RX timestamp from last received frame
+ * @details Reads the 40-bit timestamp of when the last frame was received.
+ *          Must be called shortly after uwb_port_receive_message() returns success.
+ *
+ * @param[in] dev Pointer to UWB device handle
+ * @param[out] timestamp_bytes 5-byte buffer to store timestamp (40-bit)
+ *
+ * @pre dev must not be NULL
+ * @pre timestamp_bytes must not be NULL
+ * @pre Must be called after successful RX
+ *
+ * @return UWB_PORT_SUCCESS on success
+ * @return UWB_PORT_ERROR_NULL_PTR if pointers are NULL
+ */
+uwb_port_status_t uwb_port_read_rx_timestamp(uwb_dev_t* dev, uint8_t timestamp_bytes[5]);
+
+/**
+ * @brief Get last TX timestamp as 64-bit value
+ * @details Convenience function that returns the last TX timestamp.
+ *          Automatically called after successful transmission.
+ *
+ * @param[in] dev Pointer to UWB device handle
+ * @return 64-bit timestamp (40-bit value in lower bits), or 0 on error
+ */
+uint64_t uwb_port_get_last_tx_timestamp(uwb_dev_t* dev);
+
+/**
+ * @brief Get last RX timestamp as 64-bit value
+ * @details Convenience function that returns the last RX timestamp.
+ *          Automatically captured during reception.
+ *
+ * @param[in] dev Pointer to UWB device handle
+ * @return 64-bit timestamp (40-bit value in lower bits), or 0 on error
+ */
+uint64_t uwb_port_get_last_rx_timestamp(uwb_dev_t* dev);
+
+/*---------------------------------------------------------------------------
+ * Time Conversion Functions
+ *
+ * @brief Convert between DW3000 Device Time Units (DTU) and human-readable time.
+ *        These functions abstract away DTU implementation details from the rest
+ *        of the application. All DTU-related knowledge is contained in the port layer.
+ *---------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------
+ * Time Unit Conversion Macros
+ *
+ * Note: These macros use constants from the DW3000 vendor driver:
+ *  - DW3000_DTU_FREQ = 249.6 MHz (used for DTUH/DTUC time units)
+ *  - Full DTU frequency = 499.2 MHz x 128 = 63.9 GHz
+ *---------------------------------------------------------------------------*/
+
+/** @brief Convert DTUH (249.6 MHz) to milliseconds */
+#define UWB_DTUH_TO_MS(dtuh_ticks) (((dtuh_ticks) * 1000ULL) / DW3000_DTU_FREQ)
+
+/** @brief Convert DTUH (249.6 MHz) to microseconds */
+#define UWB_DTUH_TO_US(dtuh_ticks) (((dtuh_ticks) * 1000000ULL) / DW3000_DTU_FREQ)
+
+/** @brief Convert DTUH (249.6 MHz) to seconds */
+#define UWB_DTUH_TO_S(dtuh_ticks) ((dtuh_ticks) / DW3000_DTU_FREQ)
+
+/** @brief Convert milliseconds to DTUH (249.6 MHz) */
+#define UWB_MS_TO_DTUH(milliseconds) (((uint64_t)(milliseconds)) * (DW3000_DTU_FREQ / 1000ULL))
+
+/** @brief Convert microseconds to DTUH (249.6 MHz) */
+#define UWB_US_TO_DTUH(microseconds) ((((uint64_t)(microseconds)) * DW3000_DTU_FREQ) / 1000000ULL)
+
+/** @brief Convert DTUH to full DTU (DTUH << 8) */
+#define UWB_DTUH_TO_DTU(dtuh_ticks) (((dtuh_ticks) << 8))
+
+/** @brief Convert full DTU to DTUH (DTU >> 8) */
+#define UWB_DTU_TO_DTUH(dtu_ticks) ((uint32_t)(((dtu_ticks) >> 8)))
+
+/** @brief Convert milliseconds to full DTU (63.9 GHz), preserves sub-DTUH precision */
+#define UWB_MS_TO_DTU(milliseconds)                                                                \
+    ((((uint64_t)(milliseconds)) * ((DW3000_DTU_FREQ * 128ULL) / 1000ULL)))
+
+/** @brief Convert microseconds to full DTU (63.9 GHz), preserves sub-DTUH precision */
+#define UWB_US_TO_DTU(microseconds)                                                                \
+    ((((uint64_t)(microseconds)) * (DW3000_DTU_FREQ * 128ULL)) / 1000000ULL)
 
 /*---------------------------------------------------------------------------
  * Platform Compatibility Functions (required by Qorvo DW3000 driver)

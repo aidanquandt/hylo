@@ -10,6 +10,7 @@
 #include "datalogger.h"
 #include "error_handler.h"
 #include "imu.h"
+#include "ranging/ranging.h"
 #include "test_beacon.h"
 #include "uart_manager.h"
 #include "uwb.h"
@@ -34,6 +35,8 @@ STATIC void uart_cmd_router_handle_uwb(const char* action, const char* target, c
 STATIC void uart_cmd_router_handle_error(const char* action, const char* target, const char* args);
 STATIC void uart_cmd_router_handle_datalogger(const char* action, const char* target,
                                               const char* args);
+STATIC void uart_cmd_router_handle_ranging(const char* action, const char* target,
+                                           const char* args);
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -70,6 +73,7 @@ STATIC void uart_cmd_router_handle_list(void)
     uart_manager_print("  beacon     - Test beacon module\r\n");
     uart_manager_print("  imu        - IMU sensor module\r\n");
     uart_manager_print("  uwb        - UWB radio module\r\n");
+    uart_manager_print("  ranging    - TWR ranging module\r\n");
     uart_manager_print("  error      - Error handler module\r\n");
     uart_manager_print("  datalogger - System monitoring\r\n\r\n");
 }
@@ -166,6 +170,23 @@ STATIC void uart_cmd_router_handle_beacon(const char* action, const char* target
             else
             {
                 uart_manager_print("Ping failed\r\n");
+            }
+        }
+        else if (strcmp(target, "ping.delayed") == 0)
+        {
+            uint16_t dest_addr = 0xFFFF;
+            if (args != NULL && *args != '\0')
+            {
+                dest_addr = (uint16_t)strtol(args, NULL, 0);
+            }
+            uart_manager_print("Sending delayed ping to 0x%04X...\r\n", dest_addr);
+            if (test_beacon_send_ping_delayed(dest_addr))
+            {
+                uart_manager_print("Delayed ping sent\r\n");
+            }
+            else
+            {
+                uart_manager_print("Delayed ping failed\r\n");
             }
         }
         else
@@ -273,9 +294,40 @@ STATIC void uart_cmd_router_handle_imu(const char* action, const char* target, c
 
 STATIC void uart_cmd_router_handle_uwb(const char* action, const char* target, const char* args)
 {
-    (void)args;
+    if (strcmp(action, "set") == 0)
+    {
+        if (strcmp(target, "address") == 0)
+        {
+            if (args == NULL || *args == '\0')
+            {
+                uart_manager_print("Usage: uwb.set.address <addr> [pan_id]\r\n");
+                return;
+            }
 
-    if (strcmp(action, "get") == 0)
+            // Parse address (required)
+            char* end_ptr;
+            uint16_t address = (uint16_t)strtoul(args, &end_ptr, 0);
+
+            // Parse optional PAN ID
+            uint16_t pan_id = 0xDECA; // Default
+            if (end_ptr && *end_ptr != '\0')
+            {
+                const char* pan_str = skip_whitespace(end_ptr);
+                if (*pan_str != '\0')
+                {
+                    pan_id = (uint16_t)strtoul(pan_str, NULL, 0);
+                }
+            }
+
+            uwb_set_address(address, pan_id);
+            uart_manager_print("UWB address set to: ADDR=0x%04X, PAN=0x%04X\r\n", address, pan_id);
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else if (strcmp(action, "get") == 0)
     {
         if (strcmp(target, "status") == 0)
         {
@@ -420,6 +472,154 @@ STATIC void uart_cmd_router_handle_datalogger(const char* action, const char* ta
     }
 }
 
+STATIC void uart_cmd_router_handle_ranging(const char* action, const char* target, const char* args)
+{
+    if (strcmp(action, "set") == 0)
+    {
+        if (strcmp(target, "mode") == 0)
+        {
+            if (args == NULL)
+            {
+                uart_manager_print("ERR: Mode argument required (tag/anchor/disabled)\r\n");
+                return;
+            }
+
+            ranging_mode_e mode;
+            if (strcmp(args, "tag") == 0)
+            {
+                mode = RANGING_MODE_TAG;
+            }
+            else if (strcmp(args, "anchor") == 0)
+            {
+                mode = RANGING_MODE_ANCHOR;
+            }
+            else if (strcmp(args, "disabled") == 0)
+            {
+                mode = RANGING_MODE_DISABLED;
+            }
+            else
+            {
+                uart_manager_print("ERR: Invalid mode. Use: tag, anchor, or disabled\r\n");
+                return;
+            }
+
+            if (ranging_set_mode(mode))
+            {
+                const char* mode_str = (mode == RANGING_MODE_TAG)      ? "TAG"
+                                       : (mode == RANGING_MODE_ANCHOR) ? "ANCHOR"
+                                                                       : "DISABLED";
+                uart_manager_print("Ranging mode set to: %s\r\n", mode_str);
+            }
+            else
+            {
+                uart_manager_print("ERR: Failed to set ranging mode\r\n");
+            }
+        }
+        else if (strcmp(target, "address") == 0)
+        {
+            if (args == NULL)
+            {
+                uart_manager_print("ERR: Address argument required (hex: 0xABCD)\r\n");
+                return;
+            }
+
+            uint16_t address = (uint16_t)strtoul(args, NULL, 0);
+
+            // Set at UWB level for both modes
+            uwb_set_address(address, 0xDECA);
+
+            ranging_mode_e current_mode = ranging_get_mode();
+            if (current_mode == RANGING_MODE_TAG)
+            {
+                uart_manager_print("Tag address set to: 0x%04X\r\n", address);
+            }
+            else if (current_mode == RANGING_MODE_ANCHOR)
+            {
+                uart_manager_print("Anchor address set to: 0x%04X\r\n", address);
+            }
+            else
+            {
+                uart_manager_print("Address set to: 0x%04X\r\n", address);
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else if (strcmp(action, "get") == 0)
+    {
+        if (strcmp(target, "status") == 0)
+        {
+            ranging_status_t status;
+            ranging_get_status(&status);
+
+            const char* mode_str = (status.mode == RANGING_MODE_TAG)      ? "TAG"
+                                   : (status.mode == RANGING_MODE_ANCHOR) ? "ANCHOR"
+                                                                          : "DISABLED";
+
+            uart_manager_print("Ranging Status:\r\n");
+            uart_manager_print("  Mode: %s\r\n", mode_str);
+            uart_manager_print("  Active: %s\r\n", status.active ? "Yes" : "No");
+            uart_manager_print("  Successful: %lu\r\n", (unsigned long)status.successful_ranges);
+            uart_manager_print("  Failed: %lu\r\n", (unsigned long)status.failed_ranges);
+
+            if (status.mode == RANGING_MODE_ANCHOR)
+            {
+                uint16_t addr = ranging_anchor_get_address();
+                uart_manager_print("  Anchor Address: 0x%04X\r\n", addr);
+            }
+            else if (status.mode == RANGING_MODE_TAG)
+            {
+                uint16_t addr = uwb_get_address();
+                uart_manager_print("  Tag Address: 0x%04X\r\n", addr);
+            }
+        }
+        else if (strcmp(target, "result") == 0)
+        {
+            float distance, rssi;
+            if (ranging_tag_get_result(&distance, &rssi))
+            {
+                uart_manager_print("Last Range: %.2f m, RSSI: %.1f dBm\r\n", distance, rssi);
+            }
+            else
+            {
+                uart_manager_print("No ranging result available\r\n");
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else if (strcmp(action, "req") == 0)
+    {
+        if (strcmp(target, "range") == 0)
+        {
+            if (args == NULL)
+            {
+                uart_manager_print("ERR: Anchor address required (hex: 0xABCD)\r\n");
+                return;
+            }
+
+            uint16_t anchor_addr = (uint16_t)strtoul(args, NULL, 0);
+
+            if (!ranging_tag_start(anchor_addr))
+            {
+                uart_manager_print("ERR: Failed to start ranging (check mode and UWB status)\r\n");
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else
+    {
+        uart_manager_print("ERR: Unknown action '%s'\r\n", action);
+    }
+}
+
 /*---------------------------------------------------------------------------
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
@@ -513,6 +713,10 @@ void uart_cmd_router_dispatch(const char* cmd_string)
     else if (strcmp(module, "datalogger") == 0)
     {
         uart_cmd_router_handle_datalogger(action, target, args);
+    }
+    else if (strcmp(module, "ranging") == 0)
+    {
+        uart_cmd_router_handle_ranging(action, target, args);
     }
     else
     {
