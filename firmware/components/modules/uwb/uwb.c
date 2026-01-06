@@ -452,34 +452,10 @@ bool uwb_soft_reset(void)
 
 bool uwb_send_message(const uint8_t* data, uint16_t length, uint16_t dest_addr)
 {
-    if (!uwb_is_ready())
+    // Validate radio state and parameters
+    if (!uwb_is_ready() || uwb_dev == NULL || data == NULL || length == 0 ||
+        length > MAC_MAX_PAYLOAD_SIZE)
     {
-        uart_manager_print("[UWB] Send failed: not ready\r\n");
-        return false;
-    }
-
-    if (uwb_dev == NULL)
-    {
-        uart_manager_print("[UWB] Send failed: dev is NULL\r\n");
-        return false;
-    }
-
-    if (data == NULL)
-    {
-        uart_manager_print("[UWB] Send failed: data is NULL\r\n");
-        return false;
-    }
-
-    if (length == 0)
-    {
-        uart_manager_print("[UWB] Send failed: length is 0\r\n");
-        return false;
-    }
-
-    if (length > MAC_MAX_PAYLOAD_SIZE)
-    {
-        uart_manager_print("[UWB] Send failed: length too large (%u > %u)\r\n", length,
-                           MAC_MAX_PAYLOAD_SIZE);
         return false;
     }
 
@@ -495,13 +471,11 @@ bool uwb_send_message(const uint8_t* data, uint16_t length, uint16_t dest_addr)
     memcpy(frame->payload, data, length);
 
     uint16_t frame_len = MAC_FRAME_SHORT_HEADER_SIZE + length;
-    uart_manager_print("[UWB] Sending: src=0x%04X dst=0x%04X len=%u\r\n", addressing.my_address,
-                       dest_addr, frame_len);
     uwb_port_status_t result = uwb_port_send_message(uwb_dev, tx_buffer, frame_len);
 
     if (result != UWB_PORT_SUCCESS)
     {
-        uart_manager_print("[UWB] Port send failed: %d\r\n", result);
+        error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Send failed: port error %d", result);
         return false;
     }
 

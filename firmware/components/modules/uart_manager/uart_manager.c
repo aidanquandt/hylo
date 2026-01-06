@@ -91,7 +91,6 @@ STATIC uint16_t last_checked_pos = 0U;            ///< Last position checked in 
 STATIC uart_cmd_callback_t cmd_callback = NULL;   ///< User command callback
 STATIC uint32_t rx_commands_received = 0U;        ///< Total commands received
 STATIC uint32_t rx_buffer_overruns = 0U;          ///< Total buffer overruns
-STATIC bool startup_message_sent = false;         ///< Flag to send welcome message once
 STATIC volatile bool command_in_progress = false; ///< Flag to prevent re-entrant command processing
 STATIC bool last_was_cr = false;                  ///< Flag to handle \r\n pairs as single delimiter
 
@@ -477,14 +476,6 @@ STATIC void uart_manager_process_rx_buffer(void)
  */
 STATIC void uart_manager_process_10Hz(void)
 {
-    // Send welcome message on first call (after TX task is running)
-    if (!startup_message_sent)
-    {
-        startup_message_sent = true;
-        uart_manager_print("\r\nUART Ready\r\n");
-        uart_manager_print("Type 'help' for available commands\r\n\r\n");
-    }
-
     uart_manager_process_rx_buffer();
 }
 

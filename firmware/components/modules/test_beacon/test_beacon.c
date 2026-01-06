@@ -72,54 +72,18 @@ STATIC void test_beacon_rx_callback(const uint8_t* data, uint16_t length, uint16
     beacon.rx_count++;
     beacon.last_src_addr = src_addr;
 
-    uart_manager_print("RX from 0x%04X (%u bytes): ", src_addr, length);
-    bool is_printable = true;
-    for (uint16_t i = 0; i < length; i++)
+    // Responder mode: send auto-incrementing counter back
+    if (beacon.mode == BEACON_MODE_RESPONDER && uwb_is_ready())
     {
-        if (data[i] < 32 || data[i] > 126)
+        char response[6];
+        snprintf(response, sizeof(response), "%u", beacon.counter);
+        uint16_t response_len = strlen(response);
+
+        if (uwb_send_message((uint8_t*)response, response_len, src_addr))
         {
-            is_printable = false;
-            break;
+            beacon.tx_count++;
+            beacon.counter++;
         }
-    }
-
-    if (is_printable && length > 0)
-    {
-        uart_manager_print("\"");
-        for (uint16_t i = 0; i < length; i++)
-        {
-            uart_manager_print("%c", data[i]);
-        }
-        uart_manager_print("\"\r\n");
-    }
-    else
-    {
-        for (uint16_t i = 0; i < length; i++)
-        {
-            uart_manager_print("%02X ", data[i]);
-        }
-        uart_manager_print("\r\n");
-    }
-    if (beacon.mode != BEACON_MODE_RESPONDER || !uwb_is_ready())
-    {
-        return;
-    }
-
-    char response[6];
-    snprintf(response, sizeof(response), "%u", beacon.counter);
-    uint16_t response_len = strlen(response);
-
-    bool success = uwb_send_message((uint8_t*)response, response_len, src_addr);
-
-    if (success)
-    {
-        beacon.tx_count++;
-        uart_manager_print("TX response to 0x%04X: counter=%u\r\n", src_addr, beacon.counter);
-        beacon.counter++;
-    }
-    else
-    {
-        uart_manager_print("TX response failed\r\n");
     }
 }
 
