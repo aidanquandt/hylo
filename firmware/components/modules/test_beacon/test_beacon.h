@@ -67,3 +67,10 @@ void test_beacon_set_counter(uint16_t value);
  * @return true if sent successfully, false otherwise
  */
 bool test_beacon_send_ping(uint16_t dest_addr);
+
+/**
+ * @brief Send delayed ping message to specified address (1 second delay)
+ * @param dest_addr Destination address (use 0xFFFF for broadcast)
+ * @return true if sent successfully, false otherwise
+ */
+bool test_beacon_send_ping_delayed(uint16_t dest_addr);

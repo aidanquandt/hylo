@@ -14,6 +14,7 @@
 #include "platform_os.h"
 #include "platform_spi.h"
 #include "platform_timer.h"
+#include "uart_manager.h"
 
 /*---------------------------------------------------------------------------
  * Type Definitions
@@ -22,7 +23,9 @@
 /** Complete definition of opaque UWB device structure */
 struct uwb_dev_s
 {
-    dwchip_t dw_chip; ///< Wrapped vendor driver chip structure (DW3000-specific)
+    dwchip_t dw_chip;    ///< Wrapped vendor driver chip structure (DW3000-specific)
+    uint64_t last_tx_ts; ///< Last TX timestamp (40-bit)
+    uint64_t last_rx_ts; ///< Last RX timestamp (40-bit)
 };
 
 /*---------------------------------------------------------------------------
@@ -102,6 +105,18 @@ uwb_port_status_t uwb_port_probe_and_init(uwb_dev_t* dev)
     // Wait for device to stabilize after reset (DW3000 needs ~1.5ms, DW3720 needs ~2ms)
     // Using 3ms for safety margin
     platform_os_delay_ms(3);
+
+    // Verify device is in IDLE_RC state before proceeding (DW3000 datasheet requirement)
+    // Device must be in this state before dwt_initialise() can be called
+    uint32_t timeout = 100; // ~1 second timeout (10ms per iteration)
+    while (!dwt_checkidlerc() && timeout--)
+    {
+        platform_os_delay_ms(10);
+    }
+    if (timeout == 0)
+    {
+        return UWB_PORT_ERROR_INIT_FAIL; // Device did not reach IDLE_RC state
+    }
 
     // Initialize device and load factory calibration values from OTP (One-Time Programmable) memory
     // This includes antenna delay, crystal trim, and transmit power calibration
@@ -318,6 +333,17 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel)
         return UWB_PORT_ERROR_COMM_FAIL;
     }
 
+    // Apply antenna delays for accurate TWR ranging
+    // These account for the physical delay of signal propagation through antenna/PCB traces
+    // RX_ANT_DLY and TX_ANT_DLY values must match between communicating devices for ranging
+    // accuracy
+    dwt_setrxantennadelay(16385); // Default value from DW3000 examples (RX_ANT_DLY)
+    dwt_settxantennadelay(16385); // Default value from DW3000 examples (TX_ANT_DLY)
+
+    // Enable LNA (Low Noise Amplifier) and PA (Power Amplifier) for optimal RX/TX performance
+    // LNA improves receiver sensitivity, PA improves transmit power
+    dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
+
     // Enable 802.15.4 frame filtering - allow data frames
     dwt_configureframefilter(DWT_FF_ENABLE_802_15_4, DWT_FF_DATA_EN);
 
@@ -346,9 +372,6 @@ uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uin
         return UWB_PORT_ERROR_CONFIG;
     }
 
-    // Stop receiver before transmitting
-    dwt_forcetrxoff();
-
     // Clear any pending TX status flags
     dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
 
@@ -357,6 +380,9 @@ uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uin
 
     // Set frame length (data + 2-byte CRC)
     dwt_writetxfctrl(length + 2, 0, 0);
+
+    // CRITICAL: Disable RX before TX to prevent RX timeout from killing TX
+    dwt_forcetrxoff();
 
     // Start transmission (immediate, no response expected)
     if (dwt_starttx(DWT_START_TX_IMMEDIATE) != DWT_SUCCESS)
@@ -368,14 +394,27 @@ uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uin
 
     // Wait for TX to complete by polling status
     uint32_t status = 0;
-    uint32_t timeout = 1000; // 1000 iterations (~10ms)
+    uint32_t timeout = 10000; // 10000 iterations (~100ms with 10us per iteration)
+
     while (timeout--)
     {
         status = dwt_readsysstatuslo();
+
         if (status & DWT_INT_TXFRS_BIT_MASK)
         {
             // TX complete - clear flag
             dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
+
+            // Read TX timestamp
+            uint8_t tx_ts_bytes[5];
+            dwt_readtxtimestamp(tx_ts_bytes);
+
+            // Convert to 64-bit and store (little-endian format)
+            dev->last_tx_ts = 0;
+            for (int i = 0; i < 5; i++)
+            {
+                dev->last_tx_ts |= ((uint64_t)tx_ts_bytes[i]) << (8 * i);
+            }
 
             // Re-enable receiver for continuous listening
             dwt_rxenable(DWT_START_RX_IMMEDIATE);
@@ -387,6 +426,89 @@ uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uin
     // Timeout - re-enable receiver and return error
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
     return UWB_PORT_ERROR_TIMEOUT;
+}
+
+uwb_port_status_t uwb_port_send_message_delayed(uwb_dev_t* dev, const uint8_t* data,
+                                                uint16_t length, uint64_t tx_timestamp_dtuh)
+{
+    if (dev == NULL || data == NULL)
+    {
+        return UWB_PORT_ERROR_NULL_PTR;
+    }
+
+    if (length == 0 || length > UWB_MAX_MESSAGE_LENGTH)
+    {
+        return UWB_PORT_ERROR_CONFIG;
+    }
+
+    // Clear any pending TX status flags
+    dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
+
+    // Write data to TX buffer
+    dwt_writetxdata(length, (uint8_t*)data, 0);
+
+    // Set frame length with ranging bit set (0x80 in second byte of frame control)
+    // Ranging flag is important for UWB TWR
+    dwt_writetxfctrl(length + 2, 0, 1); // Last parameter = 1 sets ranging bit
+
+    // CRITICAL: Disable RX before TX to prevent RX timeout from killing TX
+    dwt_forcetrxoff();
+
+    // Set the absolute TX time (pass high 32-bits to hardware)
+    // tx_timestamp_dtuh is already the high 32-bits format expected by DW3000
+    dwt_setdelayedtrxtime(tx_timestamp_dtuh);
+
+    // Start delayed transmission (hardware uses the TX time we just set above)
+    int tx_result = dwt_starttx(DWT_START_TX_DELAYED);
+
+    if (tx_result != DWT_SUCCESS)
+    {
+        // Re-enable receiver before returning
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+        return UWB_PORT_ERROR_TX_FAIL;
+    }
+
+    // Wait for TX to complete by polling status (like immediate TX does)
+    uint32_t status = 0;
+    uint32_t timeout = 100000; // 100000 * 10us = 1 second max
+
+    while (timeout--)
+    {
+        status = dwt_readsysstatuslo();
+
+        if (status & DWT_INT_TXFRS_BIT_MASK)
+        {
+            // TX complete - clear flag
+            dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
+            break;
+        }
+
+        // Small delay to avoid hammering the SPI bus (10us)
+        for (volatile int i = 0; i < 100; i++)
+            ; // ~10us busy wait
+    }
+
+    if (!(status & DWT_INT_TXFRS_BIT_MASK))
+    {
+        // Timeout - TX didn't complete
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+        return UWB_PORT_ERROR_TX_FAIL;
+    }
+
+    // Read TX timestamp to capture when transmission occurred
+    uint8_t tx_ts_bytes[5];
+    dwt_readtxtimestamp(tx_ts_bytes);
+
+    // Convert to 64-bit and store (little-endian format)
+    dev->last_tx_ts = 0;
+    for (int i = 0; i < 5; i++)
+    {
+        dev->last_tx_ts |= ((uint64_t)tx_ts_bytes[i]) << (8 * i);
+    }
+
+    // Re-enable receiver for continuous listening
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
+    return UWB_PORT_SUCCESS;
 }
 
 uwb_port_status_t uwb_port_receive_message(uwb_dev_t* dev, uint8_t* data, uint16_t max_length,
@@ -414,7 +536,13 @@ uwb_port_status_t uwb_port_receive_message(uwb_dev_t* dev, uint8_t* data, uint16
     // Check if good frame received (RXFCG bit set)
     if ((status & DWT_INT_RXFCG_BIT_MASK) == 0)
     {
-        // No good frame received
+        // No good frame received - but we need to keep RX enabled to keep the system counter
+        // running Check if RX is still enabled, if not, re-enable it
+        uint8_t sys_state = dwt_checkidlerc();
+        if (sys_state != DWT_DW_IDLE_RC)
+        {
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
+        }
         return UWB_PORT_ERROR_NO_DATA;
     }
 
@@ -435,6 +563,17 @@ uwb_port_status_t uwb_port_receive_message(uwb_dev_t* dev, uint8_t* data, uint16
     uint16_t data_len = (frame_len > 2) ? (frame_len - 2) : 0;
     dwt_readrxdata(data, data_len, 0);
     *received_length = data_len;
+
+    // Read RX timestamp
+    uint8_t rx_ts_bytes[5];
+    dwt_readrxtimestamp(rx_ts_bytes, DWT_COMPAT_NONE);
+
+    // Convert to 64-bit and store (little-endian format)
+    dev->last_rx_ts = 0;
+    for (int i = 0; i < 5; i++)
+    {
+        dev->last_rx_ts |= ((uint64_t)rx_ts_bytes[i]) << (8 * i);
+    }
 
     // Force transceiver off, clear ALL status flags, then re-enable receiver
     dwt_forcetrxoff();
@@ -566,6 +705,79 @@ STATIC void uwb_spi_set_fast_rate(void)
     platform_spi_cs_low(UWB_PORT_CS_PIN);
     platform_spi_set_speed(PLATFORM_SPI_SPEED_FAST);
     platform_spi_cs_high(UWB_PORT_CS_PIN);
+}
+
+/*---------------------------------------------------------------------------
+ * System Time Functions
+ *---------------------------------------------------------------------------*/
+
+uint64_t uwb_port_read_device_time(void)
+{
+    // Read the high 32 bits of the 40-bit system time counter from DW3000
+    // IMPORTANT: This returns DTUH (high 32-bits only), NOT full 40-bit DTU!
+    // The SYS_TIME register exposes bits 8-39 of the counter (32 bits total)
+    // The low 8 bits (bits 0-7) are not exposed by this API
+    //
+    // Hardware clock: ~64 GHz (very high frequency)
+    // DTU (full 40-bit): Increments at 249.6 MHz (hardware clock / 256)
+    // DTUH (high 32-bits): Same 249.6 MHz rate but only the upper 32 bits
+    //
+    // This function returns DTUH format - suitable for use with delayed TX functions
+    // which expect the high 32-bits of a scheduled timestamp.
+    uint32_t sys_time_hi32 = dwt_readsystimestamphi32();
+    return (uint64_t)(sys_time_hi32);
+}
+
+/*---------------------------------------------------------------------------
+ * Timestamp Functions (for TWR ranging)
+ *---------------------------------------------------------------------------*/
+
+uwb_port_status_t uwb_port_read_tx_timestamp(uwb_dev_t* dev, uint8_t timestamp_bytes[5])
+{
+    if (dev == NULL || timestamp_bytes == NULL)
+    {
+        return UWB_PORT_ERROR_NULL_PTR;
+    }
+
+    // Read TX timestamp from DW3000
+    // Note: DWT_COMPAT_NONE is used for compatibility parameter
+    dwt_readtxtimestamp(timestamp_bytes);
+
+    return UWB_PORT_SUCCESS;
+}
+
+uwb_port_status_t uwb_port_read_rx_timestamp(uwb_dev_t* dev, uint8_t timestamp_bytes[5])
+{
+    if (dev == NULL || timestamp_bytes == NULL)
+    {
+        return UWB_PORT_ERROR_NULL_PTR;
+    }
+
+    // Read RX timestamp from DW3000
+    // DWT_COMPAT_NONE is compatibility parameter for API
+    dwt_readrxtimestamp(timestamp_bytes, DWT_COMPAT_NONE);
+
+    return UWB_PORT_SUCCESS;
+}
+
+uint64_t uwb_port_get_last_tx_timestamp(uwb_dev_t* dev)
+{
+    if (dev == NULL)
+    {
+        return 0;
+    }
+
+    return dev->last_tx_ts;
+}
+
+uint64_t uwb_port_get_last_rx_timestamp(uwb_dev_t* dev)
+{
+    if (dev == NULL)
+    {
+        return 0;
+    }
+
+    return dev->last_rx_ts;
 }
 
 /*---------------------------------------------------------------------------

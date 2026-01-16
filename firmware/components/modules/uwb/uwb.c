@@ -11,6 +11,7 @@
 #include "mac_802154.h"
 #include "module.h"
 #include "platform_gpio.h"
+#include "platform_timer.h"
 #include "state_machine.h"
 #include "uart_manager.h"
 #include "uwb_port.h"
@@ -69,7 +70,6 @@ typedef struct
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
 STATIC bool verify_device_id(void);
-STATIC void read_measurements(void);
 STATIC void uwb_state_machine_sample_inputs(void);
 STATIC uint16_t uwb_transition_logic(uint16_t currentState, uint32_t stateTimer);
 STATIC void uwb_state_initialization_on_entry(uint16_t prevState);
@@ -79,17 +79,13 @@ STATIC void uwb_state_faulted_on_entry(uint16_t prevState);
 /*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
-STATIC void uwb_init(void);
-STATIC void uwb_process_1Hz(void);
-STATIC void uwb_process_100Hz(void);
+STATIC void uwb_process_1kHz(void);
 
 extern const module_S uwb_module;
 
 const module_S uwb_module = {
     .module_name = "uwb",
-    .module_init = uwb_init,
-    .module_process_1Hz = uwb_process_1Hz,
-    .module_process_100Hz = uwb_process_100Hz,
+    .module_process_1kHz = uwb_process_1kHz, // Poll at 1kHz for faster RX response
 };
 
 /*---------------------------------------------------------------------------
@@ -100,7 +96,7 @@ STATIC const state_s uwb_states[] = {
     [STATE_INITIALIZATION] = {.process = NULL,
                               .onEntry = uwb_state_initialization_on_entry,
                               .onExit = NULL},
-    [STATE_ACTIVE] = {.process = NULL, .onEntry = NULL, .onExit = NULL},
+    [STATE_ACTIVE] = {.process = uwb_state_active_process, .onEntry = NULL, .onExit = NULL},
     [STATE_FAULTED] = {.process = NULL, .onEntry = uwb_state_faulted_on_entry, .onExit = NULL}};
 
 STATIC state_machine_s uwb_state_machine = {.prev_state = STATE_OFF,
@@ -145,45 +141,16 @@ STATIC bool verify_device_id(void)
     return (measurements.device_id == UWB_EXPECTED_DEV_ID);
 }
 
-STATIC void read_measurements(void)
-{
-    if (uwb_dev == NULL)
-    {
-        return;
-    }
-
-    uwb_port_read_temp_and_voltage(uwb_dev, &measurements.temperature, &measurements.voltage);
-}
-
 STATIC void uwb_state_machine_sample_inputs(void)
 {
     sm_inputs.fault_present = (fault_code != FAULT_NONE);
     sm_inputs.init_device_completed = (uwb_dev != NULL);
 }
 
-STATIC void uwb_init(void)
+STATIC void uwb_process_1kHz(void)
 {
-}
-
-STATIC void uwb_process_1Hz(void)
-{
-    platform_gpio_toggle_led_green();
-
     uwb_state_machine_sample_inputs();
     state_machine_periodic(&uwb_state_machine);
-
-    if (uwb_state_machine.curr_state == STATE_ACTIVE)
-    {
-        read_measurements();
-    }
-}
-
-STATIC void uwb_process_100Hz(void)
-{
-    if (uwb_state_machine.curr_state == STATE_ACTIVE)
-    {
-        uwb_state_active_process();
-    }
 }
 
 STATIC uint16_t uwb_transition_logic(uint16_t currentState, uint32_t stateTimer)
@@ -278,7 +245,6 @@ STATIC void uwb_state_initialization_on_entry(uint16_t prevState)
     }
 
     rx_stats = (uwb_rx_stats_t){0};
-    read_measurements();
 }
 
 STATIC void uwb_state_active_process(void)
@@ -416,6 +382,11 @@ bool uwb_is_ready(void)
     return (uwb_state_machine.curr_state == STATE_ACTIVE);
 }
 
+uwb_dev_t* uwb_get_device(void)
+{
+    return uwb_dev;
+}
+
 void uwb_start(void)
 {
     sm_inputs.start_requested = true;
@@ -432,16 +403,21 @@ void uwb_set_address(uint16_t address, uint16_t pan_id)
     addressing.my_pan_id = pan_id;
 
     // Update hardware registers if in active state
-    if (uwb_state_machine.curr_state == STATE_ACTIVE && uwb_dev != NULL)
+    if (uwb_state_machine.curr_state == STATE_ACTIVE)
     {
         uwb_port_set_pan_id(uwb_dev, addressing.my_pan_id);
         uwb_port_set_address(uwb_dev, addressing.my_address);
     }
 }
 
+uint16_t uwb_get_address(void)
+{
+    return addressing.my_address;
+}
+
 bool uwb_soft_reset(void)
 {
-    if (uwb_dev == NULL || !uwb_is_ready())
+    if (uwb_state_machine.curr_state != STATE_ACTIVE)
     {
         return false;
     }
@@ -453,7 +429,7 @@ bool uwb_soft_reset(void)
 bool uwb_send_message(const uint8_t* data, uint16_t length, uint16_t dest_addr)
 {
     // Validate radio state and parameters
-    if (!uwb_is_ready() || uwb_dev == NULL || data == NULL || length == 0 ||
+    if (uwb_state_machine.curr_state != STATE_ACTIVE || data == NULL || length == 0 ||
         length > MAC_MAX_PAYLOAD_SIZE)
     {
         return false;
@@ -476,6 +452,44 @@ bool uwb_send_message(const uint8_t* data, uint16_t length, uint16_t dest_addr)
     if (result != UWB_PORT_SUCCESS)
     {
         error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Send failed: port error %d", result);
+        return false;
+    }
+
+    return true;
+}
+
+bool uwb_send_message_delayed(const uint8_t* data, uint16_t length, uint16_t dest_addr,
+                              uint64_t tx_timestamp_dtuh)
+{
+    // Validate radio state and parameters
+    if (uwb_state_machine.curr_state != STATE_ACTIVE || data == NULL || length == 0 ||
+        length > MAC_MAX_PAYLOAD_SIZE)
+    {
+        return false;
+    }
+
+    uint8_t tx_buffer[MAC_MAX_FRAME_SIZE];
+    mac_frame_short_t* frame = (mac_frame_short_t*)tx_buffer;
+
+    frame->frame_control = MAC_FC_TYPE_DATA | MAC_FC_DST_ADDR_SHORT | MAC_FC_SRC_ADDR_SHORT;
+    frame->sequence = addressing.tx_sequence++;
+    frame->dest_pan_id = addressing.my_pan_id;
+    frame->dest_addr = dest_addr;
+    frame->src_addr = addressing.my_address;
+
+    memcpy(frame->payload, data, length);
+
+    uint16_t frame_len = MAC_FRAME_SHORT_HEADER_SIZE + length;
+
+    // Use delayed transmission with the provided absolute TX timestamp
+    // Port layer will set the hardware timing and transmit atomically
+    uwb_port_status_t result =
+        uwb_port_send_message_delayed(uwb_dev, tx_buffer, frame_len, tx_timestamp_dtuh);
+
+    if (result != UWB_PORT_SUCCESS)
+    {
+        error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Delayed send failed: port error %d",
+                          result);
         return false;
     }
 
