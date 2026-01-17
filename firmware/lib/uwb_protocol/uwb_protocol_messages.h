@@ -45,12 +45,18 @@
 /**
  * @brief Common header for all protocol messages
  * @note All application messages MUST start with this header
+ *
+ * Architecture: This header sits INSIDE the MAC payload. Complete frame structure:
+ *   [MAC Header (9B)] + [Protocol Header (4B)] + [Protocol Payload]
+ *
+ * The protocol sequence field is used for transaction correlation (e.g., matching
+ * POLL → RESPONSE → FINAL in TWR), while MAC sequence is link-layer only.
  */
 typedef struct
 {
     uint8_t protocol_type; // Top-level protocol (PROTOCOL_TYPE_*)
     uint8_t msg_type;      // Protocol-specific message type
-    uint16_t sequence;     // Sequence number for matching/ordering
+    uint16_t sequence;     // Transaction sequence for protocol-level correlation
 } __attribute__((packed)) protocol_header_t;
 
 /*---------------------------------------------------------------------------

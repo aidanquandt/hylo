@@ -63,15 +63,19 @@
 /**
  * @brief 802.15.4 MAC frame with short addressing (16-bit addresses)
  * @note This is the most common format for UWB/ranging applications
+ *
+ * Design Note: MAC sequence field is auto-incremented but not used for
+ * transaction correlation. Protocol-layer sequence (in protocol_header_t)
+ * handles message correlation since we operate without MAC-layer ACKs.
  */
 typedef struct __attribute__((packed))
 {
     uint16_t frame_control; // Frame control field
-    uint8_t sequence;       // Sequence number
+    uint8_t sequence;       // MAC sequence (auto-incremented, not actively used)
     uint16_t dest_pan_id;   // Destination PAN ID
     uint16_t dest_addr;     // Destination address (16-bit)
     uint16_t src_addr;      // Source address (16-bit)
-    uint8_t payload[];      // Flexible array member - payload data
+    uint8_t payload[];      // Application protocol messages (protocol_header_t + data)
 } mac_frame_short_t;
 
 /*---------------------------------------------------------------------------

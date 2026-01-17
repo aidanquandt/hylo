@@ -344,7 +344,10 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel)
     // LNA improves receiver sensitivity, PA improves transmit power
     dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
 
-    // Enable 802.15.4 frame filtering - allow data frames
+    // Enable 802.15.4 hardware frame filtering
+    // This filters by PAN ID (set via dwt_setpanid) and address (set via dwt_setaddress16)
+    // Only frames addressed to our address/PAN or broadcast will be received
+    // This reduces CPU load by dropping unwanted frames at the hardware level
     dwt_configureframefilter(DWT_FF_ENABLE_802_15_4, DWT_FF_DATA_EN);
 
     // Set TX power

@@ -285,30 +285,22 @@ STATIC void uwb_state_active_process(void)
         {
             mac_frame_short_t* rx_frame = (mac_frame_short_t*)rx_buffer;
 
-            if ((rx_frame->dest_addr == addressing.my_address ||
-                 rx_frame->dest_addr == MAC_BROADCAST_ADDR) &&
-                rx_frame->dest_pan_id == addressing.my_pan_id)
+            // Note: Hardware frame filtering (DW3000) already filtered by PAN ID and address
+            // If we received this frame, it's addressed to us or is a broadcast
+            rx_stats.received++;
+
+            uint16_t payload_len = received - MAC_FRAME_SHORT_HEADER_SIZE;
+
+            if (payload_len <= MAC_MAX_PAYLOAD_SIZE)
             {
-                rx_stats.received++;
+                // Dispatch to protocol router first
+                uwb_dispatch_protocol_message(rx_frame->payload, payload_len, rx_frame->src_addr);
 
-                uint16_t payload_len = received - MAC_FRAME_SHORT_HEADER_SIZE;
-
-                if (payload_len <= MAC_MAX_PAYLOAD_SIZE)
+                // Also call legacy callback if registered (for backwards compatibility)
+                if (rx_callback != NULL)
                 {
-                    // Dispatch to protocol router first
-                    uwb_dispatch_protocol_message(rx_frame->payload, payload_len,
-                                                  rx_frame->src_addr);
-
-                    // Also call legacy callback if registered (for backwards compatibility)
-                    if (rx_callback != NULL)
-                    {
-                        rx_callback(rx_frame->payload, payload_len, rx_frame->src_addr);
-                    }
+                    rx_callback(rx_frame->payload, payload_len, rx_frame->src_addr);
                 }
-            }
-            else
-            {
-                rx_stats.filtered++;
             }
         }
     }
