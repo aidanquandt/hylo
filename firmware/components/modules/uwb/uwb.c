@@ -500,3 +500,23 @@ void uwb_register_rx_callback(uwb_rx_callback_t callback)
 {
     rx_callback = callback;
 }
+
+uint64_t uwb_get_last_tx_timestamp(void)
+{
+    if (uwb_dev == NULL)
+    {
+        return 0;
+    }
+
+    return uwb_port_get_last_tx_timestamp(uwb_dev);
+}
+
+uint64_t uwb_get_last_rx_timestamp(void)
+{
+    if (uwb_dev == NULL)
+    {
+        return 0;
+    }
+
+    return uwb_port_get_last_rx_timestamp(uwb_dev);
+}

@@ -11,7 +11,6 @@
 #include "twr/twr_types.h"
 #include "uart_manager.h"
 #include "uwb.h"
-#include "uwb_port.h"
 #include "uwb_protocol_messages.h"
 #include <string.h>
 
@@ -299,7 +298,7 @@ STATIC void anchor_handle_poll(const uint8_t* data, uint16_t length, uint16_t sr
         return;
     }
 
-    anchor_ctx.poll_rx.timestamp_dtu = uwb_port_get_last_rx_timestamp(uwb_dev);
+    anchor_ctx.poll_rx.timestamp_dtu = uwb_get_last_rx_timestamp();
 
     anchor_ctx.polls_received++;
 
@@ -322,9 +321,6 @@ STATIC void anchor_handle_poll(const uint8_t* data, uint16_t length, uint16_t sr
 
 STATIC bool anchor_send_response(void)
 {
-    // Get UWB device early so it's available for reading TX timestamp later
-    uwb_dev_t* uwb_dev = uwb_get_device();
-
     protocol_twr_response_msg_t response;
     response.header.protocol_type = PROTOCOL_TYPE_TWR;
     response.header.msg_type = TWR_MSG_TYPE_RESPONSE;
@@ -356,11 +352,8 @@ STATIC bool anchor_send_response(void)
     }
 
     // Capture actual TX timestamp from hardware after delayed transmission
-    if (uwb_dev != NULL)
-    {
-        anchor_ctx.resp_tx = uwb_port_get_last_tx_timestamp(uwb_dev);
-    }
-    else
+    anchor_ctx.resp_tx = uwb_get_last_tx_timestamp();
+    if (anchor_ctx.resp_tx == 0)
     {
         anchor_ctx.resp_tx = absolute_tx_time_dtu; // Fallback to scheduled time
     }
@@ -384,15 +377,10 @@ STATIC void anchor_handle_final(const uint8_t* data, uint16_t length, uint16_t s
     uart_manager_print("FINAL ACCEPT from 0x%04X\r\n", src_addr);
 
     // Record RX timestamp for the FINAL message (get from UWB radio)
-    uint64_t final_rx_ts_dtu = 0;
-    uwb_dev_t* uwb_dev = uwb_get_device();
-    if (uwb_dev != NULL)
+    uint64_t final_rx_ts_dtu = uwb_get_last_rx_timestamp();
+    if (final_rx_ts_dtu == 0)
     {
-        final_rx_ts_dtu = uwb_port_get_last_rx_timestamp(uwb_dev);
-    }
-    else
-    {
-        uart_manager_print("anchor_handle_final: Failed to get UWB device\r\n");
+        uart_manager_print("anchor_handle_final: Failed to get RX timestamp\r\n");
         anchor_ctx.fault_code = ANCHOR_FAULT_SEND_FAILED;
         return;
     }

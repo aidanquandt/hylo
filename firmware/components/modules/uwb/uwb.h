@@ -196,3 +196,29 @@ void uwb_register_rx_callback(uwb_rx_callback_t callback);
  * @return Pointer to UWB device, or NULL if not initialized
  */
 uwb_dev_t* uwb_get_device(void);
+
+/**
+ * @brief Get the last TX timestamp
+ *
+ * Returns the timestamp of the last transmitted message. This is captured
+ * automatically by the hardware after transmission completes.
+ *
+ * @return 40-bit TX timestamp in Device Time Units (DTU), or 0 if not available
+ *
+ * @note Only valid after a successful uwb_send_message() or uwb_send_message_delayed()
+ * @note Used by ranging protocols (TWR) for precise time-of-flight calculations
+ */
+uint64_t uwb_get_last_tx_timestamp(void);
+
+/**
+ * @brief Get the last RX timestamp
+ *
+ * Returns the timestamp of the last received message. This is captured
+ * automatically by the hardware when a message is received.
+ *
+ * @return 40-bit RX timestamp in Device Time Units (DTU), or 0 if not available
+ *
+ * @note Only valid after a message has been received and RX callback invoked
+ * @note Used by ranging protocols (TWR) for precise time-of-flight calculations
+ */
+uint64_t uwb_get_last_rx_timestamp(void);

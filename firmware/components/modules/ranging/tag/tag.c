@@ -11,7 +11,6 @@
 #include "twr/twr_algorithm.h"
 #include "uart_manager.h"
 #include "uwb.h"
-#include "uwb_port.h"
 #include "uwb_protocol_messages.h"
 #include <string.h>
 
@@ -449,16 +448,8 @@ STATIC bool tag_send_poll(void)
         return false;
     }
 
-    // Read TX timestamp (automatically captured by uwb_port_send_message)
-    uwb_dev_t* uwb_dev = uwb_get_device();
-    if (uwb_dev != NULL)
-    {
-        tag_ctx.poll_tx.timestamp_dtu = uwb_port_get_last_tx_timestamp(uwb_dev);
-    }
-    else
-    {
-        tag_ctx.poll_tx.timestamp_dtu = 0;
-    }
+    // Read TX timestamp (automatically captured by hardware)
+    tag_ctx.poll_tx.timestamp_dtu = uwb_get_last_tx_timestamp();
     tag_ctx.poll_tx.local_time_ms = platform_os_gettick();
 
     return true;
@@ -497,13 +488,9 @@ STATIC bool tag_send_final(void)
         return false;
     }
 
-    // Read actual TX timestamp from hardware (like tag_send_poll does)
-    uwb_dev_t* uwb_dev = uwb_get_device();
-    if (uwb_dev != NULL)
-    {
-        tag_ctx.final_tx.timestamp_dtu = uwb_port_get_last_tx_timestamp(uwb_dev);
-    }
-    else
+    // Read actual TX timestamp from hardware
+    tag_ctx.final_tx.timestamp_dtu = uwb_get_last_tx_timestamp();
+    if (tag_ctx.final_tx.timestamp_dtu == 0)
     {
         tag_ctx.final_tx.timestamp_dtu = final_tx_time_dtu; // Fallback to scheduled
     }
@@ -578,15 +565,7 @@ STATIC void tag_handle_response(const uint8_t* data, uint16_t length, uint16_t s
 
     // Record RX timestamp (get from UWB radio)
     tag_ctx.resp_rx.local_time_ms = platform_os_gettick();
-    uwb_dev_t* uwb_dev = uwb_get_device();
-    if (uwb_dev != NULL)
-    {
-        tag_ctx.resp_rx.timestamp_dtu = uwb_port_get_last_rx_timestamp(uwb_dev);
-    }
-    else
-    {
-        tag_ctx.resp_rx.timestamp_dtu = 0;
-    }
+    tag_ctx.resp_rx.timestamp_dtu = uwb_get_last_rx_timestamp();
 
     // Extract remote poll RX timestamp from response
     tag_ctx.poll_rx_ts_remote = twr_timestamp_to_u64(resp->poll_rx_ts);
