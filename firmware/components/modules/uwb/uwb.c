@@ -15,6 +15,7 @@
 #include "state_machine.h"
 #include "uart_manager.h"
 #include "uwb_port.h"
+#include "uwb_protocol_messages.h"
 #include <string.h>
 
 /*---------------------------------------------------------------------------
@@ -24,6 +25,7 @@
 #define UWB_DEFAULT_CHANNEL UWB_CHANNEL_5
 #define MAX_MESSAGE_LENGTH (MAC_MAX_FRAME_SIZE)
 #define DEFAULT_NODE_ADDRESS (0x0001)
+#define MAX_PROTOCOL_HANDLERS (8U) ///< Maximum number of protocol handlers
 
 typedef enum
 {
@@ -66,10 +68,33 @@ typedef struct
     uint8_t tx_sequence;
 } uwb_addressing_t;
 
+/** Protocol handler registry entry */
+typedef struct
+{
+    uint8_t protocol_type;
+    uwb_protocol_handler_t handler;
+} protocol_handler_entry_t;
+
+/** Protocol routing statistics */
+typedef struct
+{
+    uint32_t total_received;
+    uint32_t unhandled;
+    uint32_t invalid;
+} protocol_stats_t;
+
+/*---------------------------------------------------------------------------
+ * Protocol Routing - Private Variables
+ *---------------------------------------------------------------------------*/
+STATIC protocol_handler_entry_t protocol_handlers[MAX_PROTOCOL_HANDLERS];
+STATIC uint8_t protocol_handler_count = 0;
+STATIC protocol_stats_t protocol_stats = {0};
+
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
 STATIC bool verify_device_id(void);
+STATIC void uwb_dispatch_protocol_message(const uint8_t* data, uint16_t length, uint16_t src_addr);
 STATIC void uwb_state_machine_sample_inputs(void);
 STATIC uint16_t uwb_transition_logic(uint16_t currentState, uint32_t stateTimer);
 STATIC void uwb_state_initialization_on_entry(uint16_t prevState);
@@ -266,11 +291,16 @@ STATIC void uwb_state_active_process(void)
             {
                 rx_stats.received++;
 
-                if (rx_callback != NULL)
-                {
-                    uint16_t payload_len = received - MAC_FRAME_SHORT_HEADER_SIZE;
+                uint16_t payload_len = received - MAC_FRAME_SHORT_HEADER_SIZE;
 
-                    if (payload_len <= MAC_MAX_PAYLOAD_SIZE)
+                if (payload_len <= MAC_MAX_PAYLOAD_SIZE)
+                {
+                    // Dispatch to protocol router first
+                    uwb_dispatch_protocol_message(rx_frame->payload, payload_len,
+                                                  rx_frame->src_addr);
+
+                    // Also call legacy callback if registered (for backwards compatibility)
+                    if (rx_callback != NULL)
                     {
                         rx_callback(rx_frame->payload, payload_len, rx_frame->src_addr);
                     }
@@ -519,4 +549,118 @@ uint64_t uwb_get_last_rx_timestamp(void)
     }
 
     return uwb_port_get_last_rx_timestamp(uwb_dev);
+}
+
+/*---------------------------------------------------------------------------
+ * Protocol Routing Implementation
+ *---------------------------------------------------------------------------*/
+
+bool uwb_register_protocol_handler(uint8_t protocol_type, uwb_protocol_handler_t handler)
+{
+    if (handler == NULL)
+    {
+        return false;
+    }
+
+    // Check if protocol already registered - update if found
+    for (uint8_t i = 0; i < protocol_handler_count; i++)
+    {
+        if (protocol_handlers[i].protocol_type == protocol_type)
+        {
+            protocol_handlers[i].handler = handler;
+            return true;
+        }
+    }
+
+    // Add new handler
+    if (protocol_handler_count >= MAX_PROTOCOL_HANDLERS)
+    {
+        error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "Protocol handler table full");
+        return false;
+    }
+
+    protocol_handlers[protocol_handler_count].protocol_type = protocol_type;
+    protocol_handlers[protocol_handler_count].handler = handler;
+    protocol_handler_count++;
+
+    return true;
+}
+
+void uwb_unregister_protocol_handler(uint8_t protocol_type)
+{
+    // Find and remove handler
+    for (uint8_t i = 0; i < protocol_handler_count; i++)
+    {
+        if (protocol_handlers[i].protocol_type == protocol_type)
+        {
+            // Shift remaining handlers down
+            for (uint8_t j = i; j < protocol_handler_count - 1; j++)
+            {
+                protocol_handlers[j] = protocol_handlers[j + 1];
+            }
+            protocol_handler_count--;
+            memset(&protocol_handlers[protocol_handler_count], 0, sizeof(protocol_handler_entry_t));
+            return;
+        }
+    }
+}
+
+void uwb_get_protocol_stats(uint32_t* total_received, uint32_t* unhandled, uint32_t* invalid)
+{
+    if (total_received != NULL)
+    {
+        *total_received = protocol_stats.total_received;
+    }
+    if (unhandled != NULL)
+    {
+        *unhandled = protocol_stats.unhandled;
+    }
+    if (invalid != NULL)
+    {
+        *invalid = protocol_stats.invalid;
+    }
+}
+
+void uwb_reset_protocol_stats(void)
+{
+    memset(&protocol_stats, 0, sizeof(protocol_stats));
+}
+
+STATIC void uwb_dispatch_protocol_message(const uint8_t* data, uint16_t length, uint16_t src_addr)
+{
+    protocol_stats.total_received++;
+
+    // Validate minimum message size for protocol header
+    if (data == NULL || length < sizeof(protocol_header_t))
+    {
+        protocol_stats.invalid++;
+        return;
+    }
+
+    // Extract protocol type from first byte of message
+    uint8_t protocol_type = data[0];
+
+    // Validate protocol type is non-zero (reserved)
+    if (protocol_type == 0x00 || protocol_type > 0x0F)
+    {
+        protocol_stats.invalid++;
+        return;
+    }
+
+    // Find and dispatch to registered handler
+    bool handled = false;
+    for (uint8_t i = 0; i < protocol_handler_count; i++)
+    {
+        if (protocol_handlers[i].protocol_type == protocol_type)
+        {
+            protocol_handlers[i].handler(data, length, src_addr);
+            handled = true;
+            break;
+        }
+    }
+
+    if (!handled)
+    {
+        protocol_stats.unhandled++;
+    }
 }

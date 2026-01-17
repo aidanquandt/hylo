@@ -171,23 +171,76 @@ bool uwb_send_message_delayed(const uint8_t* data, uint16_t length, uint16_t des
                               uint64_t tx_timestamp_dtuh);
 
 /**
- * @brief Register a callback for received UWB messages
+ * @brief Protocol handler callback function type
  *
- * Applications register a callback to be notified when UWB messages are received.
- * Only one callback can be registered at a time (last registration wins).
+ * Protocol handlers receive application-layer messages dispatched by protocol type.
+ * Each handler processes messages for a specific protocol (TWR, DATA, etc.).
+ *
+ * @param data Pointer to message data (includes protocol header)
+ * @param length Total message length in bytes
+ * @param src_addr Source address from MAC layer (16-bit 802.15.4 address)
+ *
+ * @note Handler is called at 1kHz polling rate - keep processing brief
+ * @note Data pointer is only valid during callback - copy if needed
+ */
+typedef void (*uwb_protocol_handler_t)(const uint8_t* data, uint16_t length, uint16_t src_addr);
+
+/**
+ * @brief Register a protocol handler for application-layer protocol dispatch
+ *
+ * Protocol handlers receive messages matching their protocol type.
+ * Multiple protocols can be registered simultaneously (e.g., TWR, DATA).
+ * Message routing is based on the first byte (protocol_type field).
+ *
+ * @param protocol_type Protocol identifier (PROTOCOL_TYPE_* from uwb_protocol_messages.h)
+ * @param handler Callback function to process messages of this protocol type
+ *
+ * @return true if handler registered successfully
+ * @return false if registration failed (invalid params, table full)
+ *
+ * @note Maximum 8 protocol handlers can be registered
+ * @note Re-registering same protocol_type updates the handler
+ * @note Handler is called from UWB RX processing context (1kHz rate)
+ *
+ * @example
+ * void twr_handler(const uint8_t* data, uint16_t len, uint16_t src) {
+ *     // Process TWR ranging messages
+ * }
+ * uwb_register_protocol_handler(PROTOCOL_TYPE_TWR, twr_handler);
+ */
+bool uwb_register_protocol_handler(uint8_t protocol_type, uwb_protocol_handler_t handler);
+
+/**
+ * @brief Unregister a protocol handler
+ *
+ * @param protocol_type Protocol identifier to unregister
+ */
+void uwb_unregister_protocol_handler(uint8_t protocol_type);
+
+/**
+ * @brief Get protocol routing statistics
+ *
+ * @param total_received Output: Total application messages received (can be NULL)
+ * @param unhandled Output: Messages with no registered handler (can be NULL)
+ * @param invalid Output: Invalid/malformed messages (can be NULL)
+ */
+void uwb_get_protocol_stats(uint32_t* total_received, uint32_t* unhandled, uint32_t* invalid);
+
+/**
+ * @brief Reset protocol routing statistics to zero
+ */
+void uwb_reset_protocol_stats(void);
+
+/**
+ * @brief Register a callback for received UWB messages (low-level)
+ *
+ * @deprecated Use uwb_register_protocol_handler() for application protocols instead.
+ *             This low-level callback is for internal use only.
  *
  * @param callback Function to call when message received, or NULL to unregister
  *
- * @note Callback is invoked at 100Hz polling rate when messages arrive
- * @note Keep callback processing brief - copy data if needed for later processing
+ * @note Callback is invoked at 1kHz polling rate when messages arrive
  * @note Payload has MAC header stripped - only application data is passed
- *
- * @example
- * void my_rx_handler(const uint8_t* data, uint16_t len, uint16_t src) {
- *     // Process received message
- *     printf("Got %u bytes from 0x%04X\n", len, src);
- * }
- * uwb_register_rx_callback(my_rx_handler);
  */
 void uwb_register_rx_callback(uwb_rx_callback_t callback);
 

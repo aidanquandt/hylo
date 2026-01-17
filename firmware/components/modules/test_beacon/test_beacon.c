@@ -11,6 +11,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "test_beacon.h"
+#include "error_handler.h"
 #include "mac_802154.h"
 #include "module.h"
 #include "platform_timer.h"
@@ -18,7 +19,6 @@
 #include "uwb.h"
 #include "uwb_port.h"
 #include "uwb_protocol_messages.h"
-#include "uwb_protocol_router.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -68,8 +68,12 @@ STATIC beacon_state_t beacon = {
  *---------------------------------------------------------------------------*/
 STATIC void test_beacon_init(void)
 {
-    // Register DATA protocol handler with router
-    uwb_protocol_router_register_handler(PROTOCOL_TYPE_DATA, beacon_protocol_handler);
+    // Register DATA protocol handler with UWB module
+    if (!uwb_register_protocol_handler(PROTOCOL_TYPE_DATA, beacon_protocol_handler))
+    {
+        error_handler_log(ERROR_SEVERITY_ERROR, "beacon",
+                          "Failed to register DATA protocol handler");
+    }
 
     // Automatically start UWB radio
     uwb_start();

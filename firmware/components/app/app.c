@@ -16,7 +16,6 @@
 #include "uart_cmd_router.h"
 #include "uart_manager.h"
 #include "uwb.h"
-#include "uwb_protocol_router.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -180,9 +179,6 @@ STATIC void app_post_module_initialization(void)
     // Initialize UART command router
     uart_cmd_router_init();
 
-    // Register protocol router as UWB RX callback
-    uwb_register_rx_callback(uwb_protocol_router_rx_callback);
-
     // Log successful initialization
     uart_manager_print("\r\n\r\n\r\n=== App Ready ===\r\n");
 }
@@ -192,10 +188,8 @@ STATIC void app_post_module_initialization(void)
  *---------------------------------------------------------------------------*/
 void app_init(void)
 {
-    // Phase 0: Initialize protocol router (before modules that use it)
-    uwb_protocol_router_init();
-
     // Phase 1: Initialize modules (create queues, semaphores, etc.)
+    // Note: Protocol routing is now handled internally by uwb module
     app_initialize_modules();
 
     // Phase 2: Create all module tasks (now that RTOS primitives exist)

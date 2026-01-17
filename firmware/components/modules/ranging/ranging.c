@@ -12,7 +12,6 @@
 #include "uart_manager.h"
 #include "uwb.h"
 #include "uwb_protocol_messages.h"
-#include "uwb_protocol_router.h"
 #include <string.h>
 
 /*---------------------------------------------------------------------------
@@ -53,8 +52,12 @@ STATIC void ranging_init(void)
     tag_init();
     anchor_init();
 
-    // Register TWR protocol handler with router
-    uwb_protocol_router_register_handler(PROTOCOL_TYPE_TWR, ranging_protocol_handler);
+    // Register TWR protocol handler with UWB module
+    if (!uwb_register_protocol_handler(PROTOCOL_TYPE_TWR, ranging_protocol_handler))
+    {
+        error_handler_log(ERROR_SEVERITY_ERROR, "ranging",
+                          "Failed to register TWR protocol handler");
+    }
 
     current_mode = RANGING_MODE_DISABLED;
     module_initialized = true;
