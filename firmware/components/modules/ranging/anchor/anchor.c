@@ -313,7 +313,6 @@ STATIC void anchor_handle_poll(const uint8_t* data, uint16_t length, uint16_t sr
     {
         anchor_ctx.responses_sent++;
         anchor_ctx.last_tag_address = anchor_ctx.tag_address;
-        uart_manager_print("Anchor: POLL handling SUCCESSFUL\r\n");
     }
 
     anchor_ctx.processing_poll = false;
@@ -373,8 +372,6 @@ STATIC void anchor_handle_final(const uint8_t* data, uint16_t length, uint16_t s
     }
 
     const protocol_twr_final_msg_t* final = (const protocol_twr_final_msg_t*)data;
-
-    uart_manager_print("FINAL ACCEPT from 0x%04X\r\n", src_addr);
 
     // Record RX timestamp for the FINAL message (get from UWB radio)
     uint64_t final_rx_ts_dtu = uwb_get_last_rx_timestamp();

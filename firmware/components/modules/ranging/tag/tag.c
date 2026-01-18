@@ -81,7 +81,6 @@ typedef struct
 STATIC void tag_state_sample_inputs(void);
 STATIC uint16_t tag_transition_logic(uint16_t currentState, uint32_t stateTimer);
 STATIC void tag_state_wait_response_process(void);
-STATIC void tag_state_send_final_on_entry(uint16_t prevState);
 STATIC void tag_state_wait_final_ack_process(void);
 STATIC void tag_state_process_result_on_entry(uint16_t prevState);
 STATIC void tag_state_faulted_on_entry(uint16_t prevState);
@@ -103,9 +102,6 @@ STATIC const state_s tag_states[] = {
     [TAG_STATE_WAIT_RESPONSE] = {.process = tag_state_wait_response_process,
                                  .onEntry = NULL,
                                  .onExit = NULL},
-    [TAG_STATE_SEND_FINAL] = {.process = NULL,
-                              .onEntry = tag_state_send_final_on_entry,
-                              .onExit = NULL},
     [TAG_STATE_WAIT_FINAL_ACK] = {.process = tag_state_wait_final_ack_process,
                                   .onEntry = NULL,
                                   .onExit = NULL},
@@ -299,7 +295,18 @@ STATIC uint16_t tag_transition_logic(uint16_t currentState, uint32_t stateTimer)
             }
             else if (tag_inputs.response_received)
             {
-                nextState = TAG_STATE_SEND_FINAL;
+                // Send final message and transition to wait for ACK
+                if (!tag_send_final())
+                {
+                    uart_manager_print("Failed to send final\r\n");
+                    tag_ctx.fault_code = TAG_FAULT_SEND_FAILED;
+                    nextState = TAG_STATE_FAULTED;
+                }
+                else
+                {
+                    tag_inputs.response_received = false;
+                    nextState = TAG_STATE_WAIT_FINAL_ACK;
+                }
             }
             else if (stateTimer >= TAG_RESPONSE_TIMEOUT_TICKS)
             {
@@ -307,11 +314,6 @@ STATIC uint16_t tag_transition_logic(uint16_t currentState, uint32_t stateTimer)
                 tag_ctx.fault_code = TAG_FAULT_TIMEOUT;
                 nextState = TAG_STATE_FAULTED;
             }
-            break;
-
-        case TAG_STATE_SEND_FINAL:
-            // After sending final, wait for ACK
-            nextState = TAG_STATE_WAIT_FINAL_ACK;
             break;
 
         case TAG_STATE_WAIT_FINAL_ACK:
@@ -349,21 +351,6 @@ STATIC uint16_t tag_transition_logic(uint16_t currentState, uint32_t stateTimer)
 STATIC void tag_state_wait_response_process(void)
 {
     // Waiting is passive - response handled in RX callback
-}
-
-STATIC void tag_state_send_final_on_entry(uint16_t prevState)
-{
-    (void)prevState;
-
-    // Send final message with scheduled TX
-    if (!tag_send_final())
-    {
-        uart_manager_print("Failed to send final\r\n");
-        tag_ctx.fault_code = TAG_FAULT_SEND_FAILED;
-    }
-
-    // Clear the response_received flag now that we've processed it
-    tag_inputs.response_received = false;
 }
 
 STATIC void tag_state_wait_final_ack_process(void)
@@ -601,8 +588,6 @@ STATIC void tag_handle_final_ack(const uint8_t* data, uint16_t length, uint16_t 
         tag_ctx.fault_code = TAG_FAULT_INVALID_RESPONSE;
         return;
     }
-
-    uart_manager_print("FINAL_ACK ACCEPT from 0x%04X\r\n", src_addr);
 
     // Extract anchor's response TX timestamp from the ACK (now included)
     tag_ctx.resp_tx_ts_remote = twr_timestamp_to_u64(ack->resp_tx_ts);

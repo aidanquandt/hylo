@@ -23,7 +23,6 @@ typedef enum
 {
     TAG_STATE_IDLE,           // Not ranging
     TAG_STATE_WAIT_RESPONSE,  // Waiting for anchor response
-    TAG_STATE_SEND_FINAL,     // Sending final message with timestamps
     TAG_STATE_WAIT_FINAL_ACK, // Waiting for final ACK with anchor timestamps
     TAG_STATE_PROCESS_RESULT, // Calculating distance
     TAG_STATE_FAULTED         // Error state
