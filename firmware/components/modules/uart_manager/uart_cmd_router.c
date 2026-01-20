@@ -11,6 +11,7 @@
 #include "error_handler.h"
 #include "imu.h"
 #include "ranging/ranging.h"
+#include "stopwatch.h"
 #include "test_beacon.h"
 #include "uart_manager.h"
 #include "uwb.h"
@@ -37,6 +38,8 @@ STATIC void uart_cmd_router_handle_datalogger(const char* action, const char* ta
                                               const char* args);
 STATIC void uart_cmd_router_handle_ranging(const char* action, const char* target,
                                            const char* args);
+STATIC void uart_cmd_router_handle_stopwatch(const char* action, const char* target,
+                                             const char* args);
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -75,7 +78,8 @@ STATIC void uart_cmd_router_handle_list(void)
     uart_manager_print("  uwb        - UWB radio module\r\n");
     uart_manager_print("  ranging    - TWR ranging module\r\n");
     uart_manager_print("  error      - Error handler module\r\n");
-    uart_manager_print("  datalogger - System monitoring\r\n\r\n");
+    uart_manager_print("  datalogger - System monitoring\r\n");
+    uart_manager_print("  stopwatch  - Performance timing (0-9 instances)\r\n\r\n");
 }
 
 STATIC void uart_cmd_router_handle_beacon(const char* action, const char* target, const char* args)
@@ -472,6 +476,66 @@ STATIC void uart_cmd_router_handle_datalogger(const char* action, const char* ta
     }
 }
 
+STATIC void uart_cmd_router_handle_stopwatch(const char* action, const char* target,
+                                             const char* args)
+{
+    if (strcmp(action, "get") == 0)
+    {
+        if (strcmp(target, "all") == 0)
+        {
+            uart_manager_print("\r\nStopwatch Values:\r\n");
+            for (uint8_t i = 0; i < 10; i++)
+            {
+                uint32_t elapsed = stopwatch_elapsed_us(i);
+                bool running = stopwatch_is_running(i);
+                uart_manager_print("  [%u] %lu us %s\r\n", i, (unsigned long)elapsed,
+                                   running ? "(running)" : "(stopped)");
+            }
+        }
+        else
+        {
+            // Parse stopwatch ID
+            uint8_t id = (uint8_t)strtoul(target, NULL, 0);
+            if (id >= 10)
+            {
+                uart_manager_print("ERR: Invalid stopwatch ID (0-9)\r\n");
+                return;
+            }
+            uint32_t elapsed = stopwatch_elapsed_us(id);
+            bool running = stopwatch_is_running(id);
+            uart_manager_print("Stopwatch %u: %lu us %s\r\n", id, (unsigned long)elapsed,
+                               running ? "(running)" : "(stopped)");
+        }
+    }
+    else if (strcmp(action, "start") == 0)
+    {
+        uint8_t id = (uint8_t)strtoul(target, NULL, 0);
+        if (id >= 10)
+        {
+            uart_manager_print("ERR: Invalid stopwatch ID (0-9)\r\n");
+            return;
+        }
+        stopwatch_start(id);
+        uart_manager_print("Stopwatch %u started\r\n", id);
+    }
+    else if (strcmp(action, "stop") == 0)
+    {
+        uint8_t id = (uint8_t)strtoul(target, NULL, 0);
+        if (id >= 10)
+        {
+            uart_manager_print("ERR: Invalid stopwatch ID (0-9)\r\n");
+            return;
+        }
+        stopwatch_stop(id);
+        uint32_t elapsed = stopwatch_elapsed_us(id);
+        uart_manager_print("Stopwatch %u stopped: %lu us\r\n", id, (unsigned long)elapsed);
+    }
+    else
+    {
+        uart_manager_print("ERR: Unknown action '%s'\r\n", action);
+    }
+}
+
 STATIC void uart_cmd_router_handle_ranging(const char* action, const char* target, const char* args)
 {
     if (strcmp(action, "set") == 0)
@@ -717,6 +781,10 @@ void uart_cmd_router_dispatch(const char* cmd_string)
     else if (strcmp(module, "ranging") == 0)
     {
         uart_cmd_router_handle_ranging(action, target, args);
+    }
+    else if (strcmp(module, "stopwatch") == 0)
+    {
+        uart_cmd_router_handle_stopwatch(action, target, args);
     }
     else
     {

@@ -36,6 +36,22 @@ void platform_os_delay_us_blocking(uint32_t delay_us)
         return;
     }
 
+    // Check if we're in an ISR context
+    bool from_isr = (SCB->ICSR & SCB_ICSR_VECTACTIVE_Msk) != 0U;
+
+    // If in ISR or delay is very short, just busy-wait without scheduler suspension
+    if (from_isr || delay_us <= 100)
+    {
+        uint32_t cycles = (SystemCoreClock / 1000000UL) * delay_us;
+        uint32_t start = DWT->CYCCNT;
+
+        while ((DWT->CYCCNT - start) < cycles)
+        {
+        }
+        return;
+    }
+
+    // For longer delays in task context, suspend scheduler to prevent context switches
     if (delay_us > PLATFORM_OS_MAX_US_DELAY)
     {
         platform_os_delay_ms((delay_us + 999) / 1000);

@@ -8,6 +8,7 @@
 #include "platform_os.h"
 #include "platform_spi.h"
 #include "platform_timer.h"
+#include "stopwatch.h"
 #include "uart_manager.h"
 
 /*---------------------------------------------------------------------------
@@ -53,6 +54,192 @@ STATIC struct uwb_dev_s uwb_device = {.dw_chip = {
                                           .SPI = &uwb_spi_fns,
                                           .wakeup_device_with_io = uwb_wakeup_device_impl,
                                       }};
+
+STATIC uwb_dev_t* current_device = NULL;
+STATIC uwb_port_rx_callback_t rx_callback = NULL;
+STATIC uwb_port_tx_done_callback_t tx_done_callback = NULL;
+
+/*---------------------------------------------------------------------------
+ * Private Function Implementations
+ *---------------------------------------------------------------------------*/
+STATIC bool validate_channel(const uwb_channel_t channel)
+{
+    switch (channel)
+    {
+        case UWB_CHANNEL_1:
+        case UWB_CHANNEL_2:
+        case UWB_CHANNEL_3:
+        case UWB_CHANNEL_4:
+        case UWB_CHANNEL_5:
+        case UWB_CHANNEL_7:
+        case UWB_CHANNEL_9:
+            return true;
+        default:
+            return false;
+    }
+}
+
+STATIC int32_t uwb_spi_read(uint16_t headerLength, uint8_t* headerBuffer, uint16_t readLength,
+                            uint8_t* readBuffer)
+{
+    if ((headerBuffer == NULL) || (readBuffer == NULL))
+    {
+        return DWT_ERROR;
+    }
+
+    platform_spi_cs_low(UWB_PORT_CS_PIN);
+
+    if (platform_spi_transmit(headerBuffer, headerLength) != PLATFORM_SPI_SUCCESS)
+    {
+        platform_spi_cs_high(UWB_PORT_CS_PIN);
+        return DWT_ERROR;
+    }
+
+    for (volatile int i = 0; i < 10; i++)
+        ;
+
+    if (platform_spi_receive(readBuffer, readLength) != PLATFORM_SPI_SUCCESS)
+    {
+        platform_spi_cs_high(UWB_PORT_CS_PIN);
+        return DWT_ERROR;
+    }
+
+    platform_spi_cs_high(UWB_PORT_CS_PIN);
+
+    return DWT_SUCCESS;
+}
+
+STATIC int32_t uwb_spi_write(uint16_t headerLength, const uint8_t* headerBuffer,
+                             uint16_t bodyLength, const uint8_t* bodyBuffer)
+{
+    if (headerBuffer == NULL)
+    {
+        return DWT_ERROR;
+    }
+
+    platform_spi_cs_low(UWB_PORT_CS_PIN);
+
+    if (platform_spi_transmit(headerBuffer, headerLength) != PLATFORM_SPI_SUCCESS)
+    {
+        platform_spi_cs_high(UWB_PORT_CS_PIN);
+        return DWT_ERROR;
+    }
+
+    if ((bodyLength > 0U) && (bodyBuffer != NULL))
+    {
+        if (platform_spi_transmit(bodyBuffer, bodyLength) != PLATFORM_SPI_SUCCESS)
+        {
+            platform_spi_cs_high(UWB_PORT_CS_PIN);
+            return DWT_ERROR;
+        }
+    }
+
+    platform_spi_cs_high(UWB_PORT_CS_PIN);
+
+    return DWT_SUCCESS;
+}
+
+STATIC int32_t uwb_spi_write_crc(uint16_t headerLength, const uint8_t* headerBuffer,
+                                 uint16_t bodyLength, const uint8_t* bodyBuffer, uint8_t crc8)
+{
+    if (headerBuffer == NULL)
+    {
+        return DWT_ERROR;
+    }
+
+    platform_spi_cs_low(UWB_PORT_CS_PIN);
+
+    if (platform_spi_transmit(headerBuffer, headerLength) != PLATFORM_SPI_SUCCESS)
+    {
+        platform_spi_cs_high(UWB_PORT_CS_PIN);
+        return DWT_ERROR;
+    }
+
+    if ((bodyLength > 0U) && (bodyBuffer != NULL))
+    {
+        if (platform_spi_transmit(bodyBuffer, bodyLength) != PLATFORM_SPI_SUCCESS)
+        {
+            platform_spi_cs_high(UWB_PORT_CS_PIN);
+            return DWT_ERROR;
+        }
+    }
+
+    if (platform_spi_transmit(&crc8, 1) != PLATFORM_SPI_SUCCESS)
+    {
+        platform_spi_cs_high(UWB_PORT_CS_PIN);
+        return DWT_ERROR;
+    }
+
+    platform_spi_cs_high(UWB_PORT_CS_PIN);
+
+    return DWT_SUCCESS;
+}
+
+STATIC void uwb_spi_set_slow_rate(void)
+{
+    platform_spi_cs_low(UWB_PORT_CS_PIN);
+    platform_spi_set_speed(PLATFORM_SPI_SPEED_SLOW);
+    platform_spi_cs_high(UWB_PORT_CS_PIN);
+}
+
+STATIC void uwb_spi_set_fast_rate(void)
+{
+    platform_spi_cs_low(UWB_PORT_CS_PIN);
+    platform_spi_set_speed(PLATFORM_SPI_SPEED_FAST);
+    platform_spi_cs_high(UWB_PORT_CS_PIN);
+}
+
+STATIC void uwb_port_rx_ok_callback(const dwt_cb_data_t* cb_data)
+{
+    if (cb_data == NULL)
+        return;
+
+    uint16_t frame_len = cb_data->datalength;
+    if (frame_len <= 2 || frame_len > UWB_MAX_MESSAGE_LENGTH)
+    {
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+        return;
+    }
+
+    uint16_t data_len = frame_len - 2;
+    uint8_t rx_buffer[UWB_MAX_MESSAGE_LENGTH];
+    dwt_readrxdata(rx_buffer, data_len, 0);
+
+    uint64_t current_ts = 0;
+    dwt_readrxtimestamp((uint8_t*)&current_ts, DWT_COMPAT_NONE);
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
+
+    if (rx_callback != NULL)
+    {
+        rx_callback(rx_buffer, data_len, current_ts);
+    }
+}
+
+STATIC void uwb_port_rx_timeout_callback(const dwt_cb_data_t* cb_data)
+{
+    (void)cb_data;
+}
+
+STATIC void uwb_port_rx_error_callback(const dwt_cb_data_t* cb_data)
+{
+    (void)cb_data;
+}
+
+STATIC void uwb_port_tx_done_callback(const dwt_cb_data_t* cb_data)
+{
+    (void)cb_data;
+
+    if (current_device != NULL)
+    {
+        current_device->last_tx_ts = 0;
+        dwt_readtxtimestamp((uint8_t*)&current_device->last_tx_ts);
+
+        if (tx_done_callback != NULL)
+        {
+            tx_done_callback(current_device->last_tx_ts);
+        }
+    }
+}
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations
@@ -228,141 +415,6 @@ void uwb_port_set_address(uwb_dev_t* dev, uint16_t address)
     dwt_setaddress16(address);
 }
 
-/*---------------------------------------------------------------------------
- * Private Function Implementations
- *---------------------------------------------------------------------------*/
-
-STATIC bool validate_channel(const uwb_channel_t channel)
-{
-    switch (channel)
-    {
-        case UWB_CHANNEL_1:
-        case UWB_CHANNEL_2:
-        case UWB_CHANNEL_3:
-        case UWB_CHANNEL_4:
-        case UWB_CHANNEL_5:
-        case UWB_CHANNEL_7:
-        case UWB_CHANNEL_9:
-            return true;
-        default:
-            return false;
-    }
-}
-
-STATIC int32_t uwb_spi_read(uint16_t headerLength, uint8_t* headerBuffer, uint16_t readLength,
-                            uint8_t* readBuffer)
-{
-    if ((headerBuffer == NULL) || (readBuffer == NULL))
-    {
-        return DWT_ERROR;
-    }
-
-    platform_spi_cs_low(UWB_PORT_CS_PIN);
-
-    if (platform_spi_transmit(headerBuffer, headerLength) != PLATFORM_SPI_SUCCESS)
-    {
-        platform_spi_cs_high(UWB_PORT_CS_PIN);
-        return DWT_ERROR;
-    }
-
-    for (volatile int i = 0; i < 10; i++)
-        ;
-
-    if (platform_spi_receive(readBuffer, readLength) != PLATFORM_SPI_SUCCESS)
-    {
-        platform_spi_cs_high(UWB_PORT_CS_PIN);
-        return DWT_ERROR;
-    }
-
-    platform_spi_cs_high(UWB_PORT_CS_PIN);
-
-    return DWT_SUCCESS;
-}
-
-STATIC int32_t uwb_spi_write(uint16_t headerLength, const uint8_t* headerBuffer,
-                             uint16_t bodyLength, const uint8_t* bodyBuffer)
-{
-    if (headerBuffer == NULL)
-    {
-        return DWT_ERROR;
-    }
-
-    platform_spi_cs_low(UWB_PORT_CS_PIN);
-
-    if (platform_spi_transmit(headerBuffer, headerLength) != PLATFORM_SPI_SUCCESS)
-    {
-        platform_spi_cs_high(UWB_PORT_CS_PIN);
-        return DWT_ERROR;
-    }
-
-    if ((bodyLength > 0U) && (bodyBuffer != NULL))
-    {
-        if (platform_spi_transmit(bodyBuffer, bodyLength) != PLATFORM_SPI_SUCCESS)
-        {
-            platform_spi_cs_high(UWB_PORT_CS_PIN);
-            return DWT_ERROR;
-        }
-    }
-
-    platform_spi_cs_high(UWB_PORT_CS_PIN);
-
-    return DWT_SUCCESS;
-}
-
-STATIC int32_t uwb_spi_write_crc(uint16_t headerLength, const uint8_t* headerBuffer,
-                                 uint16_t bodyLength, const uint8_t* bodyBuffer, uint8_t crc8)
-{
-    if (headerBuffer == NULL)
-    {
-        return DWT_ERROR;
-    }
-
-    platform_spi_cs_low(UWB_PORT_CS_PIN);
-
-    if (platform_spi_transmit(headerBuffer, headerLength) != PLATFORM_SPI_SUCCESS)
-    {
-        platform_spi_cs_high(UWB_PORT_CS_PIN);
-        return DWT_ERROR;
-    }
-
-    if ((bodyLength > 0U) && (bodyBuffer != NULL))
-    {
-        if (platform_spi_transmit(bodyBuffer, bodyLength) != PLATFORM_SPI_SUCCESS)
-        {
-            platform_spi_cs_high(UWB_PORT_CS_PIN);
-            return DWT_ERROR;
-        }
-    }
-
-    if (platform_spi_transmit(&crc8, 1) != PLATFORM_SPI_SUCCESS)
-    {
-        platform_spi_cs_high(UWB_PORT_CS_PIN);
-        return DWT_ERROR;
-    }
-
-    platform_spi_cs_high(UWB_PORT_CS_PIN);
-
-    return DWT_SUCCESS;
-}
-
-STATIC void uwb_spi_set_slow_rate(void)
-{
-    platform_spi_cs_low(UWB_PORT_CS_PIN);
-    platform_spi_set_speed(PLATFORM_SPI_SPEED_SLOW);
-    platform_spi_cs_high(UWB_PORT_CS_PIN);
-}
-
-STATIC void uwb_spi_set_fast_rate(void)
-{
-    platform_spi_cs_low(UWB_PORT_CS_PIN);
-    platform_spi_set_speed(PLATFORM_SPI_SPEED_FAST);
-    platform_spi_cs_high(UWB_PORT_CS_PIN);
-}
-
-/*---------------------------------------------------------------------------
- * UWB Configuration and Communication Functions
- *---------------------------------------------------------------------------*/
-
 uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel)
 {
     if (dev == NULL)
@@ -421,177 +473,46 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel)
 uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uint16_t length)
 {
     if (dev == NULL || data == NULL)
-    {
         return UWB_PORT_ERROR_NULL_PTR;
-    }
-
     if (length == 0 || length > UWB_MAX_MESSAGE_LENGTH)
-    {
         return UWB_PORT_ERROR_CONFIG;
-    }
 
-    dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
     dwt_writetxdata(length, (uint8_t*)data, 0);
-    dwt_writetxfctrl(length + 2, 0, 0);
-
+    dwt_writetxfctrl(length + 2, 0, 1);
     dwt_forcetrxoff();
 
-    if (dwt_starttx(DWT_START_TX_IMMEDIATE) != DWT_SUCCESS)
+    int ret = dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+
+    if (ret != DWT_SUCCESS)
     {
         dwt_rxenable(DWT_START_RX_IMMEDIATE);
         return UWB_PORT_ERROR_TX_FAIL;
     }
 
-    uint32_t status = 0;
-    uint32_t timeout = 10000;
-    while (timeout--)
-    {
-        status = dwt_readsysstatuslo();
-
-        if (status & DWT_INT_TXFRS_BIT_MASK)
-        {
-            dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
-
-            uint8_t tx_ts_bytes[5];
-            dwt_readtxtimestamp(tx_ts_bytes);
-
-            dev->last_tx_ts = 0;
-            for (int i = 0; i < 5; i++)
-            {
-                dev->last_tx_ts |= ((uint64_t)tx_ts_bytes[i]) << (8 * i);
-            }
-
-            dwt_rxenable(DWT_START_RX_IMMEDIATE);
-            return UWB_PORT_SUCCESS;
-        }
-        platform_os_delay_us_blocking(10);
-    }
-
-    dwt_rxenable(DWT_START_RX_IMMEDIATE);
-    return UWB_PORT_ERROR_TIMEOUT;
+    return UWB_PORT_SUCCESS;
 }
 
 uwb_port_status_t uwb_port_send_message_delayed(uwb_dev_t* dev, const uint8_t* data,
                                                 uint16_t length, uint64_t tx_timestamp_dtuh)
 {
     if (dev == NULL || data == NULL)
-    {
         return UWB_PORT_ERROR_NULL_PTR;
-    }
-
     if (length == 0 || length > UWB_MAX_MESSAGE_LENGTH)
-    {
         return UWB_PORT_ERROR_CONFIG;
-    }
 
-    dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
     dwt_writetxdata(length, (uint8_t*)data, 0);
     dwt_writetxfctrl(length + 2, 0, 1);
-
     dwt_forcetrxoff();
 
     dwt_setdelayedtrxtime(tx_timestamp_dtuh);
 
-    int tx_result = dwt_starttx(DWT_START_TX_DELAYED);
+    int ret = dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED);
 
-    if (tx_result != DWT_SUCCESS)
+    if (ret != DWT_SUCCESS)
     {
         dwt_rxenable(DWT_START_RX_IMMEDIATE);
         return UWB_PORT_ERROR_TX_FAIL;
     }
-
-    uint32_t status = 0;
-    uint32_t timeout = 100000;
-
-    while (timeout--)
-    {
-        status = dwt_readsysstatuslo();
-
-        if (status & DWT_INT_TXFRS_BIT_MASK)
-        {
-            dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
-            break;
-        }
-
-        for (volatile int i = 0; i < 100; i++)
-            ;
-    }
-
-    if (!(status & DWT_INT_TXFRS_BIT_MASK))
-    {
-        dwt_rxenable(DWT_START_RX_IMMEDIATE);
-        return UWB_PORT_ERROR_TX_FAIL;
-    }
-
-    uint8_t tx_ts_bytes[5];
-    dwt_readtxtimestamp(tx_ts_bytes);
-
-    dev->last_tx_ts = 0;
-    for (int i = 0; i < 5; i++)
-    {
-        dev->last_tx_ts |= ((uint64_t)tx_ts_bytes[i]) << (8 * i);
-    }
-
-    dwt_rxenable(DWT_START_RX_IMMEDIATE);
-    return UWB_PORT_SUCCESS;
-}
-
-uwb_port_status_t uwb_port_receive_message(uwb_dev_t* dev, uint8_t* data, uint16_t max_length,
-                                           uint16_t* received_length)
-{
-    if (dev == NULL || data == NULL || received_length == NULL)
-    {
-        return UWB_PORT_ERROR_NULL_PTR;
-    }
-
-    uint32_t status = dwt_readsysstatuslo();
-
-    if (status & (DWT_INT_RXPHE_BIT_MASK | DWT_INT_RXFCE_BIT_MASK | DWT_INT_RXFSL_BIT_MASK |
-                  DWT_INT_RXFTO_BIT_MASK | DWT_INT_RXOVRR_BIT_MASK | DWT_INT_RXPTO_BIT_MASK))
-    {
-        dwt_writesysstatuslo(SYS_STATUS_ALL_RX_ERR);
-        dwt_forcetrxoff();
-        dwt_rxenable(DWT_START_RX_IMMEDIATE);
-        return UWB_PORT_ERROR_RX_FAIL;
-    }
-
-    if ((status & DWT_INT_RXFCG_BIT_MASK) == 0)
-    {
-        uint8_t sys_state = dwt_checkidlerc();
-        if (sys_state != DWT_DW_IDLE_RC)
-        {
-            dwt_rxenable(DWT_START_RX_IMMEDIATE);
-        }
-        return UWB_PORT_ERROR_NO_DATA;
-    }
-
-    uint8_t rng = 0;
-    uint16_t frame_len = dwt_getframelength(&rng);
-
-    if (frame_len == 0 || frame_len > max_length)
-    {
-        dwt_forcetrxoff();
-        dwt_writesysstatuslo(DWT_INT_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_ERR);
-        dwt_rxenable(DWT_START_RX_IMMEDIATE);
-        return UWB_PORT_ERROR_RX_FAIL;
-    }
-
-    uint16_t data_len = (frame_len > 2) ? (frame_len - 2) : 0;
-    dwt_readrxdata(data, data_len, 0);
-    *received_length = data_len;
-
-    uint8_t rx_ts_bytes[5];
-    dwt_readrxtimestamp(rx_ts_bytes, DWT_COMPAT_NONE);
-
-    dev->last_rx_ts = 0;
-    for (int i = 0; i < 5; i++)
-    {
-        dev->last_rx_ts |= ((uint64_t)rx_ts_bytes[i]) << (8 * i);
-    }
-
-    dwt_forcetrxoff();
-    dwt_writesysstatuslo(SYS_STATUS_ALL_RX_GOOD | SYS_STATUS_ALL_RX_ERR);
-    dwt_rxenable(DWT_START_RX_IMMEDIATE);
 
     return UWB_PORT_SUCCESS;
 }
@@ -600,30 +521,6 @@ uint64_t uwb_port_read_device_time(void)
 {
     uint32_t sys_time_hi32 = dwt_readsystimestamphi32();
     return (uint64_t)(sys_time_hi32);
-}
-
-uwb_port_status_t uwb_port_read_tx_timestamp(uwb_dev_t* dev, uint8_t timestamp_bytes[5])
-{
-    if (dev == NULL || timestamp_bytes == NULL)
-    {
-        return UWB_PORT_ERROR_NULL_PTR;
-    }
-
-    dwt_readtxtimestamp(timestamp_bytes);
-
-    return UWB_PORT_SUCCESS;
-}
-
-uwb_port_status_t uwb_port_read_rx_timestamp(uwb_dev_t* dev, uint8_t timestamp_bytes[5])
-{
-    if (dev == NULL || timestamp_bytes == NULL)
-    {
-        return UWB_PORT_ERROR_NULL_PTR;
-    }
-
-    dwt_readrxtimestamp(timestamp_bytes, DWT_COMPAT_NONE);
-
-    return UWB_PORT_SUCCESS;
 }
 
 uint64_t uwb_port_get_last_tx_timestamp(uwb_dev_t* dev)
@@ -646,9 +543,70 @@ uint64_t uwb_port_get_last_rx_timestamp(uwb_dev_t* dev)
     return dev->last_rx_ts;
 }
 
-/*---------------------------------------------------------------------------
- * Platform Compatibility Functions Required by Qorvo Driver
- *---------------------------------------------------------------------------*/
+void uwb_port_enable_rx_interrupt(void)
+{
+    dwt_writesysstatuslo(DWT_INT_ALL_LO);
+    dwt_writesysstatushi(DWT_INT_ALL_HI);
+    dwt_setinterrupt(DWT_INT_RXFCG_BIT_MASK | DWT_INT_RXFCE_BIT_MASK | DWT_INT_RXPTO_BIT_MASK |
+                         DWT_INT_TXFRS_BIT_MASK,
+                     0, DWT_ENABLE_INT_ONLY);
+}
+
+void uwb_port_handle_irq(void)
+{
+    dwt_isr();
+}
+
+void uwb_port_register_isr_callbacks(uwb_dev_t* dev)
+{
+    current_device = dev;
+
+    dwt_callbacks_s callbacks = {.cbRxOk = uwb_port_rx_ok_callback,
+                                 .cbRxTo = uwb_port_rx_timeout_callback,
+                                 .cbRxErr = uwb_port_rx_error_callback,
+                                 .cbTxDone = uwb_port_tx_done_callback,
+                                 .cbSPIErr = NULL,
+                                 .cbSPIRDErr = NULL,
+                                 .cbSPIRdy = NULL,
+                                 .cbDualSPIEv = NULL,
+                                 .cbFrmRdy = NULL,
+                                 .cbCiaDone = NULL,
+                                 .devErr = NULL,
+                                 .cbSysEvent = NULL};
+
+    dwt_setcallbacks(&callbacks);
+}
+
+void uwb_port_set_rx_callback(uwb_port_rx_callback_t callback)
+{
+    rx_callback = callback;
+}
+
+void uwb_port_set_tx_done_callback(uwb_port_tx_done_callback_t callback)
+{
+    tx_done_callback = callback;
+}
+
+uint32_t uwb_port_read_irq_status(void)
+{
+    return dwt_checkirq();
+}
+
+uint32_t uwb_port_read_status_register_low(void)
+{
+    decaIrqStatus_t irq_status = decamutexon();
+    uint32_t status = dwt_readsysstatuslo();
+    decamutexoff(irq_status);
+    return status;
+}
+
+uint32_t uwb_port_read_status_register_high(void)
+{
+    decaIrqStatus_t irq_status = decamutexon();
+    uint32_t status = dwt_readsysstatushi();
+    decamutexoff(irq_status);
+    return status;
+}
 
 void deca_usleep(unsigned long time_us)
 {

@@ -39,4 +39,6 @@ void anchor_set_address(uint16_t address);
 uint16_t anchor_get_address(void);
 void anchor_get_status(anchor_status_t* status);
 uint32_t anchor_get_response_count(void);
-void anchor_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr);
+void anchor_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                        uint64_t rx_timestamp);
+void anchor_tx_done_callback(uint64_t tx_timestamp);

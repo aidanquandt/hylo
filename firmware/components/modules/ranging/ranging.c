@@ -14,7 +14,9 @@
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
-STATIC void ranging_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr);
+STATIC void ranging_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                                     uint64_t rx_timestamp);
+STATIC void ranging_tx_done_handler(uint64_t tx_timestamp);
 
 /*---------------------------------------------------------------------------
  * Module Functions
@@ -51,6 +53,9 @@ STATIC void ranging_init(void)
         error_handler_log(ERROR_SEVERITY_ERROR, "ranging",
                           "Failed to register TWR protocol handler");
     }
+
+    // Register TX done handler
+    uwb_register_tx_done_handler(ranging_tx_done_handler);
 
     current_mode = RANGING_MODE_DISABLED;
     module_initialized = true;
@@ -249,7 +254,8 @@ void ranging_tag_cancel(void)
     tag_cancel_ranging();
 }
 
-STATIC void ranging_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr)
+STATIC void ranging_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                                     uint64_t rx_timestamp)
 {
     if (length < sizeof(protocol_header_t))
     {
@@ -264,7 +270,7 @@ STATIC void ranging_protocol_handler(const uint8_t* data, uint16_t length, uint1
         case TWR_MSG_TYPE_POLL:
             if (current_mode == RANGING_MODE_ANCHOR)
             {
-                anchor_rx_callback(data, length, src_addr);
+                anchor_rx_callback(data, length, src_addr, rx_timestamp);
             }
             else
             {
@@ -276,7 +282,7 @@ STATIC void ranging_protocol_handler(const uint8_t* data, uint16_t length, uint1
         case TWR_MSG_TYPE_RESPONSE:
             if (current_mode == RANGING_MODE_TAG)
             {
-                tag_rx_callback(data, length, src_addr);
+                tag_rx_callback(data, length, src_addr, rx_timestamp);
             }
             else
             {
@@ -288,7 +294,7 @@ STATIC void ranging_protocol_handler(const uint8_t* data, uint16_t length, uint1
         case TWR_MSG_TYPE_FINAL:
             if (current_mode == RANGING_MODE_ANCHOR)
             {
-                anchor_rx_callback(data, length, src_addr);
+                anchor_rx_callback(data, length, src_addr, rx_timestamp);
             }
             else
             {
@@ -300,7 +306,7 @@ STATIC void ranging_protocol_handler(const uint8_t* data, uint16_t length, uint1
         case TWR_MSG_TYPE_FINAL_ACK:
             if (current_mode == RANGING_MODE_TAG)
             {
-                tag_rx_callback(data, length, src_addr);
+                tag_rx_callback(data, length, src_addr, rx_timestamp);
             }
             else
             {
@@ -312,6 +318,24 @@ STATIC void ranging_protocol_handler(const uint8_t* data, uint16_t length, uint1
         default:
             error_handler_log(ERROR_SEVERITY_WARNING, "ranging", "TWR unknown message type: 0x%02X",
                               hdr->msg_type);
+            break;
+    }
+}
+
+STATIC void ranging_tx_done_handler(uint64_t tx_timestamp)
+{
+    // Forward TX done notification to active mode
+    switch (current_mode)
+    {
+        case RANGING_MODE_TAG:
+            tag_tx_done_callback(tx_timestamp);
+            break;
+
+        case RANGING_MODE_ANCHOR:
+            anchor_tx_done_callback(tx_timestamp);
+            break;
+
+        default:
             break;
     }
 }

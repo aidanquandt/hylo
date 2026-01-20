@@ -60,6 +60,12 @@ typedef enum
 } uwb_channel_t;
 
 /*---------------------------------------------------------------------------
+ * Callback Types
+ *---------------------------------------------------------------------------*/
+typedef void (*uwb_port_rx_callback_t)(const uint8_t* data, uint16_t length, uint64_t timestamp);
+typedef void (*uwb_port_tx_done_callback_t)(uint64_t tx_timestamp);
+
+/*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
 uwb_dev_t* uwb_port_init(void);
@@ -77,13 +83,17 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel);
 uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uint16_t length);
 uwb_port_status_t uwb_port_send_message_delayed(uwb_dev_t* dev, const uint8_t* data,
                                                 uint16_t length, uint64_t tx_timestamp_dtuh);
-uwb_port_status_t uwb_port_receive_message(uwb_dev_t* dev, uint8_t* data, uint16_t max_length,
-                                           uint16_t* received_length);
 uint64_t uwb_port_read_device_time(void);
-uwb_port_status_t uwb_port_read_tx_timestamp(uwb_dev_t* dev, uint8_t timestamp_bytes[5]);
-uwb_port_status_t uwb_port_read_rx_timestamp(uwb_dev_t* dev, uint8_t timestamp_bytes[5]);
 uint64_t uwb_port_get_last_tx_timestamp(uwb_dev_t* dev);
 uint64_t uwb_port_get_last_rx_timestamp(uwb_dev_t* dev);
+void uwb_port_enable_rx_interrupt(void);
+void uwb_port_handle_irq(void);
+uint32_t uwb_port_read_irq_status(void);
+uint32_t uwb_port_read_status_register_low(void);
+uint32_t uwb_port_read_status_register_high(void);
+void uwb_port_register_isr_callbacks(uwb_dev_t* dev);
+void uwb_port_set_rx_callback(uwb_port_rx_callback_t callback);
+void uwb_port_set_tx_done_callback(uwb_port_tx_done_callback_t callback);
 
 /*---------------------------------------------------------------------------
  * Platform Compatibility Functions (required by Qorvo DW3000 driver)

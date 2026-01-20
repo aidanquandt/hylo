@@ -35,9 +35,9 @@ typedef struct
     uint32_t filtered;
 } uwb_rx_stats_t;
 
-typedef void (*uwb_rx_callback_t)(const uint8_t* data, uint16_t length, uint16_t src_addr);
-
-typedef void (*uwb_protocol_handler_t)(const uint8_t* data, uint16_t length, uint16_t src_addr);
+typedef void (*uwb_protocol_handler_t)(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                                       uint64_t rx_timestamp);
+typedef void (*uwb_tx_done_handler_t)(uint64_t tx_timestamp);
 
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
@@ -56,9 +56,8 @@ bool uwb_send_message_delayed(const uint8_t* data, uint16_t length, uint16_t des
                               uint32_t tx_time_dtuh);
 uwb_dev_t* uwb_get_device(void);
 bool uwb_register_protocol_handler(uint8_t protocol_type, uwb_protocol_handler_t handler);
+void uwb_register_tx_done_handler(uwb_tx_done_handler_t handler);
 void uwb_unregister_protocol_handler(uint8_t protocol_type);
 void uwb_get_protocol_stats(uint32_t* total_received, uint32_t* unhandled, uint32_t* invalid);
 void uwb_reset_protocol_stats(void);
-void uwb_register_rx_callback(uwb_rx_callback_t callback);
 uint64_t uwb_get_last_tx_timestamp(void);
-uint64_t uwb_get_last_rx_timestamp(void);

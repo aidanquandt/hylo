@@ -85,12 +85,17 @@ typedef struct
 STATIC protocol_handler_entry_t protocol_handlers[MAX_PROTOCOL_HANDLERS];
 STATIC uint8_t protocol_handler_count = 0;
 STATIC protocol_stats_t protocol_stats = {0};
+STATIC uwb_tx_done_handler_t tx_done_handler = NULL;
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
 STATIC bool verify_device_id(void);
-STATIC void uwb_dispatch_protocol_message(const uint8_t* data, uint16_t length, uint16_t src_addr);
+STATIC void uwb_dispatch_protocol_message(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                                          uint64_t rx_timestamp);
+STATIC void uwb_process_received_message(const uint8_t* data, uint16_t length,
+                                         uint64_t rx_timestamp);
+STATIC void uwb_tx_done_callback(uint64_t tx_timestamp);
 STATIC void uwb_state_machine_sample_inputs(void);
 STATIC uint16_t uwb_transition_logic(uint16_t currentState, uint32_t stateTimer);
 STATIC void uwb_state_initialization_on_entry(uint16_t prevState);
@@ -138,7 +143,6 @@ STATIC uwb_addressing_t addressing = {
 };
 
 STATIC uwb_rx_stats_t rx_stats = {0};
-STATIC uwb_rx_callback_t rx_callback = NULL;
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -265,46 +269,60 @@ STATIC void uwb_state_initialization_on_entry(uint16_t prevState)
         return;
     }
 
+    uwb_port_register_isr_callbacks(uwb_dev);
+    uwb_port_set_rx_callback(uwb_process_received_message);
+    uwb_port_set_tx_done_callback(uwb_tx_done_callback);
+    uwb_port_enable_rx_interrupt();
+
     rx_stats = (uwb_rx_stats_t){0};
+}
+
+STATIC void uwb_process_received_message(const uint8_t* data, uint16_t length,
+                                         uint64_t rx_timestamp)
+{
+    // Validate frame has minimum MAC header
+    if (length < MAC_FRAME_SHORT_HEADER_SIZE)
+    {
+        error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Frame too small: %u bytes", length);
+        return;
+    }
+
+    // Parse MAC frame
+    mac_frame_short_t* rx_frame = (mac_frame_short_t*)data;
+    uint16_t payload_len = length - MAC_FRAME_SHORT_HEADER_SIZE;
+
+    if (payload_len > MAC_MAX_PAYLOAD_SIZE)
+    {
+        error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Payload too large: %u bytes",
+                          payload_len);
+        return;
+    }
+
+    rx_stats.received++;
+
+    // Dispatch to protocol handler with timestamp paired to this message
+    uwb_dispatch_protocol_message(rx_frame->payload, payload_len, rx_frame->src_addr, rx_timestamp);
+}
+
+STATIC void uwb_tx_done_callback(uint64_t tx_timestamp)
+{
+    // Forward TX done notification to registered handler
+    if (tx_done_handler != NULL)
+    {
+        tx_done_handler(tx_timestamp);
+    }
 }
 
 STATIC void uwb_state_active_process(void)
 {
-    uint8_t rx_buffer[MAX_MESSAGE_LENGTH];
-    uint16_t received = 0;
-    uwb_port_status_t rx_result =
-        uwb_port_receive_message(uwb_dev, rx_buffer, MAX_MESSAGE_LENGTH, &received);
+    // platform_gpio_state_t uwb_irq_state = platform_gpio_read_pin(PLATFORM_GPIO_PIN_UWB_IRQ);
 
-    if (rx_result == UWB_PORT_SUCCESS)
-    {
-        if (received >= MAC_FRAME_SHORT_HEADER_SIZE)
-        {
-            mac_frame_short_t* rx_frame = (mac_frame_short_t*)rx_buffer;
+    // if (uwb_irq_state != PLATFORM_GPIO_HIGH)
+    // {
+    //     return;
+    // }
 
-            // Note: Hardware frame filtering (DW3000) already filtered by PAN ID and address
-            // If we received this frame, it's addressed to us or is a broadcast
-            rx_stats.received++;
-
-            uint16_t payload_len = received - MAC_FRAME_SHORT_HEADER_SIZE;
-
-            if (payload_len <= MAC_MAX_PAYLOAD_SIZE)
-            {
-                // Dispatch to protocol router first
-                uwb_dispatch_protocol_message(rx_frame->payload, payload_len, rx_frame->src_addr);
-
-                // Also call legacy callback if registered (for backwards compatibility)
-                if (rx_callback != NULL)
-                {
-                    rx_callback(rx_frame->payload, payload_len, rx_frame->src_addr);
-                }
-            }
-        }
-    }
-    else if (rx_result != UWB_PORT_ERROR_NO_DATA)
-    {
-        rx_stats.rx_errors++;
-        fault_code = FAULT_RX_FAILED;
-    }
+    // uwb_port_handle_irq();
 }
 
 STATIC void uwb_state_faulted_on_entry(uint16_t prevState)
@@ -338,6 +356,46 @@ STATIC void uwb_state_faulted_on_entry(uint16_t prevState)
     }
 
     error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "%s (code=%u)", fault_str, fault_code);
+}
+
+STATIC void uwb_dispatch_protocol_message(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                                          uint64_t rx_timestamp)
+{
+    protocol_stats.total_received++;
+
+    if (data == NULL || length < sizeof(protocol_header_t))
+    {
+        error_handler_log(ERROR_SEVERITY_WARNING, "uwb",
+                          "Invalid protocol message: null data or too short");
+        protocol_stats.invalid++;
+        return;
+    }
+
+    uint8_t protocol_type = data[0];
+
+    if (protocol_type == 0x00 || protocol_type > 0x0F)
+    {
+        error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Invalid protocol type: 0x%02X",
+                          protocol_type);
+        protocol_stats.invalid++;
+        return;
+    }
+
+    bool handled = false;
+    for (uint8_t i = 0; i < protocol_handler_count; i++)
+    {
+        if (protocol_handlers[i].protocol_type == protocol_type)
+        {
+            protocol_handlers[i].handler(data, length, src_addr, rx_timestamp);
+            handled = true;
+            break;
+        }
+    }
+
+    if (!handled)
+    {
+        protocol_stats.unhandled++;
+    }
 }
 
 /*---------------------------------------------------------------------------
@@ -420,7 +478,6 @@ void uwb_set_address(uint16_t address, uint16_t pan_id)
     addressing.my_address = address;
     addressing.my_pan_id = pan_id;
 
-    // Update hardware registers if in active state
     if (uwb_state_machine.curr_state == STATE_ACTIVE)
     {
         uwb_port_set_pan_id(uwb_dev, addressing.my_pan_id);
@@ -514,11 +571,6 @@ bool uwb_send_message_delayed(const uint8_t* data, uint16_t length, uint16_t des
     return true;
 }
 
-void uwb_register_rx_callback(uwb_rx_callback_t callback)
-{
-    rx_callback = callback;
-}
-
 uint64_t uwb_get_last_tx_timestamp(void)
 {
     if (uwb_dev == NULL)
@@ -528,20 +580,6 @@ uint64_t uwb_get_last_tx_timestamp(void)
 
     return uwb_port_get_last_tx_timestamp(uwb_dev);
 }
-
-uint64_t uwb_get_last_rx_timestamp(void)
-{
-    if (uwb_dev == NULL)
-    {
-        return 0;
-    }
-
-    return uwb_port_get_last_rx_timestamp(uwb_dev);
-}
-
-/*---------------------------------------------------------------------------
- * Protocol Routing Implementation
- *---------------------------------------------------------------------------*/
 
 bool uwb_register_protocol_handler(uint8_t protocol_type, uwb_protocol_handler_t handler)
 {
@@ -614,41 +652,7 @@ void uwb_reset_protocol_stats(void)
     memset(&protocol_stats, 0, sizeof(protocol_stats));
 }
 
-STATIC void uwb_dispatch_protocol_message(const uint8_t* data, uint16_t length, uint16_t src_addr)
+void uwb_register_tx_done_handler(uwb_tx_done_handler_t handler)
 {
-    protocol_stats.total_received++;
-
-    // Validate minimum message size for protocol header
-    if (data == NULL || length < sizeof(protocol_header_t))
-    {
-        protocol_stats.invalid++;
-        return;
-    }
-
-    // Extract protocol type from first byte of message
-    uint8_t protocol_type = data[0];
-
-    // Validate protocol type is non-zero (reserved)
-    if (protocol_type == 0x00 || protocol_type > 0x0F)
-    {
-        protocol_stats.invalid++;
-        return;
-    }
-
-    // Find and dispatch to registered handler
-    bool handled = false;
-    for (uint8_t i = 0; i < protocol_handler_count; i++)
-    {
-        if (protocol_handlers[i].protocol_type == protocol_type)
-        {
-            protocol_handlers[i].handler(data, length, src_addr);
-            handled = true;
-            break;
-        }
-    }
-
-    if (!handled)
-    {
-        protocol_stats.unhandled++;
-    }
+    tx_done_handler = handler;
 }

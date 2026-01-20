@@ -49,6 +49,10 @@ typedef struct
     uint16_t sequence;        // Current sequence number
     uint8_t retry_count;      // Retry attempts
 
+    // TX state tracking
+    bool waiting_for_poll_tx;  // Waiting for POLL TX timestamp
+    bool waiting_for_final_tx; // Waiting for FINAL TX timestamp
+
     // Timestamps for DS-TWR (all in device time units)
     twr_timestamp_t poll_tx;     // When we sent poll
     twr_timestamp_t resp_rx;     // When we received response
@@ -87,7 +91,8 @@ STATIC void tag_state_process_result_on_entry(uint16_t prevState);
 STATIC void tag_state_faulted_on_entry(uint16_t prevState);
 STATIC bool tag_send_poll(void);
 STATIC bool tag_send_final(void);
-STATIC void tag_handle_response(const uint8_t* data, uint16_t length, uint16_t src_addr);
+STATIC void tag_handle_response(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                                uint64_t rx_timestamp);
 STATIC void tag_handle_final_ack(const uint8_t* data, uint16_t length, uint16_t src_addr);
 STATIC void tag_calculate_distance(void);
 
@@ -168,7 +173,7 @@ void tag_process_1kHz(void)
 
 bool tag_start_ranging(uint16_t anchor_addr)
 {
-    stopwatch_start();
+    stopwatch_start(0);
     if (!tag_ctx.active)
     {
         error_handler_log(ERROR_SEVERITY_WARNING, "tag", "Not active");
@@ -436,9 +441,8 @@ STATIC bool tag_send_poll(void)
         return false;
     }
 
-    // Read TX timestamp (automatically captured by hardware)
-    tag_ctx.poll_tx.timestamp_dtu = uwb_get_last_tx_timestamp();
-    tag_ctx.poll_tx.local_time_ms = platform_os_gettick();
+    // Mark that we're waiting for TX done callback to capture timestamp
+    tag_ctx.waiting_for_poll_tx = true;
 
     return true;
 }
@@ -476,20 +480,16 @@ STATIC bool tag_send_final(void)
         return false;
     }
 
-    // Read actual TX timestamp from hardware
-    tag_ctx.final_tx.timestamp_dtu = uwb_get_last_tx_timestamp();
-    if (tag_ctx.final_tx.timestamp_dtu == 0)
-    {
-        tag_ctx.final_tx.timestamp_dtu = final_tx_time_dtu; // Fallback to scheduled
-    }
-    tag_ctx.final_tx.local_time_ms = platform_os_gettick();
+    // Mark that we're waiting for TX done callback to capture timestamp
+    tag_ctx.waiting_for_final_tx = true;
+    // Store the scheduled time as fallback
+    tag_ctx.final_tx.timestamp_dtu = final_tx_time_dtu;
 
     return true;
 }
 
-void tag_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr)
+void tag_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr, uint64_t rx_timestamp)
 {
-    // Check if response is from our target
     if (src_addr != tag_ctx.target_address)
     {
         error_handler_log(ERROR_SEVERITY_INFO, "tag",
@@ -498,18 +498,15 @@ void tag_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr)
         return;
     }
 
-    // Route messages based on current state and message type
     if (length >= sizeof(protocol_header_t))
     {
         const protocol_header_t* header = (const protocol_header_t*)data;
 
-        // In WAIT_RESPONSE state, process RESPONSE messages
         if (tag_sm.curr_state == TAG_STATE_WAIT_RESPONSE &&
             header->msg_type == TWR_MSG_TYPE_RESPONSE)
         {
-            tag_handle_response(data, length, src_addr);
+            tag_handle_response(data, length, src_addr, rx_timestamp);
         }
-        // In WAIT_FINAL_ACK state, process FINAL_ACK messages
         else if (tag_sm.curr_state == TAG_STATE_WAIT_FINAL_ACK &&
                  header->msg_type == TWR_MSG_TYPE_FINAL_ACK)
         {
@@ -528,11 +525,11 @@ void tag_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr)
     }
 }
 
-STATIC void tag_handle_response(const uint8_t* data, uint16_t length, uint16_t src_addr)
+STATIC void tag_handle_response(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                                uint64_t rx_timestamp)
 {
     (void)src_addr;
 
-    // Validate message
     if (length < sizeof(protocol_twr_response_msg_t))
     {
         error_handler_log(ERROR_SEVERITY_WARNING, "tag", "Response REJECT - too short (%u < %u)",
@@ -553,16 +550,10 @@ STATIC void tag_handle_response(const uint8_t* data, uint16_t length, uint16_t s
         return;
     }
 
-    // Record RX timestamp (get from UWB radio)
     tag_ctx.resp_rx.local_time_ms = platform_os_gettick();
-    tag_ctx.resp_rx.timestamp_dtu = uwb_get_last_rx_timestamp();
+    tag_ctx.resp_rx.timestamp_dtu = rx_timestamp;
 
-    // Extract remote poll RX timestamp from response
     tag_ctx.poll_rx_ts_remote = twr_timestamp_to_u64(resp->poll_rx_ts);
-
-    // Note: resp_tx_ts will arrive in FINAL_ACK after anchor measures actual TX time
-
-    // Signal that we received response (triggers SEND_FINAL state)
     tag_inputs.response_received = true;
 }
 
@@ -617,10 +608,10 @@ STATIC void tag_calculate_distance(void)
 
     if (status == TWR_SUCCESS && result.valid)
     {
-        stopwatch_stop();
-        uint32_t elapsed_us = stopwatch_elapsed_us();
-        uart_manager_print("DS-TWR SUCCESS: distance=%.2f m, time=%lu us\r\n", result.distance_m,
-                           elapsed_us);
+        stopwatch_stop(0);
+        uint32_t elapsed_us = stopwatch_elapsed_us(0);
+        uart_manager_print("DS-TWR SUCCESS: distance=%.2f m, time=%u us\r\n", result.distance_m,
+                           (unsigned int)elapsed_us);
         result.remote_addr = tag_ctx.target_address;
         result.timestamp_ms = platform_os_gettick();
 
@@ -632,5 +623,22 @@ STATIC void tag_calculate_distance(void)
         error_handler_log(ERROR_SEVERITY_ERROR, "tag", "DS-TWR calculation failed: %d", status);
         tag_ctx.fault_code = TAG_FAULT_CALCULATION_FAILED;
         tag_ctx.failed_ranges++;
+    }
+}
+
+void tag_tx_done_callback(uint64_t tx_timestamp)
+{
+    // Capture TX timestamp based on what we were waiting for
+    if (tag_ctx.waiting_for_poll_tx)
+    {
+        tag_ctx.poll_tx.timestamp_dtu = tx_timestamp;
+        tag_ctx.poll_tx.local_time_ms = platform_os_gettick();
+        tag_ctx.waiting_for_poll_tx = false;
+    }
+    else if (tag_ctx.waiting_for_final_tx)
+    {
+        tag_ctx.final_tx.timestamp_dtu = tx_timestamp;
+        tag_ctx.final_tx.local_time_ms = platform_os_gettick();
+        tag_ctx.waiting_for_final_tx = false;
     }
 }
