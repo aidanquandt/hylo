@@ -55,7 +55,9 @@ STATIC void module_task_1Hz(void *argument)
     TickType_t lastWake = xTaskGetTickCount();
     for(;;)
     {
-        modules[module]->module_process_1Hz();
+        if (modules[module] != NULL && modules[module]->module_process_1Hz != NULL) {
+            modules[module]->module_process_1Hz();
+        }
         vTaskDelayUntil(&lastWake, TASK_RATE_1HZ);
     }
 }
@@ -66,7 +68,9 @@ STATIC void module_task_10Hz(void *argument)
     TickType_t lastWake = xTaskGetTickCount();
     for(;;)
     {
-        modules[module]->module_process_10Hz();
+        if (modules[module] != NULL && modules[module]->module_process_10Hz != NULL) {
+            modules[module]->module_process_10Hz();
+        }
         vTaskDelayUntil(&lastWake, TASK_RATE_10HZ);
     }
 }
@@ -77,7 +81,9 @@ STATIC void module_task_100Hz(void *argument)
     TickType_t lastWake = xTaskGetTickCount();
     for(;;)
     {
-        modules[module]->module_process_100Hz();
+        if (modules[module] != NULL && modules[module]->module_process_100Hz != NULL) {
+            modules[module]->module_process_100Hz();
+        }
         vTaskDelayUntil(&lastWake, TASK_RATE_100HZ);
     }
 }
@@ -88,7 +94,9 @@ STATIC void module_task_1kHz(void *argument)
     TickType_t lastWake = xTaskGetTickCount();
     for(;;)
     {
-        modules[module]->module_process_1kHz();
+        if (modules[module] != NULL && modules[module]->module_process_1kHz != NULL) {
+            modules[module]->module_process_1kHz();
+        }
         vTaskDelayUntil(&lastWake, TASK_RATE_1KHZ);
     }
 }

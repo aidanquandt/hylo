@@ -11,6 +11,7 @@
 #include "platform_gpio.h"
 #include "bmi323_port.h"
 #include "state_machine.h"
+#include "uart_manager.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -141,13 +142,21 @@ STATIC void bmi323_test_init(void)
 
 STATIC void bmi323_test_process_1Hz(void)
 {
+    static uint32_t call_count = 0;
+    call_count++;
+    
+    // Always print to verify task runs
+    uart_manager_print("[BMI323] %lu\n", call_count);
+    
+    // Run state machine
+    state_machine_periodic(&bmi323_state_machine);
+    
     // Read sensors if hardware is ready
     if (hardware_ready) {
         read_sensors();
+        uart_manager_print("[BMI323] Accel: %.2f %.2f %.2f\n", 
+                          accel_data.x, accel_data.y, accel_data.z);
     }
-
-    // Run state machine at 1Hz
-    state_machine_periodic(&bmi323_state_machine);
 }
 
 STATIC uint16_t bmi323_test_transition_logic(uint16_t currentState, uint32_t stateTimer)
@@ -197,6 +206,7 @@ STATIC void bmi323_test_state_initialization_on_entry(uint16_t prevState)
         probe_result = -999;  // Debug: port_init failed
         return;
     }
+    
     // Probe and initialize the device (this handles the mode switch and SPI setup)
     probe_result = bmi323_port_probe_and_init(bmi_dev);
     if (probe_result != BMI323_SUCCESS) {

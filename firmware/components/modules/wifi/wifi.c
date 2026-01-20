@@ -27,7 +27,7 @@
 #define ESP_CMD_TIMEOUT_MS          5000U           // Command response timeout
 
 // WiFi configuration - see wifi_config.h (not tracked in git)
-#include "wifi_config.h"
+#include "wifi_config_template.h"
 
 // State machine states
 typedef enum {
@@ -151,7 +151,7 @@ STATIC bool esp_send_command(const char *cmd)
     platform_uart_status_E status = platform_uart_esp_transmit((const uint8_t *)cmd, len);
     
     if (status == PLATFORM_UART_SUCCESS) {
-        uart_manager_print("[WiFi] TX: %s", cmd);
+        //uart_manager_print("[WiFi] TX: %s", cmd);
         return true;
     }
     
@@ -210,7 +210,7 @@ STATIC bool esp_read_response(char *buffer, uint16_t max_len)
     
     if (bytes_read > 0) {
         rx_count++;
-        uart_manager_print("[WiFi] RX: %s", buffer);
+        //uart_manager_print("[WiFi] RX: %s", buffer);
         return true;
     }
     
@@ -352,22 +352,22 @@ STATIC uint16_t wifi_transition_logic(uint16_t currentState, uint32_t stateTimer
 
 STATIC void wifi_state_startup(void){
     // Nothing to do - timer automatically increments
-    uart_manager_print("[WiFi] Waiting for ESP boot...\n");
+    //uart_manager_print("[WiFi] Waiting for ESP boot...\n");
 }
 
 STATIC void wifi_state_test_AT(void){
-    uart_manager_print("[WiFi] Testing AT...\n");
+    //uart_manager_print("[WiFi] Testing AT...\n");
     esp_send_command("AT\r\n");
 }
 
 STATIC void wifi_state_set_mode(void){
-    uart_manager_print("[WiFi] Setting station mode...\n");
+    //uart_manager_print("[WiFi] Setting station mode...\n");
     esp_send_command("AT+CWMODE=1\r\n");
 }
 
 STATIC void wifi_state_connect_wifi(void){
     char buffer[256];
-    uart_manager_print("[WiFi] Connecting to WiFi...\n");
+    //uart_manager_print("[WiFi] Connecting to WiFi...\n");
     snprintf(buffer, sizeof(buffer), "AT+CWJAP=\"%s\",\"%s\"\r\n", 
                 WIFI_SSID, WIFI_PASSWORD);
     esp_send_command(buffer);
@@ -375,14 +375,14 @@ STATIC void wifi_state_connect_wifi(void){
 
 STATIC void wifi_state_connect_tcp(void){
     char buffer[256];
-    uart_manager_print("[WiFi] Connecting to TCP...\n");
+    //uart_manager_print("[WiFi] Connecting to TCP...\n");
     snprintf(buffer, sizeof(buffer), "AT+CIPSTART=\"TCP\",\"%s\",%s\r\n", 
                 TCP_SERVER_IP, TCP_SERVER_PORT);
     esp_send_command(buffer);
 }
 
 STATIC void wifi_state_error(void){
-    uart_manager_print("[WiFi] Error state\n");
+    //uart_manager_print("[WiFi] Error state\n");
 }
 
 STATIC void wifi_send_data(void){
