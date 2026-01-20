@@ -8,6 +8,7 @@
 #include "error_handler.h"
 #include "platform_os.h"
 #include "state_machine.h"
+#include "stopwatch.h"
 #include "twr/twr_algorithm.h"
 #include "uart_manager.h"
 #include "uwb.h"
@@ -167,7 +168,7 @@ void tag_process_1kHz(void)
 
 bool tag_start_ranging(uint16_t anchor_addr)
 {
-    // Validation checks
+    stopwatch_start();
     if (!tag_ctx.active)
     {
         error_handler_log(ERROR_SEVERITY_WARNING, "tag", "Not active");
@@ -616,7 +617,10 @@ STATIC void tag_calculate_distance(void)
 
     if (status == TWR_SUCCESS && result.valid)
     {
-        uart_manager_print("DS-TWR SUCCESS: distance=%.2f m\r\n", result.distance_m);
+        stopwatch_stop();
+        uint32_t elapsed_us = stopwatch_elapsed_us();
+        uart_manager_print("DS-TWR SUCCESS: distance=%.2f m, time=%lu us\r\n", result.distance_m,
+                           elapsed_us);
         result.remote_addr = tag_ctx.target_address;
         result.timestamp_ms = platform_os_gettick();
 
