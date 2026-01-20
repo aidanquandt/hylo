@@ -134,7 +134,6 @@ bool test_beacon_send_ping(uint16_t dest_addr)
 
 bool test_beacon_send_ping_delayed(uint16_t dest_addr)
 {
-    uint32_t time1 = platform_get_timestamp();
     if (!uwb_is_ready())
     {
         return false;
@@ -146,32 +145,17 @@ bool test_beacon_send_ping_delayed(uint16_t dest_addr)
     ping.header.sequence = beacon.counter++;
     ping.counter = beacon.counter;
 
-    // Read current system time and calculate absolute TX time
     uwb_dev_t* dev = uwb_get_device();
     if (dev == NULL)
     {
         return false;
     }
 
-    // NOTE: read_device_time() returns DTUH (high 32-bits only)
-    // For delayed TX, we need to pass DTUH to uwb_send_message_delayed()
     uint32_t current_time_dtuh = (uint32_t)uwb_port_read_device_time();
     uint32_t delay_dtuh = (uint32_t)UWB_MS_TO_DTUH(20);
-    uint32_t tx_time_dtuh = current_time_dtuh + delay_dtuh; // Add DTUH + DTUH
+    uint32_t tx_time_dtuh = current_time_dtuh + delay_dtuh;
 
-    uart_manager_print("Beacon delayed TX: curr_dtuh=%lu, delay_dtuh=%lu, tx_dtuh=%lu\r\n",
-                       current_time_dtuh, delay_dtuh, tx_time_dtuh);
-
-    uint32_t time2 = platform_get_timestamp();
-    // Pass DTUH (tx_time_dtuh) to delayed send function
     bool result = uwb_send_message_delayed((uint8_t*)&ping, sizeof(ping), dest_addr, tx_time_dtuh);
-
-    uint32_t time3 = platform_get_timestamp();
-
-    uint32_t elapsed1 = platform_get_elapsed_us(time1, time2);
-    uint32_t elapsed2 = platform_get_elapsed_us(time2, time3);
-
-    uart_manager_print("Beacon delayed TX: prep=%lu us, send=%lu us\r\n", elapsed1, elapsed2);
 
     return result;
 }
