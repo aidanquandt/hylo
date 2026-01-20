@@ -1,9 +1,4 @@
 /*---------------------------------------------------------------------------
- * @file    platform_spi.c
- * @brief   Generic SPI hardware abstraction layer implementation
- *---------------------------------------------------------------------------*/
-
-/*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
 #include "platform_spi.h"
@@ -17,11 +12,9 @@
  *---------------------------------------------------------------------------*/
 #define SPI_TIMEOUT_MS (100U)
 
-// SPI peripheral handles
-extern SPI_HandleTypeDef hspi1; // UWB radio (DW3000)
-extern SPI_HandleTypeDef hspi5; // IMU (BMI323)
+extern SPI_HandleTypeDef hspi1;
+extern SPI_HandleTypeDef hspi5;
 
-// CS pin mapping
 typedef struct
 {
     GPIO_TypeDef* port;
@@ -37,12 +30,7 @@ STATIC const spi_cs_map_t cs_map[] = {
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-// Current SPI peripheral - set by cs_low() before each transaction
-// NOTE: This is NOT thread-safe! Each SPI transaction must complete atomically
-// without task switches (osDelay, blocking calls, etc.) between cs_low and cs_high
 STATIC SPI_HandleTypeDef* current_spi = NULL;
-
-// Debug counters
 STATIC volatile uint32_t spi_transmit_count = 0;
 STATIC volatile uint32_t spi_receive_count = 0;
 STATIC volatile uint32_t spi_cs_low_count = 0;
@@ -92,7 +80,7 @@ platform_spi_status_E platform_spi_transfer(const uint8_t* tx_data, uint8_t* rx_
 
 platform_spi_status_E platform_spi_transmit(const uint8_t* data, uint16_t length)
 {
-    spi_transmit_count++; // Debug counter
+    spi_transmit_count++;
 
     if (data == NULL)
     {
@@ -101,12 +89,12 @@ platform_spi_status_E platform_spi_transmit(const uint8_t* data, uint16_t length
 
     if (current_spi == NULL)
     {
-        return PLATFORM_SPI_ERROR; // SPI not selected
+        return PLATFORM_SPI_ERROR;
     }
 
     HAL_StatusTypeDef status =
         HAL_SPI_Transmit(current_spi, (uint8_t*)data, length, SPI_TIMEOUT_MS);
-    last_hal_status = status; // Debug: store last HAL status
+    last_hal_status = status;
 
     if (status == HAL_OK)
     {
@@ -124,7 +112,7 @@ platform_spi_status_E platform_spi_transmit(const uint8_t* data, uint16_t length
 
 platform_spi_status_E platform_spi_receive(uint8_t* data, uint16_t length)
 {
-    spi_receive_count++; // Debug counter
+    spi_receive_count++;
 
     if (data == NULL)
     {
@@ -133,11 +121,11 @@ platform_spi_status_E platform_spi_receive(uint8_t* data, uint16_t length)
 
     if (current_spi == NULL)
     {
-        return PLATFORM_SPI_ERROR; // SPI not selected
+        return PLATFORM_SPI_ERROR;
     }
 
     HAL_StatusTypeDef status = HAL_SPI_Receive(current_spi, data, length, SPI_TIMEOUT_MS);
-    last_hal_status = status; // Debug: store last HAL status
+    last_hal_status = status;
 
     if (status == HAL_OK)
     {
@@ -160,11 +148,6 @@ platform_spi_status_E platform_spi_set_speed(platform_spi_speed_E speed)
         return PLATFORM_SPI_ERROR;
     }
 
-    // Adjust prescaler values based on your APB clock frequency
-    // Example for 100 MHz APB clock:
-    // - Slow: 100 MHz / 64 = ~1.56 MHz
-    // - Fast: 100 MHz / 8 = ~12.5 MHz
-
     if (speed == PLATFORM_SPI_SPEED_SLOW)
     {
         current_spi->Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
@@ -186,24 +169,21 @@ platform_spi_status_E platform_spi_set_speed(platform_spi_speed_E speed)
 
 void platform_spi_cs_low(platform_spi_cs_E cs_pin)
 {
-    spi_cs_low_count++; // Debug counter
+    spi_cs_low_count++;
 
     if (cs_pin < PLATFORM_SPI_CS_COUNT)
     {
-        // Select the SPI peripheral for this CS pin
         current_spi = cs_map[cs_pin].hspi;
-        // Assert CS low
         HAL_GPIO_WritePin(cs_map[cs_pin].port, cs_map[cs_pin].pin, GPIO_PIN_RESET);
     }
 }
 
 void platform_spi_cs_high(platform_spi_cs_E cs_pin)
 {
-    spi_cs_high_count++; // Debug counter
+    spi_cs_high_count++;
 
     if (cs_pin < PLATFORM_SPI_CS_COUNT)
     {
-        // Deassert CS high
         HAL_GPIO_WritePin(cs_map[cs_pin].port, cs_map[cs_pin].pin, GPIO_PIN_SET);
     }
 }

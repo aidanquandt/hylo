@@ -1,9 +1,6 @@
 /*---------------------------------------------------------------------------
- * @file    ranging.c
- * @brief   Double-Sided TWR (DS-TWR) Ranging module implementation
- * @details 4-message ranging protocol: Tag→POLL, Anchor→RESPONSE, Tag→FINAL, Anchor→ACK
+ * Includes
  *---------------------------------------------------------------------------*/
-
 #include "ranging.h"
 #include "anchor/anchor.h"
 #include "error_handler.h"
@@ -17,13 +14,11 @@
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
-
 STATIC void ranging_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr);
 
 /*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
-
 STATIC void ranging_init(void);
 STATIC void ranging_process_1kHz(void);
 
@@ -38,14 +33,12 @@ const module_S ranging_module = {
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-
 STATIC ranging_mode_e current_mode = RANGING_MODE_DISABLED;
 STATIC bool module_initialized = false;
 
 /*---------------------------------------------------------------------------
- * Module Implementation
+ * Private Function Implementations
  *---------------------------------------------------------------------------*/
-
 STATIC void ranging_init(void)
 {
     // Initialize both tag and anchor (minimal overhead when inactive)
@@ -70,7 +63,6 @@ STATIC void ranging_process_1kHz(void)
         return;
     }
 
-    // Forward to active mode (called at 1kHz)
     switch (current_mode)
     {
         case RANGING_MODE_TAG:
@@ -82,7 +74,6 @@ STATIC void ranging_process_1kHz(void)
             break;
 
         default:
-            // Disabled - no processing
             break;
     }
 }
@@ -258,89 +249,75 @@ void ranging_tag_cancel(void)
     tag_cancel_ranging();
 }
 
-/*---------------------------------------------------------------------------
- * Protocol Handler Implementation
- *---------------------------------------------------------------------------*/
-
 STATIC void ranging_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr)
 {
-    // Validate header
     if (length < sizeof(protocol_header_t))
     {
-        uart_manager_print("TWR: Too short\r\n");
+        error_handler_log(ERROR_SEVERITY_WARNING, "ranging", "TWR message too short");
         return;
     }
 
     const protocol_header_t* hdr = (const protocol_header_t*)data;
 
-    // Route based on message type and current mode
     switch (hdr->msg_type)
     {
         case TWR_MSG_TYPE_POLL:
-            // Only process if we're an anchor
             if (current_mode == RANGING_MODE_ANCHOR)
             {
-                // Forward to anchor RX callback
                 anchor_rx_callback(data, length, src_addr);
             }
             else
             {
-                uart_manager_print("TWR: Not anchor mode, ignoring\r\n");
+                error_handler_log(ERROR_SEVERITY_INFO, "ranging",
+                                  "TWR POLL rejected - not anchor mode");
             }
             break;
 
         case TWR_MSG_TYPE_RESPONSE:
-            // Only process if we're a tag
             if (current_mode == RANGING_MODE_TAG)
             {
-                // Forward to tag RX callback
                 tag_rx_callback(data, length, src_addr);
             }
             else
             {
-                uart_manager_print("TWR: Not tag mode, ignoring\r\n");
+                error_handler_log(ERROR_SEVERITY_INFO, "ranging",
+                                  "TWR RESPONSE rejected - not tag mode");
             }
             break;
 
         case TWR_MSG_TYPE_FINAL:
-            // Only process if we're an anchor
             if (current_mode == RANGING_MODE_ANCHOR)
             {
-                // Forward to anchor RX callback
                 anchor_rx_callback(data, length, src_addr);
             }
             else
             {
-                uart_manager_print("TWR: Not anchor mode, ignoring FINAL\r\n");
+                error_handler_log(ERROR_SEVERITY_INFO, "ranging",
+                                  "TWR FINAL rejected - not anchor mode");
             }
             break;
 
         case TWR_MSG_TYPE_FINAL_ACK:
-            // Only process if we're a tag
             if (current_mode == RANGING_MODE_TAG)
             {
-                // Forward to tag RX callback
                 tag_rx_callback(data, length, src_addr);
             }
             else
             {
-                uart_manager_print("TWR: Not tag mode, ignoring FINAL_ACK\r\n");
+                error_handler_log(ERROR_SEVERITY_INFO, "ranging",
+                                  "TWR FINAL_ACK rejected - not tag mode");
             }
             break;
 
         default:
-            uart_manager_print("TWR: Unknown msg_type=0x%02X\r\n", hdr->msg_type);
+            error_handler_log(ERROR_SEVERITY_WARNING, "ranging", "TWR unknown message type: 0x%02X",
+                              hdr->msg_type);
             break;
     }
 }
 
-/*---------------------------------------------------------------------------
- * Anchor-Specific Function Implementations
- *---------------------------------------------------------------------------*/
-
 void ranging_anchor_set_address(uint16_t address)
 {
-    // Can be called even when not in anchor mode (preconfiguration)
     anchor_set_address(address);
 }
 

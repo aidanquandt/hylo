@@ -1,11 +1,4 @@
 /*---------------------------------------------------------------------------
- * @file    uart_manager.c
- * @brief   UART management module - handles async UART transmission task
- * @details Implements the application-layer UART task that processes queued
- *          messages and coordinates with the platform layer for HW access
- *---------------------------------------------------------------------------*/
-
-/*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
 #include "uart_manager.h"
@@ -24,38 +17,28 @@
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define UART_TX_QUEUE_SIZE 32U      // Max messages queued
-#define UART_TX_MSG_MAX_LENGTH 256U // Max bytes per message
-#define UART_TASK_STACK_SIZE 512U   // Stack for TX task (in words)
+#define UART_TX_QUEUE_SIZE 32U
+#define UART_TX_MSG_MAX_LENGTH 256U
+#define UART_TASK_STACK_SIZE 512U
 #define UART_TASK_PRIORITY osPriorityNormal
-#define UART_PRINT_BUFFER_SIZE 256U // Printf buffer size
-
-// RX DMA buffer settings
-#define UART_RX_BUFFER_SIZE 256U // DMA circular buffer size
-#define UART_CMD_MAX_LENGTH 128U // Max command length
-#define UART_CMD_DELIMITER '\n'  // Command delimiter (Enter key)
-#define UART_ECHO_ENABLED 1      // Set to 0 to disable character echo
-
-// Echo sequences
-#define UART_ECHO_BACKSPACE_SEQ "\b \b" // Backspace sequence: BS + space + BS
+#define UART_PRINT_BUFFER_SIZE 256U
+#define UART_RX_BUFFER_SIZE 256U
+#define UART_CMD_MAX_LENGTH 128U
+#define UART_CMD_DELIMITER '\n'
+#define UART_ECHO_ENABLED 1
+#define UART_ECHO_BACKSPACE_SEQ "\b \b"
 #define UART_ECHO_BACKSPACE_LEN 3U
-#define UART_ECHO_NEWLINE_SEQ "\r\n" // Newline sequence: CR + LF
+#define UART_ECHO_NEWLINE_SEQ "\r\n"
 #define UART_ECHO_NEWLINE_LEN 2U
-
-// Queue timeout
-#define UART_QUEUE_TIMEOUT_MS 10U // Timeout for queue put from task context
+#define UART_QUEUE_TIMEOUT_MS 10U
 
 /*---------------------------------------------------------------------------
- * Private Types
+ * Typedefs
  *---------------------------------------------------------------------------*/
-
-/**
- * @brief UART message structure for queue
- */
 typedef struct
 {
-    uint8_t data[UART_TX_MSG_MAX_LENGTH]; ///< Message payload
-    uint16_t length;                      ///< Valid bytes in data
+    uint8_t data[UART_TX_MSG_MAX_LENGTH];
+    uint16_t length;
 } uart_tx_message_t;
 
 /*---------------------------------------------------------------------------
@@ -66,6 +49,7 @@ STATIC void uart_manager_create_task(void);
 STATIC void uart_manager_process_10Hz(void);
 
 extern const module_S uart_manager_module;
+
 const module_S uart_manager_module = {
     .module_name = "uart_manager",
     .module_init = uart_manager_init,
@@ -76,28 +60,23 @@ const module_S uart_manager_module = {
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-
-STATIC osMessageQueueId_t uart_tx_queue = NULL; ///< FreeRTOS message queue
-STATIC osThreadId_t uart_tx_task_handle = NULL; ///< TX task handle
-STATIC volatile uint32_t dropped_messages = 0U; ///< Count of dropped messages
-STATIC volatile uint32_t tx_errors = 0U;        ///< Count of transmission errors
-
-// RX DMA buffer and state
-STATIC uint8_t rx_dma_buffer[UART_RX_BUFFER_SIZE]
-    __attribute__((section(".dma_buffer")));      ///< DMA circular buffer (D2 RAM for cache bypass)
-STATIC uint8_t cmd_buffer[UART_CMD_MAX_LENGTH];   ///< Command processing buffer
-STATIC uint16_t cmd_length = 0U;                  ///< Current command length being built
-STATIC uint16_t last_checked_pos = 0U;            ///< Last position checked in DMA buffer
-STATIC uart_cmd_callback_t cmd_callback = NULL;   ///< User command callback
-STATIC uint32_t rx_commands_received = 0U;        ///< Total commands received
-STATIC uint32_t rx_buffer_overruns = 0U;          ///< Total buffer overruns
-STATIC volatile bool command_in_progress = false; ///< Flag to prevent re-entrant command processing
-STATIC bool last_was_cr = false;                  ///< Flag to handle \r\n pairs as single delimiter
+STATIC osMessageQueueId_t uart_tx_queue = NULL;
+STATIC osThreadId_t uart_tx_task_handle = NULL;
+STATIC volatile uint32_t dropped_messages = 0U;
+STATIC volatile uint32_t tx_errors = 0U;
+STATIC uint8_t rx_dma_buffer[UART_RX_BUFFER_SIZE] __attribute__((section(".dma_buffer")));
+STATIC uint8_t cmd_buffer[UART_CMD_MAX_LENGTH];
+STATIC uint16_t cmd_length = 0U;
+STATIC uint16_t last_checked_pos = 0U;
+STATIC uart_cmd_callback_t cmd_callback = NULL;
+STATIC uint32_t rx_commands_received = 0U;
+STATIC uint32_t rx_buffer_overruns = 0U;
+STATIC volatile bool command_in_progress = false;
+STATIC bool last_was_cr = false;
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
-
 STATIC void uart_tx_task(void* argument);
 STATIC bool is_in_isr_context(void);
 STATIC bool uart_manager_queue_message(const uint8_t* data, uint16_t length, bool from_isr,
@@ -110,20 +89,11 @@ STATIC void uart_manager_default_cmd_handler(const char* cmd, uint16_t length);
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
-
-/**
- * @brief Check if currently executing in interrupt context
- * @return true if in ISR, false if in task context
- */
 STATIC bool is_in_isr_context(void)
 {
     return (SCB->ICSR & SCB_ICSR_VECTACTIVE_Msk) != 0U;
 }
 
-/**
- * @brief Dedicated UART transmit task (runs asynchronously)
- * @param argument Unused
- */
 STATIC void uart_tx_task(void* argument)
 {
     (void)argument;
@@ -131,16 +101,13 @@ STATIC void uart_tx_task(void* argument)
 
     for (;;)
     {
-        // Block waiting for message (suspended, 0% CPU usage)
         osStatus_t status = osMessageQueueGet(uart_tx_queue, &msg, NULL, osWaitForever);
 
         if (status == osOK && msg.length > 0U && msg.length <= UART_TX_MSG_MAX_LENGTH)
         {
-            // Transmit via platform layer (this task blocks, not callers)
             platform_uart_status_E tx_status =
                 platform_uart_transmit_blocking(msg.data, msg.length);
 
-            // Track transmission errors
             if (tx_status != PLATFORM_UART_SUCCESS)
             {
                 tx_errors++;

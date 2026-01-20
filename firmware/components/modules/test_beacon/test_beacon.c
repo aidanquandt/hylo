@@ -1,13 +1,4 @@
 /*---------------------------------------------------------------------------
- * @file    test_beacon.c
- * @brief   Test beacon module implementation
- *
- * @note    This module demonstrates how to use the UWB API. It listens for
- *          incoming UWB messages and responds with an auto-incrementing counter.
- *          This is demo code and can be excluded from production builds.
- *---------------------------------------------------------------------------*/
-
-/*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
 #include "test_beacon.h"
@@ -23,7 +14,7 @@
 #include <string.h>
 
 /*---------------------------------------------------------------------------
- * Private Types
+ * Typedefs
  *---------------------------------------------------------------------------*/
 typedef struct
 {
@@ -64,7 +55,7 @@ STATIC beacon_state_t beacon = {
 };
 
 /*---------------------------------------------------------------------------
- * Module Implementation
+ * Private Function Implementations
  *---------------------------------------------------------------------------*/
 STATIC void test_beacon_init(void)
 {
@@ -75,7 +66,6 @@ STATIC void test_beacon_init(void)
                           "Failed to register DATA protocol handler");
     }
 
-    // Automatically start UWB radio
     uwb_start();
 }
 
@@ -84,49 +74,22 @@ STATIC void beacon_protocol_handler(const uint8_t* data, uint16_t length, uint16
     beacon.rx_count++;
     beacon.last_src_addr = src_addr;
 
-    // Capture device time and RX message timestamp
-    // NOTE: read_device_time() returns DTUH (high 32-bits only)
-    //       get_last_rx_timestamp() returns DTU (full 40-bit value)
-    uint32_t device_time_dtuh = (uint32_t)uwb_port_read_device_time();
-    uwb_dev_t* dev = uwb_get_device();
-    uint64_t rx_msg_timestamp_dtu = (dev != NULL) ? uwb_port_get_last_rx_timestamp(dev) : 0;
-    uint32_t rx_msg_timestamp_dtuh = (uint32_t)(rx_msg_timestamp_dtu >> 8);
-
-    // Validate minimum message size
     if (length < sizeof(protocol_header_t))
     {
-        uart_manager_print("Beacon RX: Invalid message (too short)\r\n");
+        error_handler_log(ERROR_SEVERITY_WARNING, "beacon", "Invalid RX message (too short)");
         return;
     }
 
     const protocol_header_t* hdr = (const protocol_header_t*)data;
 
-    // Only handle beacon messages
     if (hdr->msg_type != DATA_MSG_TYPE_BEACON)
     {
         return;
     }
-
-    // Parse beacon message
-    if (length >= sizeof(protocol_data_beacon_msg_t))
-    {
-        const protocol_data_beacon_msg_t* msg = (const protocol_data_beacon_msg_t*)data;
-        uart_manager_print("Beacon RX: From 0x%04X, Seq=%u, Counter=%u, DevTime=%lu (dtuh), "
-                           "RxTime=%lu DTU (dtuh=%lu)\r\n",
-                           src_addr, hdr->sequence, msg->counter, device_time_dtuh,
-                           (uint32_t)rx_msg_timestamp_dtu, rx_msg_timestamp_dtuh);
-    }
-    else
-    {
-        uart_manager_print(
-            "Beacon RX: From 0x%04X, Seq=%u, DevTime=%lu (dtuh), RxTime=%lu DTU (dtuh=%lu)\r\n",
-            src_addr, hdr->sequence, device_time_dtuh, (uint32_t)rx_msg_timestamp_dtu,
-            rx_msg_timestamp_dtuh);
-    }
 }
 
 /*---------------------------------------------------------------------------
- * Public API Implementation
+ * Public Function Implementations
  *---------------------------------------------------------------------------*/
 
 void test_beacon_get_status(beacon_status_t* status)

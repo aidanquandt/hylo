@@ -1,9 +1,4 @@
 /*---------------------------------------------------------------------------
- * @file    platform_os.c
- * @brief   Operating system abstraction implementation
- *---------------------------------------------------------------------------*/
-
-/*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
 #include "platform_os.h"
@@ -24,10 +19,9 @@
 
 void platform_os_init(void)
 {
-    // Enable DWT cycle counter for precise microsecond delays
-    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; // Enable trace
-    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;            // Enable cycle counter
-    DWT->CYCCNT = 0;                                // Reset counter
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    DWT->CYCCNT = 0;
 }
 
 uint32_t platform_os_gettick(void)
@@ -37,7 +31,6 @@ uint32_t platform_os_gettick(void)
 
 void platform_os_delay_us_blocking(uint32_t delay_us)
 {
-    // Bounds check: prevent excessively long scheduler suspension
     if (delay_us == 0)
     {
         return;
@@ -45,27 +38,17 @@ void platform_os_delay_us_blocking(uint32_t delay_us)
 
     if (delay_us > PLATFORM_OS_MAX_US_DELAY)
     {
-        // For long delays, fall back to millisecond delay with yielding
-        platform_os_delay_ms((delay_us + 999) / 1000); // Round up to ms
+        platform_os_delay_ms((delay_us + 999) / 1000);
         return;
     }
 
-    vTaskSuspendAll(); // Suspend scheduler to prevent task switches
+    vTaskSuspendAll();
 
-    // Calculate number of CPU cycles for the delay
-    // SystemCoreClock is CPU frequency in Hz
     uint32_t cycles = (SystemCoreClock / 1000000UL) * delay_us;
-
-    // Suspend scheduler to prevent task preemption during delay
-    // Interrupts remain enabled so SysTick and peripherals continue working
-
     uint32_t start = DWT->CYCCNT;
 
-    // Busy-wait until cycles elapsed
-    // Subtraction handles 32-bit counter wraparound correctly
     while ((DWT->CYCCNT - start) < cycles)
     {
-        // Spin
     }
 
     xTaskResumeAll();
@@ -73,8 +56,7 @@ void platform_os_delay_us_blocking(uint32_t delay_us)
 
 void platform_os_delay_ms(uint32_t delay_ms)
 {
-    // Yield to RTOS scheduler
-    osDelay(delay_ms); // RTOS-aware delay that yields to other tasks
+    osDelay(delay_ms);
 }
 
 platform_os_critical_state_t platform_os_critical_enter(void)

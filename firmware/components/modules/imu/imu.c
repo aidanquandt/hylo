@@ -1,9 +1,4 @@
 /*---------------------------------------------------------------------------
- * @file    imu.c
- * @brief   IMU hardware connection test module
- *---------------------------------------------------------------------------*/
-
-/*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
 #include "imu.h"
@@ -21,6 +16,9 @@
 #define IMU_EXPECTED_CHIP_ID_2 (0x44U)
 #define STARTUP_DELAY_MS (2000U)
 
+/*---------------------------------------------------------------------------
+ * Typedefs
+ *---------------------------------------------------------------------------*/
 typedef enum
 {
     STATE_STARTUP,
@@ -105,7 +103,6 @@ STATIC imu_fault_code_e imu_fault_code = FAULT_NONE;
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
-
 STATIC bool verify_chip_id(void)
 {
     if (imu_dev == NULL)
@@ -283,7 +280,6 @@ STATIC void imu_state_faulted_on_entry(uint16_t prevState)
 /*---------------------------------------------------------------------------
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
-
 bool imu_soft_reset(void)
 {
     if (imu_dev == NULL || imu_state_machine.curr_state != STATE_ACTIVE)
@@ -294,10 +290,6 @@ bool imu_soft_reset(void)
     imu_port_status_t ret = imu_port_soft_reset(imu_dev);
     return (ret == IMU_PORT_SUCCESS);
 }
-
-/*---------------------------------------------------------------------------
- * Public API Implementation
- *---------------------------------------------------------------------------*/
 
 void imu_get_status(imu_status_t* status)
 {

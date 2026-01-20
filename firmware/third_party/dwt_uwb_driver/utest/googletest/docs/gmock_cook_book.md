@@ -4269,7 +4269,7 @@ Action<IncrementMethod> IncrementArgument() {
 The previous recipe showed you how to define your own action. This is all good,
 except that you need to know the type of the function in which the action will
 be used. Sometimes that can be a problem. For example, if you want to use the
-action in functions with *different* types (e.g. like `Return()` and
+action in functions with *different* Typedefs (e.g. like `Return()` and
 `SetArgPointee()`).
 
 If an action can be used in several types of mock functions, we say it's
