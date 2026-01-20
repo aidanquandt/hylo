@@ -10,10 +10,6 @@
 #include "common.h"
 
 /*---------------------------------------------------------------------------
- * Public API
+ * Public Function Prototypes
  *---------------------------------------------------------------------------*/
-
-/**
- * @brief Perform a software MCU reset (system reset)
- */
 void platform_system_reset(void);

@@ -5,6 +5,7 @@
 #include "FreeRTOS.h"
 #include "app.h"
 #include "common.h"
+#include "error_handler.h"
 #include "main.h"
 #include "module.h"
 #include "task.h"
@@ -19,13 +20,11 @@
 /*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
-STATIC void datalogger_init(void);
 STATIC void datalogger_process_1Hz(void);
 
 extern const module_S datalogger_module;
 const module_S datalogger_module = {
     .module_name = "datalogger",
-    .module_init = datalogger_init,
     .module_process_1Hz = datalogger_process_1Hz,
 };
 
@@ -45,7 +44,6 @@ STATIC UBaseType_t num_tracked_tasks = 0;
 /*---------------------------------------------------------------------------
  * Private function implementations
  *---------------------------------------------------------------------------*/
-
 STATIC void datalogger_monitor_rtos_usage(void)
 {
     STATIC uint32_t prev_total_runtime = 0U;
@@ -59,7 +57,6 @@ STATIC void datalogger_monitor_rtos_usage(void)
         return;
     }
 
-    // Handle counter wraparound for total runtime
     uint32_t total_runtime_change;
     if (total_runtime >= prev_total_runtime)
     {
@@ -67,23 +64,19 @@ STATIC void datalogger_monitor_rtos_usage(void)
     }
     else
     {
-        // Wraparound occurred
         total_runtime_change = (UINT32_MAX - prev_total_runtime) + total_runtime + 1;
     }
 
-    // Skip if no time elapsed (same sample)
     if (total_runtime_change == 0U)
     {
         return;
     }
 
-    // Process each task from current snapshot
     for (UBaseType_t task_index = 0U; task_index < num_tracked_tasks; ++task_index)
     {
         TaskHandle_t current_handle = task_status_array[task_index].xHandle;
         uint32_t current_runtime = task_status_array[task_index].ulRunTimeCounter;
 
-        // Find this task in previous snapshot to calculate delta
         uint32_t previous_runtime = 0U;
         for (uint8_t prev_index = 0U; prev_index < MAX_NUM_TASKS; ++prev_index)
         {
@@ -94,7 +87,6 @@ STATIC void datalogger_monitor_rtos_usage(void)
             }
         }
 
-        // Handle counter wraparound for task runtime
         uint32_t runtime_change;
         if (current_runtime >= previous_runtime)
         {
@@ -102,7 +94,6 @@ STATIC void datalogger_monitor_rtos_usage(void)
         }
         else
         {
-            // Wraparound occurred
             runtime_change = (UINT32_MAX - previous_runtime) + current_runtime + 1;
         }
 
@@ -114,7 +105,6 @@ STATIC void datalogger_monitor_rtos_usage(void)
 
         cpu_usage[task_index] = usage_percent;
 
-        // Update previous values for next iteration
         prev_task_handles[task_index] = current_handle;
         prev_task_runtime[task_index] = current_runtime;
     }
@@ -125,11 +115,6 @@ STATIC void datalogger_monitor_rtos_usage(void)
 /*---------------------------------------------------------------------------
  * Module Implementation
  *---------------------------------------------------------------------------*/
-
-STATIC void datalogger_init(void)
-{
-}
-
 STATIC void datalogger_process_1Hz(void)
 {
     datalogger_monitor_rtos_usage();
@@ -137,7 +122,7 @@ STATIC void datalogger_process_1Hz(void)
 }
 
 /*---------------------------------------------------------------------------
- * Public API Implementation
+ * Public Function Implementation
  *---------------------------------------------------------------------------*/
 
 uint32_t datalogger_get_task_usage(task_cpu_info_t* tasks, uint32_t max_tasks)
@@ -166,12 +151,14 @@ STATIC void datalogger_monitor_uart_health(void)
     if (dropped > prev_dropped)
     {
         uint32_t new_drops = dropped - prev_dropped;
-        uart_manager_print("[UART] %u messages dropped!\n", (unsigned int)new_drops);
+        error_handler_log(ERROR_SEVERITY_ERROR, "datalogger", "[UART] %u messages dropped!\n",
+                          (unsigned int)new_drops);
         prev_dropped = dropped;
     }
 
     if (queue_count > 24U)
     {
-        uart_manager_print("[UART] Queue high: %u/32\n", (unsigned int)queue_count);
+        error_handler_log(ERROR_SEVERITY_WARNING, "datalogger", "[UART] Queue high: %u/32\n",
+                          (unsigned int)queue_count);
     }
 }

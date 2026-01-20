@@ -1,9 +1,4 @@
 /*---------------------------------------------------------------------------
- * @file    uwb.c
- * @brief   UWB hardware connection test module
- *---------------------------------------------------------------------------*/
-
-/*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
 #include "uwb.h"
@@ -25,8 +20,11 @@
 #define UWB_DEFAULT_CHANNEL UWB_CHANNEL_5
 #define MAX_MESSAGE_LENGTH (MAC_MAX_FRAME_SIZE)
 #define DEFAULT_NODE_ADDRESS (0x0001)
-#define MAX_PROTOCOL_HANDLERS (8U) ///< Maximum number of protocol handlers
+#define MAX_PROTOCOL_HANDLERS (8U)
 
+/*---------------------------------------------------------------------------
+ * Typedefs
+ *---------------------------------------------------------------------------*/
 typedef enum
 {
     STATE_OFF,
@@ -68,14 +66,12 @@ typedef struct
     uint8_t tx_sequence;
 } uwb_addressing_t;
 
-/** Protocol handler registry entry */
 typedef struct
 {
     uint8_t protocol_type;
     uwb_protocol_handler_t handler;
 } protocol_handler_entry_t;
 
-/** Protocol routing statistics */
 typedef struct
 {
     uint32_t total_received;
@@ -84,7 +80,7 @@ typedef struct
 } protocol_stats_t;
 
 /*---------------------------------------------------------------------------
- * Protocol Routing - Private Variables
+ * Protocol Routing Variables
  *---------------------------------------------------------------------------*/
 STATIC protocol_handler_entry_t protocol_handlers[MAX_PROTOCOL_HANDLERS];
 STATIC uint8_t protocol_handler_count = 0;
@@ -481,7 +477,7 @@ bool uwb_send_message(const uint8_t* data, uint16_t length, uint16_t dest_addr)
 }
 
 bool uwb_send_message_delayed(const uint8_t* data, uint16_t length, uint16_t dest_addr,
-                              uint64_t tx_timestamp_dtuh)
+                              uint32_t tx_time_dtuh)
 {
     // Validate radio state and parameters
     if (uwb_state_machine.curr_state != STATE_ACTIVE || data == NULL || length == 0 ||
@@ -506,7 +502,7 @@ bool uwb_send_message_delayed(const uint8_t* data, uint16_t length, uint16_t des
     // Use delayed transmission with the provided absolute TX timestamp
     // Port layer will set the hardware timing and transmit atomically
     uwb_port_status_t result =
-        uwb_port_send_message_delayed(uwb_dev, tx_buffer, frame_len, tx_timestamp_dtuh);
+        uwb_port_send_message_delayed(uwb_dev, tx_buffer, frame_len, tx_time_dtuh);
 
     if (result != UWB_PORT_SUCCESS)
     {

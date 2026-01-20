@@ -170,19 +170,19 @@ bool tag_start_ranging(uint16_t anchor_addr)
     // Validation checks
     if (!tag_ctx.active)
     {
-        uart_manager_print("Tag not active\r\n");
+        error_handler_log(ERROR_SEVERITY_WARNING, "tag", "Not active");
         return false;
     }
 
     if (tag_ctx.ranging_in_progress)
     {
-        uart_manager_print("Ranging already in progress\r\n");
+        error_handler_log(ERROR_SEVERITY_WARNING, "tag", "Ranging already in progress");
         return false;
     }
 
     if (!uwb_is_ready())
     {
-        uart_manager_print("UWB not ready\r\n");
+        error_handler_log(ERROR_SEVERITY_WARNING, "tag", "UWB not ready");
         return false;
     }
 
@@ -212,7 +212,7 @@ bool tag_start_ranging(uint16_t anchor_addr)
     // Send poll immediately (synchronous operation)
     if (!tag_send_poll())
     {
-        uart_manager_print("tag_start_ranging: Failed to send poll\r\n");
+        error_handler_log(ERROR_SEVERITY_ERROR, "tag", "Failed to send poll");
         tag_ctx.fault_code = TAG_FAULT_SEND_FAILED;
         tag_ctx.ranging_in_progress = false;
         return false;
@@ -290,7 +290,7 @@ STATIC uint16_t tag_transition_logic(uint16_t currentState, uint32_t stateTimer)
         case TAG_STATE_WAIT_RESPONSE:
             if (tag_inputs.fault_present)
             {
-                uart_manager_print("  -> FAULTED (fault_present)\r\n");
+                error_handler_log(ERROR_SEVERITY_ERROR, "tag", "  -> FAULTED (fault_present)\r\n");
                 nextState = TAG_STATE_FAULTED;
             }
             else if (tag_inputs.response_received)
@@ -298,7 +298,7 @@ STATIC uint16_t tag_transition_logic(uint16_t currentState, uint32_t stateTimer)
                 // Send final message and transition to wait for ACK
                 if (!tag_send_final())
                 {
-                    uart_manager_print("Failed to send final\r\n");
+                    error_handler_log(ERROR_SEVERITY_ERROR, "tag", "Failed to send final");
                     tag_ctx.fault_code = TAG_FAULT_SEND_FAILED;
                     nextState = TAG_STATE_FAULTED;
                 }
@@ -310,7 +310,7 @@ STATIC uint16_t tag_transition_logic(uint16_t currentState, uint32_t stateTimer)
             }
             else if (stateTimer >= TAG_RESPONSE_TIMEOUT_TICKS)
             {
-                uart_manager_print("  -> FAULTED (timeout)\r\n");
+                error_handler_log(ERROR_SEVERITY_ERROR, "tag", "  -> FAULTED (timeout)\r\n");
                 tag_ctx.fault_code = TAG_FAULT_TIMEOUT;
                 nextState = TAG_STATE_FAULTED;
             }
@@ -324,7 +324,7 @@ STATIC uint16_t tag_transition_logic(uint16_t currentState, uint32_t stateTimer)
             }
             else if (stateTimer >= TAG_RESPONSE_TIMEOUT_TICKS)
             {
-                uart_manager_print("  -> FAULTED (ACK timeout)\r\n");
+                error_handler_log(ERROR_SEVERITY_ERROR, "tag", "  -> FAULTED (ACK timeout)\r\n");
                 tag_ctx.fault_code = TAG_FAULT_TIMEOUT;
                 nextState = TAG_STATE_FAULTED;
             }
@@ -388,7 +388,8 @@ STATIC void tag_state_faulted_on_entry(uint16_t prevState)
     // Retry logic
     if (tag_ctx.retry_count < TAG_RETRY_MAX)
     {
-        uart_manager_print("Retrying (attempt %u/%u)\r\n", tag_ctx.retry_count + 1, TAG_RETRY_MAX);
+        error_handler_log(ERROR_SEVERITY_INFO, "tag", "Retrying (attempt %u/%u)",
+                          tag_ctx.retry_count + 1, TAG_RETRY_MAX);
 
         tag_ctx.retry_count++;
         tag_ctx.fault_code = TAG_FAULT_NONE;
@@ -409,8 +410,7 @@ STATIC void tag_state_faulted_on_entry(uint16_t prevState)
     }
     else
     {
-        // Give up
-        uart_manager_print("Max retries exceeded\r\n");
+        error_handler_log(ERROR_SEVERITY_WARNING, "tag", "Max retries exceeded");
         tag_ctx.ranging_in_progress = false;
         error_handler_log(ERROR_SEVERITY_WARNING, "tag", "Ranging failed after %u retries",
                           TAG_RETRY_MAX);
@@ -431,7 +431,7 @@ STATIC bool tag_send_poll(void)
     // Send poll message
     if (!uwb_send_message((uint8_t*)&poll, sizeof(poll), tag_ctx.target_address))
     {
-        uart_manager_print("Tag TX: FAILED\r\n");
+        error_handler_log(ERROR_SEVERITY_ERROR, "tag", "POLL TX failed");
         return false;
     }
 
@@ -471,7 +471,7 @@ STATIC bool tag_send_final(void)
     if (!uwb_send_message_delayed((uint8_t*)&final, sizeof(final), tag_ctx.target_address,
                                   final_tx_time_dtuh))
     {
-        uart_manager_print("Tag FINAL TX: FAILED\r\n");
+        error_handler_log(ERROR_SEVERITY_ERROR, "tag", "FINAL TX failed");
         return false;
     }
 
@@ -491,8 +491,9 @@ void tag_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr)
     // Check if response is from our target
     if (src_addr != tag_ctx.target_address)
     {
-        uart_manager_print("  REJECTED: wrong source (0x%04X vs expected 0x%04X)\r\n", src_addr,
-                           tag_ctx.target_address);
+        error_handler_log(ERROR_SEVERITY_INFO, "tag",
+                          "REJECTED: wrong source (0x%04X vs expected 0x%04X)", src_addr,
+                          tag_ctx.target_address);
         return;
     }
 
@@ -515,13 +516,14 @@ void tag_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr)
         }
         else
         {
-            uart_manager_print("  REJECTED: state=%u, msg_type=0x%02X mismatch\r\n",
-                               tag_sm.curr_state, header->msg_type);
+            error_handler_log(ERROR_SEVERITY_INFO, "tag",
+                              "REJECTED: state=%u, msg_type=0x%02X mismatch", tag_sm.curr_state,
+                              header->msg_type);
         }
     }
     else
     {
-        uart_manager_print("  REJECTED: message too short for header\r\n");
+        error_handler_log(ERROR_SEVERITY_INFO, "tag", "REJECTED: message too short for header");
     }
 }
 
@@ -532,20 +534,20 @@ STATIC void tag_handle_response(const uint8_t* data, uint16_t length, uint16_t s
     // Validate message
     if (length < sizeof(protocol_twr_response_msg_t))
     {
-        uart_manager_print("Response REJECT - too short (%u < %u)\r\n", length,
-                           sizeof(protocol_twr_response_msg_t));
+        error_handler_log(ERROR_SEVERITY_WARNING, "tag", "Response REJECT - too short (%u < %u)",
+                          length, sizeof(protocol_twr_response_msg_t));
         tag_ctx.fault_code = TAG_FAULT_INVALID_RESPONSE;
         return;
     }
 
     const protocol_twr_response_msg_t* resp = (const protocol_twr_response_msg_t*)data;
 
-    // Check message type and sequence
     if (resp->header.msg_type != TWR_MSG_TYPE_RESPONSE || resp->header.sequence != tag_ctx.sequence)
     {
-        uart_manager_print(
-            "tag_handle_response: REJECT - msg_type=0x%02X (expect 0x%02X), seq=%u (expect %u)\r\n",
-            resp->header.msg_type, TWR_MSG_TYPE_RESPONSE, resp->header.sequence, tag_ctx.sequence);
+        error_handler_log(ERROR_SEVERITY_WARNING, "tag",
+                          "Response REJECT - msg_type=0x%02X (expect 0x%02X), seq=%u (expect %u)",
+                          resp->header.msg_type, TWR_MSG_TYPE_RESPONSE, resp->header.sequence,
+                          tag_ctx.sequence);
         tag_ctx.fault_code = TAG_FAULT_INVALID_RESPONSE;
         return;
     }
@@ -570,21 +572,20 @@ STATIC void tag_handle_final_ack(const uint8_t* data, uint16_t length, uint16_t 
     // Validate message
     if (length < sizeof(protocol_twr_final_ack_msg_t))
     {
-        uart_manager_print("FINAL_ACK REJECT - too short (%u < %u)\r\n", length,
-                           sizeof(protocol_twr_final_ack_msg_t));
+        error_handler_log(ERROR_SEVERITY_WARNING, "tag", "FINAL_ACK REJECT - too short (%u < %u)",
+                          length, sizeof(protocol_twr_final_ack_msg_t));
         tag_ctx.fault_code = TAG_FAULT_INVALID_RESPONSE;
         return;
     }
 
     const protocol_twr_final_ack_msg_t* ack = (const protocol_twr_final_ack_msg_t*)data;
 
-    // Check message type and sequence
     if (ack->header.msg_type != TWR_MSG_TYPE_FINAL_ACK || ack->header.sequence != tag_ctx.sequence)
     {
-        uart_manager_print("FINAL_ACK REJECT - msg_type=0x%02X (expect 0x%02X), seq=%u "
-                           "(expect %u)\r\n",
-                           ack->header.msg_type, TWR_MSG_TYPE_FINAL_ACK, ack->header.sequence,
-                           tag_ctx.sequence);
+        error_handler_log(ERROR_SEVERITY_WARNING, "tag",
+                          "FINAL_ACK REJECT - msg_type=0x%02X (expect 0x%02X), seq=%u (expect %u)",
+                          ack->header.msg_type, TWR_MSG_TYPE_FINAL_ACK, ack->header.sequence,
+                          tag_ctx.sequence);
         tag_ctx.fault_code = TAG_FAULT_INVALID_RESPONSE;
         return;
     }
@@ -624,10 +625,8 @@ STATIC void tag_calculate_distance(void)
     }
     else
     {
-        uart_manager_print("DS-TWR FAILED: status=%d\r\n", status);
+        error_handler_log(ERROR_SEVERITY_ERROR, "tag", "DS-TWR calculation failed: %d", status);
         tag_ctx.fault_code = TAG_FAULT_CALCULATION_FAILED;
         tag_ctx.failed_ranges++;
-
-        error_handler_log(ERROR_SEVERITY_WARNING, "tag", "DS-TWR calculation failed: %d", status);
     }
 }

@@ -1,10 +1,12 @@
 /*---------------------------------------------------------------------------
- * @file    platform_system.c
- * @brief   Platform system utilities implementation
+ * Includes
  *---------------------------------------------------------------------------*/
-
 #include "platform_system.h"
-#include "stm32h7xx.h" // Device header for NVIC_SystemReset
+#include "stm32h7xx.h"
+
+/*---------------------------------------------------------------------------
+ * Public Function Implementations
+ *---------------------------------------------------------------------------*/
 
 void platform_system_reset(void)
 {

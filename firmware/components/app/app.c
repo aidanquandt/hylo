@@ -1,7 +1,7 @@
 /*---------------------------------------------------------------------------
- * Includes :) :)
+ * Includes
  *---------------------------------------------------------------------------*/
-#include "app.h" // hello guys
+#include "app.h"
 #include "cmsis_os.h"
 #include "cmsis_os2.h"
 #include "common.h"
@@ -108,7 +108,6 @@ STATIC void app_create_module_tasks(void)
     char task_name[32]; // Match configMAX_TASK_NAME_LEN
     BaseType_t result;
 
-    // First, create any standalone module tasks (like UART_TX)
     for (modules_E module_idx = (modules_E)0U; module_idx < NUM_MODULES; module_idx++)
     {
         if (modules[module_idx]->module_create_task != NULL)
@@ -117,7 +116,6 @@ STATIC void app_create_module_tasks(void)
         }
     }
 
-    // Then create periodic processing tasks
     for (modules_E module_idx = (modules_E)0U; module_idx < NUM_MODULES; module_idx++)
     {
         if (modules[module_idx]->module_process_1kHz != NULL)
@@ -176,11 +174,7 @@ STATIC void app_create_module_tasks(void)
 
 STATIC void app_post_module_initialization(void)
 {
-    // Initialize UART command router
     uart_cmd_router_init();
-
-    // Log successful initialization
-    uart_manager_print("\r\n\r\n\r\n=== App Ready ===\r\n");
 }
 
 /*---------------------------------------------------------------------------
@@ -188,15 +182,8 @@ STATIC void app_post_module_initialization(void)
  *---------------------------------------------------------------------------*/
 void app_init(void)
 {
-    // Phase 1: Initialize modules (create queues, semaphores, etc.)
-    // Note: Protocol routing is now handled internally by uwb module
     app_initialize_modules();
-
-    // Phase 2: Create all module tasks (now that RTOS primitives exist)
     app_create_module_tasks();
-
-    // Phase 3: Post-initialization (after all tasks created)
     app_post_module_initialization();
-
     osThreadExit();
 }

@@ -6,6 +6,6 @@
 #include "common.h"
 
 /*---------------------------------------------------------------------------
- * Public function prototypes
+ * Public Function Prototypes
  *---------------------------------------------------------------------------*/
 void sensor_fusion_isr(void);

@@ -1,9 +1,6 @@
 /*---------------------------------------------------------------------------
- * @file    anchor.c
- * @brief   DS-TWR Anchor (Responder) implementation
- * @details Anchor receives POLL and responds with pre-calculated timestamps using delayed TX
+ * Includes
  *---------------------------------------------------------------------------*/
-
 #include "anchor.h"
 #include "error_handler.h"
 #include "platform_os.h"
@@ -17,9 +14,6 @@
 /*---------------------------------------------------------------------------
  * Private Definitions
  *---------------------------------------------------------------------------*/
-
-// Delay from poll RX to response TX (in microseconds)
-// Increased to allow for processing overhead
 #define POLL_RX_TO_RESP_TX_DLY_UUS 5000
 
 /*---------------------------------------------------------------------------
@@ -119,8 +113,6 @@ bool anchor_start(void)
     }
 
     anchor_ctx.active = true;
-
-    // Start listening
     anchor_sm.next_state = ANCHOR_STATE_LISTENING;
 
     return true;
@@ -130,8 +122,6 @@ void anchor_stop(void)
 {
     anchor_ctx.active = false;
     anchor_ctx.processing_poll = false;
-
-    // Return to idle
     anchor_sm.curr_state = ANCHOR_STATE_IDLE;
     anchor_sm.next_state = ANCHOR_STATE_IDLE;
 }
@@ -149,7 +139,6 @@ void anchor_process_1kHz(void)
 
 void anchor_set_address(uint16_t address)
 {
-    // Just forward to UWB layer
     uwb_set_address(address, 0xDECA);
 }
 
@@ -252,8 +241,9 @@ void anchor_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr)
         {
             if (anchor_sm.curr_state != ANCHOR_STATE_LISTENING || anchor_ctx.processing_poll)
             {
-                uart_manager_print("Anchor RX: POLL rejected (state=%u, processing=%u)\r\n",
-                                   anchor_sm.curr_state, anchor_ctx.processing_poll);
+                error_handler_log(ERROR_SEVERITY_INFO, "anchor",
+                                  "POLL rejected (state=%u, processing=%u)", anchor_sm.curr_state,
+                                  anchor_ctx.processing_poll);
                 return;
             }
             anchor_handle_poll(data, length, src_addr);
@@ -272,7 +262,7 @@ STATIC void anchor_handle_poll(const uint8_t* data, uint16_t length, uint16_t sr
     if (length < sizeof(protocol_twr_poll_msg_t))
     {
         anchor_ctx.fault_code = ANCHOR_FAULT_INVALID_POLL;
-        uart_manager_print("Anchor: POLL validation FAILED - too short\r\n");
+        error_handler_log(ERROR_SEVERITY_ERROR, "anchor", "POLL validation FAILED - too short");
         return;
     }
 
@@ -292,7 +282,7 @@ STATIC void anchor_handle_poll(const uint8_t* data, uint16_t length, uint16_t sr
     if (uwb_dev == NULL)
     {
         anchor_ctx.poll_rx.timestamp_dtu = 0;
-        uart_manager_print("Anchor: Failed to get UWB device\r\n");
+        error_handler_log(ERROR_SEVERITY_ERROR, "anchor", "Failed to get UWB device");
         anchor_ctx.fault_code = ANCHOR_FAULT_UWB_NOT_READY;
         anchor_ctx.processing_poll = false;
         return;
@@ -307,7 +297,8 @@ STATIC void anchor_handle_poll(const uint8_t* data, uint16_t length, uint16_t sr
     {
         anchor_ctx.fault_code = ANCHOR_FAULT_SEND_FAILED;
         anchor_ctx.response_failures++;
-        uart_manager_print("Anchor: POLL handling FAILED - response send error\r\n");
+        error_handler_log(ERROR_SEVERITY_ERROR, "anchor",
+                          "POLL handling FAILED - response send error");
     }
     else
     {
@@ -346,7 +337,7 @@ STATIC bool anchor_send_response(void)
     if (!uwb_send_message_delayed((uint8_t*)&response, sizeof(response), anchor_ctx.tag_address,
                                   absolute_tx_time_dtuh))
     {
-        uart_manager_print("Anchor: RESPONSE delayed TX FAILED\r\n");
+        error_handler_log(ERROR_SEVERITY_ERROR, "anchor", "RESPONSE delayed TX FAILED");
         return false;
     }
 
@@ -365,8 +356,8 @@ STATIC void anchor_handle_final(const uint8_t* data, uint16_t length, uint16_t s
     // Validate message
     if (length < sizeof(protocol_twr_final_msg_t))
     {
-        uart_manager_print("FINAL REJECT - too short (%u < %u)\r\n", length,
-                           sizeof(protocol_twr_final_msg_t));
+        error_handler_log(ERROR_SEVERITY_WARNING, "anchor", "FINAL REJECT - too short (%u < %u)",
+                          length, sizeof(protocol_twr_final_msg_t));
         anchor_ctx.fault_code = ANCHOR_FAULT_INVALID_POLL;
         return;
     }
@@ -377,7 +368,7 @@ STATIC void anchor_handle_final(const uint8_t* data, uint16_t length, uint16_t s
     uint64_t final_rx_ts_dtu = uwb_get_last_rx_timestamp();
     if (final_rx_ts_dtu == 0)
     {
-        uart_manager_print("anchor_handle_final: Failed to get RX timestamp\r\n");
+        error_handler_log(ERROR_SEVERITY_ERROR, "anchor", "Failed to get RX timestamp");
         anchor_ctx.fault_code = ANCHOR_FAULT_SEND_FAILED;
         return;
     }
@@ -397,7 +388,7 @@ STATIC void anchor_handle_final(const uint8_t* data, uint16_t length, uint16_t s
     // Send ACK immediately (no delayed TX needed for ACK)
     if (!uwb_send_message((uint8_t*)&ack, sizeof(ack), src_addr))
     {
-        uart_manager_print("anchor_handle_final: Failed to send ACK to 0x%04X\r\n", src_addr);
+        error_handler_log(ERROR_SEVERITY_ERROR, "anchor", "Failed to send ACK to 0x%04X", src_addr);
         anchor_ctx.fault_code = ANCHOR_FAULT_SEND_FAILED;
         return;
     }
