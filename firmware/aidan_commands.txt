@@ -20,3 +20,7 @@ beacon.req.ping 0x0001
 
 uwb.set.address 0x0002
 beacon.req.ping.delayed 0x0001
+
+stopwatch.get.0
+stopwatch.get.1
+stopwatch.get.all

@@ -46,7 +46,7 @@
    * - Neural Network Support Functions
    *
    * The library has separate functions for operating on different weight and activation data
-   * Typedefs including 8-bit integers (q7_t) and 16-bit integers (q15_t). The descrition of the
+   * types including 8-bit integers (q7_t) and 16-bit integers (q15_t). The descrition of the
    * kernels are included in the function description. The implementation details are also
    * described in this paper [1].
    *

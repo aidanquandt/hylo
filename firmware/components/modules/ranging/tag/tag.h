@@ -42,4 +42,6 @@ bool tag_is_ranging(void);
 bool tag_get_last_result(twr_result_t* result);
 void tag_get_status(tag_status_t* status);
 void tag_cancel_ranging(void);
-void tag_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr);
+void tag_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                     uint64_t rx_timestamp);
+void tag_tx_done_callback(uint64_t tx_timestamp);

@@ -5,6 +5,7 @@
 #include "module.h"
 #include "platform_gpio.h"
 #include "platform_os.h"
+#include "stm32h7xx.h"
 #include "uart_manager.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -103,6 +104,33 @@ void error_handler_log(error_severity_e severity, const char* module, const char
         return;
     }
 
+    // Check if we're in an ISR context
+    bool from_isr = (SCB->ICSR & SCB_ICSR_VECTACTIVE_Msk) != 0U;
+
+    // If in ISR, skip mutex and history to avoid FreeRTOS API violations
+    if (from_isr)
+    {
+        // Format message directly for printing
+        char message[ERROR_MSG_MAX_LENGTH];
+        va_list args;
+        va_start(args, format);
+        vsnprintf(message, sizeof(message), format, args);
+        va_end(args);
+        message[sizeof(message) - 1] = '\0';
+
+        // Increment dropped count since we can't safely update history
+        if (dropped_error_count < UINT32_MAX)
+        {
+            dropped_error_count++;
+        }
+
+        // Print directly (uart_manager_print handles ISR context)
+        const char* severity_str = error_handler_severity_to_string(severity);
+        uart_manager_print("[%s] %s: %s\r\n", severity_str, module, message);
+        return;
+    }
+
+    // Normal task context - use mutex protection
     if (!platform_os_mutex_take(error_mutex, 100))
     {
         if (dropped_error_count < UINT32_MAX)

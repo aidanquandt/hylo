@@ -37,6 +37,9 @@ typedef struct
     uint16_t tag_address; // Tag we're responding to
     uint16_t sequence;    // Current sequence number
 
+    // TX state tracking
+    bool waiting_for_response_tx; // Waiting for RESPONSE TX timestamp
+
     // Timestamps
     twr_timestamp_t poll_rx; // When we received poll
     uint64_t resp_tx;        // Actual TX timestamp of response (measured after transmission)
@@ -64,8 +67,10 @@ STATIC void anchor_state_sample_inputs(void);
 STATIC uint16_t anchor_transition_logic(uint16_t currentState, uint32_t stateTimer);
 STATIC void anchor_state_listening_on_entry(uint16_t prevState);
 STATIC void anchor_state_faulted_on_entry(uint16_t prevState);
-STATIC void anchor_handle_poll(const uint8_t* data, uint16_t length, uint16_t src_addr);
-STATIC void anchor_handle_final(const uint8_t* data, uint16_t length, uint16_t src_addr);
+STATIC void anchor_handle_poll(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                               uint64_t rx_timestamp);
+STATIC void anchor_handle_final(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                                uint64_t rx_timestamp);
 STATIC bool anchor_send_response(void);
 
 /*---------------------------------------------------------------------------
@@ -229,7 +234,8 @@ STATIC void anchor_state_faulted_on_entry(uint16_t prevState)
  * Private Function Implementations - TWR Protocol
  *---------------------------------------------------------------------------*/
 
-void anchor_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr)
+void anchor_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                        uint64_t rx_timestamp)
 {
     // Check if it's a TWR protocol message
     if (length >= sizeof(protocol_header_t))
@@ -246,17 +252,18 @@ void anchor_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr)
                                   anchor_ctx.processing_poll);
                 return;
             }
-            anchor_handle_poll(data, length, src_addr);
+            anchor_handle_poll(data, length, src_addr, rx_timestamp);
         }
         // Handle FINAL messages at any time
         else if (hdr->protocol_type == PROTOCOL_TYPE_TWR && hdr->msg_type == TWR_MSG_TYPE_FINAL)
         {
-            anchor_handle_final(data, length, src_addr);
+            anchor_handle_final(data, length, src_addr, rx_timestamp);
         }
     }
 }
 
-STATIC void anchor_handle_poll(const uint8_t* data, uint16_t length, uint16_t src_addr)
+STATIC void anchor_handle_poll(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                               uint64_t rx_timestamp)
 {
     // Validate message
     if (length < sizeof(protocol_twr_poll_msg_t))
@@ -277,18 +284,8 @@ STATIC void anchor_handle_poll(const uint8_t* data, uint16_t length, uint16_t sr
     memset(&anchor_ctx.poll_rx, 0, sizeof(anchor_ctx.poll_rx));
     anchor_ctx.resp_tx = 0;
 
-    // Record RX timestamp from UWB radio
-    uwb_dev_t* uwb_dev = uwb_get_device();
-    if (uwb_dev == NULL)
-    {
-        anchor_ctx.poll_rx.timestamp_dtu = 0;
-        error_handler_log(ERROR_SEVERITY_ERROR, "anchor", "Failed to get UWB device");
-        anchor_ctx.fault_code = ANCHOR_FAULT_UWB_NOT_READY;
-        anchor_ctx.processing_poll = false;
-        return;
-    }
-
-    anchor_ctx.poll_rx.timestamp_dtu = uwb_get_last_rx_timestamp();
+    // Use the rx_timestamp passed with this message (no race condition)
+    anchor_ctx.poll_rx.timestamp_dtu = rx_timestamp;
 
     anchor_ctx.polls_received++;
 
@@ -341,17 +338,16 @@ STATIC bool anchor_send_response(void)
         return false;
     }
 
-    // Capture actual TX timestamp from hardware after delayed transmission
-    anchor_ctx.resp_tx = uwb_get_last_tx_timestamp();
-    if (anchor_ctx.resp_tx == 0)
-    {
-        anchor_ctx.resp_tx = absolute_tx_time_dtu; // Fallback to scheduled time
-    }
+    // Mark that we're waiting for TX done callback to capture timestamp
+    anchor_ctx.waiting_for_response_tx = true;
+    // Store the scheduled time as fallback
+    anchor_ctx.resp_tx = absolute_tx_time_dtu;
 
     return true;
 }
 
-STATIC void anchor_handle_final(const uint8_t* data, uint16_t length, uint16_t src_addr)
+STATIC void anchor_handle_final(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                                uint64_t rx_timestamp)
 {
     // Validate message
     if (length < sizeof(protocol_twr_final_msg_t))
@@ -364,14 +360,8 @@ STATIC void anchor_handle_final(const uint8_t* data, uint16_t length, uint16_t s
 
     const protocol_twr_final_msg_t* final = (const protocol_twr_final_msg_t*)data;
 
-    // Record RX timestamp for the FINAL message (get from UWB radio)
-    uint64_t final_rx_ts_dtu = uwb_get_last_rx_timestamp();
-    if (final_rx_ts_dtu == 0)
-    {
-        error_handler_log(ERROR_SEVERITY_ERROR, "anchor", "Failed to get RX timestamp");
-        anchor_ctx.fault_code = ANCHOR_FAULT_SEND_FAILED;
-        return;
-    }
+    // Use the rx_timestamp passed with this message (no race condition)
+    uint64_t final_rx_ts_dtu = rx_timestamp;
 
     // Send FINAL_ACK with anchor's measured RESPONSE TX timestamp and FINAL RX timestamp
     protocol_twr_final_ack_msg_t ack;
@@ -391,5 +381,15 @@ STATIC void anchor_handle_final(const uint8_t* data, uint16_t length, uint16_t s
         error_handler_log(ERROR_SEVERITY_ERROR, "anchor", "Failed to send ACK to 0x%04X", src_addr);
         anchor_ctx.fault_code = ANCHOR_FAULT_SEND_FAILED;
         return;
+    }
+}
+
+void anchor_tx_done_callback(uint64_t tx_timestamp)
+{
+    // Capture TX timestamp for RESPONSE message
+    if (anchor_ctx.waiting_for_response_tx)
+    {
+        anchor_ctx.resp_tx = tx_timestamp;
+        anchor_ctx.waiting_for_response_tx = false;
     }
 }

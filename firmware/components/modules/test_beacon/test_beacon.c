@@ -28,7 +28,8 @@ typedef struct
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
-STATIC void beacon_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr);
+STATIC void beacon_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                                    uint64_t rx_timestamp);
 
 /*---------------------------------------------------------------------------
  * Module Functions
@@ -69,8 +70,10 @@ STATIC void test_beacon_init(void)
     uwb_start();
 }
 
-STATIC void beacon_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr)
+STATIC void beacon_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                                    uint64_t rx_timestamp)
 {
+    (void)rx_timestamp; // Not used for beacon
     beacon.rx_count++;
     beacon.last_src_addr = src_addr;
 

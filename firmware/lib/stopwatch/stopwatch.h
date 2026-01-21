@@ -3,11 +3,18 @@
 /*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
+#include <stdbool.h>
 #include <stdint.h>
+
+/*---------------------------------------------------------------------------
+ * Defines
+ *---------------------------------------------------------------------------*/
+#define STOPWATCH_MAX_INSTANCES 10U
 
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
-void stopwatch_start(void);
-void stopwatch_stop(void);
-uint32_t stopwatch_elapsed_us(void);
+void stopwatch_start(uint8_t id);
+void stopwatch_stop(uint8_t id);
+uint32_t stopwatch_elapsed_us(uint8_t id);
+bool stopwatch_is_running(uint8_t id);
