@@ -2,10 +2,12 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "error_handler.h"
+#include "FreeRTOS.h"
 #include "module.h"
 #include "platform_gpio.h"
 #include "platform_os.h"
-#include "stm32h7xx.h"
+#include "semphr.h"
+#include "task.h"
 #include "uart_manager.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -20,13 +22,11 @@
  * Module Function Prototypes
  *---------------------------------------------------------------------------*/
 STATIC void error_handler_init(void);
-STATIC void error_handler_process_10Hz(void);
 
 extern const module_S error_handler_module;
 const module_S error_handler_module = {
     .module_name = "error",
     .module_init = error_handler_init,
-    .module_process_10Hz = error_handler_process_10Hz,
 };
 
 /*---------------------------------------------------------------------------
@@ -35,16 +35,13 @@ const module_S error_handler_module = {
 STATIC error_record_t error_history[ERROR_HISTORY_SIZE];
 STATIC uint32_t error_history_head = 0U;
 STATIC uint32_t error_history_count = 0U;
-STATIC platform_os_mutex_t error_mutex = NULL;
+STATIC SemaphoreHandle_t error_mutex = NULL;
 
 STATIC uint32_t error_count_info = 0U;
 STATIC uint32_t error_count_warning = 0U;
 STATIC uint32_t error_count_error = 0U;
 STATIC uint32_t error_count_fatal = 0U;
 STATIC uint32_t dropped_error_count = 0U;
-
-STATIC bool fatal_error_occurred = false;
-STATIC uint32_t fatal_led_blink_counter = 0U;
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -59,7 +56,7 @@ STATIC void error_handler_increment_counter(error_severity_e severity);
 
 STATIC void error_handler_init(void)
 {
-    error_mutex = platform_os_mutex_create();
+    error_mutex = xSemaphoreCreateMutex();
     if (error_mutex == NULL)
     {
         for (;;)
@@ -75,22 +72,6 @@ STATIC void error_handler_init(void)
     error_count_error = 0U;
     error_count_fatal = 0U;
     dropped_error_count = 0U;
-
-    fatal_error_occurred = false;
-    fatal_led_blink_counter = 0U;
-}
-
-STATIC void error_handler_process_10Hz(void)
-{
-    if (fatal_error_occurred)
-    {
-        fatal_led_blink_counter++;
-        if (fatal_led_blink_counter >= 5U)
-        {
-            platform_gpio_toggle_led_green();
-            fatal_led_blink_counter = 0U;
-        }
-    }
 }
 
 /*---------------------------------------------------------------------------
@@ -105,7 +86,7 @@ void error_handler_log(error_severity_e severity, const char* module, const char
     }
 
     // Check if we're in an ISR context
-    bool from_isr = (SCB->ICSR & SCB_ICSR_VECTACTIVE_Msk) != 0U;
+    bool from_isr = platform_os_is_in_isr();
 
     // If in ISR, skip mutex and history to avoid FreeRTOS API violations
     if (from_isr)
@@ -131,7 +112,7 @@ void error_handler_log(error_severity_e severity, const char* module, const char
     }
 
     // Normal task context - use mutex protection
-    if (!platform_os_mutex_take(error_mutex, 100))
+    if (xSemaphoreTake(error_mutex, pdMS_TO_TICKS(100)) != pdTRUE)
     {
         if (dropped_error_count < UINT32_MAX)
         {
@@ -142,7 +123,7 @@ void error_handler_log(error_severity_e severity, const char* module, const char
 
     error_record_t record;
     record.severity = severity;
-    record.timestamp_ms = platform_os_gettick();
+    record.timestamp_ms = xTaskGetTickCount();
 
     strncpy(record.module, module, sizeof(record.module) - 1);
     record.module[sizeof(record.module) - 1] = '\0';
@@ -156,7 +137,7 @@ void error_handler_log(error_severity_e severity, const char* module, const char
 
     error_handler_add_to_history(&record);
     error_handler_increment_counter(severity);
-    platform_os_mutex_give(error_mutex);
+    xSemaphoreGive(error_mutex);
 
     const char* severity_str = error_handler_severity_to_string(severity);
     uart_manager_print("[%s] %s: %s\r\n", severity_str, record.module, record.message);
@@ -177,14 +158,13 @@ void error_handler_fatal(const char* module, const char* format, ...)
     uart_manager_print("==============================================\r\n");
     uart_manager_print("Module:  %s\r\n", module);
     uart_manager_print("Message: %s\r\n", message);
-    uart_manager_print("Time:    %lu ms\r\n", (unsigned long)platform_os_gettick());
+    uart_manager_print("Time:    %lu ms\r\n", (unsigned long)xTaskGetTickCount());
     uart_manager_print("==============================================\r\n");
     uart_manager_print("System halted. Power cycle required.\r\n");
     uart_manager_print("\r\n");
 
-    platform_os_delay_ms(100);
+    vTaskDelay(pdMS_TO_TICKS(100));
 
-    fatal_error_occurred = true;
     platform_os_critical_enter();
 
     uint32_t counter = 0U;
@@ -206,7 +186,7 @@ uint32_t error_handler_get_count(error_severity_e severity)
 {
     uint32_t count = 0U;
 
-    if (platform_os_mutex_take(error_mutex, 100))
+    if (xSemaphoreTake(error_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
     {
         switch (severity)
         {
@@ -225,7 +205,7 @@ uint32_t error_handler_get_count(error_severity_e severity)
             default:
                 break;
         }
-        platform_os_mutex_give(error_mutex);
+        xSemaphoreGive(error_mutex);
     }
 
     return count;
@@ -240,7 +220,7 @@ bool error_handler_get_last_error(error_record_t* record)
 
     bool success = false;
 
-    if (platform_os_mutex_take(error_mutex, 100))
+    if (xSemaphoreTake(error_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
     {
         if (error_history_count > 0U)
         {
@@ -249,7 +229,7 @@ bool error_handler_get_last_error(error_record_t* record)
             memcpy(record, &error_history[last_index], sizeof(error_record_t));
             success = true;
         }
-        platform_os_mutex_give(error_mutex);
+        xSemaphoreGive(error_mutex);
     }
 
     return success;
@@ -257,7 +237,7 @@ bool error_handler_get_last_error(error_record_t* record)
 
 void error_handler_clear_history(void)
 {
-    if (platform_os_mutex_take(error_mutex, 100))
+    if (xSemaphoreTake(error_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
     {
         memset(error_history, 0, sizeof(error_history));
         error_history_head = 0U;
@@ -269,7 +249,7 @@ void error_handler_clear_history(void)
         error_count_fatal = 0U;
         dropped_error_count = 0U;
 
-        platform_os_mutex_give(error_mutex);
+        xSemaphoreGive(error_mutex);
     }
 }
 

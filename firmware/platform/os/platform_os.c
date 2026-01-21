@@ -3,8 +3,6 @@
  *---------------------------------------------------------------------------*/
 #include "platform_os.h"
 #include "FreeRTOS.h"
-#include "cmsis_os.h"
-#include "semphr.h"
 #include "stm32h7xx_hal.h"
 #include "task.h"
 
@@ -24,9 +22,10 @@ void platform_os_init(void)
     DWT->CYCCNT = 0;
 }
 
-uint32_t platform_os_gettick(void)
+bool platform_os_is_in_isr(void)
 {
-    return HAL_GetTick();
+    // Use FreeRTOS native API - more portable and efficient than SCB register access
+    return (xPortIsInsideInterrupt() == pdTRUE);
 }
 
 void platform_os_delay_us_blocking(uint32_t delay_us)
@@ -37,7 +36,7 @@ void platform_os_delay_us_blocking(uint32_t delay_us)
     }
 
     // Check if we're in an ISR context
-    bool from_isr = (SCB->ICSR & SCB_ICSR_VECTACTIVE_Msk) != 0U;
+    bool from_isr = platform_os_is_in_isr();
 
     // If in ISR or delay is very short, just busy-wait without scheduler suspension
     if (from_isr || delay_us <= 100)
@@ -54,7 +53,7 @@ void platform_os_delay_us_blocking(uint32_t delay_us)
     // For longer delays in task context, suspend scheduler to prevent context switches
     if (delay_us > PLATFORM_OS_MAX_US_DELAY)
     {
-        platform_os_delay_ms((delay_us + 999) / 1000);
+        vTaskDelay(pdMS_TO_TICKS((delay_us + 999) / 1000));
         return;
     }
 
@@ -70,11 +69,6 @@ void platform_os_delay_us_blocking(uint32_t delay_us)
     xTaskResumeAll();
 }
 
-void platform_os_delay_ms(uint32_t delay_ms)
-{
-    osDelay(delay_ms);
-}
-
 platform_os_critical_state_t platform_os_critical_enter(void)
 {
     platform_os_critical_state_t state = __get_PRIMASK();
@@ -85,28 +79,4 @@ platform_os_critical_state_t platform_os_critical_enter(void)
 void platform_os_critical_exit(platform_os_critical_state_t state)
 {
     __set_PRIMASK(state);
-}
-
-platform_os_mutex_t platform_os_mutex_create(void)
-{
-    return (platform_os_mutex_t)xSemaphoreCreateMutex();
-}
-
-bool platform_os_mutex_take(platform_os_mutex_t mutex, uint32_t timeout_ms)
-{
-    if (mutex == NULL)
-    {
-        return false;
-    }
-
-    TickType_t ticks = (timeout_ms == UINT32_MAX) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
-    return xSemaphoreTake((SemaphoreHandle_t)mutex, ticks) == pdTRUE;
-}
-
-void platform_os_mutex_give(platform_os_mutex_t mutex)
-{
-    if (mutex != NULL)
-    {
-        xSemaphoreGive((SemaphoreHandle_t)mutex);
-    }
 }

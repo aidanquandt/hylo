@@ -2,12 +2,16 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "uwb.h"
+#include "FreeRTOS.h"
 #include "error_handler.h"
 #include "mac_802154.h"
 #include "module.h"
 #include "platform_gpio.h"
 #include "platform_timer.h"
+#include "queue.h"
+#include "semphr.h"
 #include "state_machine.h"
+#include "task.h"
 #include "uart_manager.h"
 #include "uwb_port.h"
 #include "uwb_protocol_messages.h"
@@ -21,6 +25,9 @@
 #define MAX_MESSAGE_LENGTH (MAC_MAX_FRAME_SIZE)
 #define DEFAULT_NODE_ADDRESS (0x0001)
 #define MAX_PROTOCOL_HANDLERS (8U)
+#define UWB_RX_QUEUE_LENGTH (10U)
+#define UWB_RX_TASK_PRIORITY (6U)     // Highest task priority - immediate RX processing
+#define UWB_RX_TASK_STACK_SIZE (768U) // Increased for protocol handlers
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -79,6 +86,20 @@ typedef struct
     uint32_t invalid;
 } protocol_stats_t;
 
+typedef struct
+{
+    uint8_t data[MAC_MAX_FRAME_SIZE];
+    uint16_t length;
+    uint64_t rx_timestamp;
+} uwb_rx_event_t;
+
+typedef struct
+{
+    uint32_t tx_mutex_timeouts;
+    uint32_t tx_mutex_max_wait_ticks;
+    uint32_t rx_queue_overflows;
+} uwb_debug_stats_t;
+
 /*---------------------------------------------------------------------------
  * Protocol Routing Variables
  *---------------------------------------------------------------------------*/
@@ -88,6 +109,13 @@ STATIC protocol_stats_t protocol_stats = {0};
 STATIC uwb_tx_done_handler_t tx_done_handler = NULL;
 
 /*---------------------------------------------------------------------------
+ * FreeRTOS Resources
+ *---------------------------------------------------------------------------*/
+STATIC QueueHandle_t uwb_rx_queue = NULL;
+STATIC SemaphoreHandle_t uwb_tx_mutex = NULL;
+STATIC uwb_debug_stats_t debug_stats = {0};
+
+/*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
 STATIC bool verify_device_id(void);
@@ -95,6 +123,8 @@ STATIC void uwb_dispatch_protocol_message(const uint8_t* data, uint16_t length, 
                                           uint64_t rx_timestamp);
 STATIC void uwb_process_received_message(const uint8_t* data, uint16_t length,
                                          uint64_t rx_timestamp);
+STATIC void uwb_rx_task(void* argument);
+STATIC void uwb_isr_rx_callback(const uint8_t* data, uint16_t length, uint64_t rx_timestamp);
 STATIC void uwb_tx_done_callback(uint64_t tx_timestamp);
 STATIC void uwb_state_machine_sample_inputs(void);
 STATIC uint16_t uwb_transition_logic(uint16_t currentState, uint32_t stateTimer);
@@ -105,13 +135,17 @@ STATIC void uwb_state_faulted_on_entry(uint16_t prevState);
 /*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
-STATIC void uwb_process_1kHz(void);
+STATIC void uwb_init(void);
+STATIC void uwb_create_task(void);
+STATIC void uwb_process_10Hz(void);
 
 extern const module_S uwb_module;
 
 const module_S uwb_module = {
     .module_name = "uwb",
-    .module_process_1kHz = uwb_process_1kHz, // Poll at 1kHz for faster RX response
+    .module_init = uwb_init,
+    .module_create_task = uwb_create_task,
+    .module_process_10Hz = uwb_process_10Hz, // State machine for fault detection
 };
 
 /*---------------------------------------------------------------------------
@@ -166,13 +200,47 @@ STATIC bool verify_device_id(void)
     return (measurements.device_id == UWB_EXPECTED_DEV_ID);
 }
 
+STATIC void uwb_init(void)
+{
+    // Create FreeRTOS resources BEFORE scheduler starts
+    uwb_rx_queue = xQueueCreate(UWB_RX_QUEUE_LENGTH, sizeof(uwb_rx_event_t));
+    if (uwb_rx_queue == NULL)
+    {
+        error_handler_fatal("uwb", "Failed to create RX queue");
+    }
+
+    // Use binary semaphore (not mutex) since it's given from ISR context
+    uwb_tx_mutex = xSemaphoreCreateBinary();
+    if (uwb_tx_mutex == NULL)
+    {
+        error_handler_fatal("uwb", "Failed to create TX semaphore");
+    }
+    // Initialize as available (mutex starts taken, binary semaphore starts empty)
+    xSemaphoreGive(uwb_tx_mutex);
+}
+
+STATIC void uwb_create_task(void)
+{
+    // Create high-priority RX task for deferred interrupt processing
+    // Called after scheduler starts
+    BaseType_t task_result = xTaskCreate(uwb_rx_task, "uwb_rx", UWB_RX_TASK_STACK_SIZE, NULL,
+                                         UWB_RX_TASK_PRIORITY, NULL);
+    if (task_result != pdPASS)
+    {
+        error_handler_fatal("uwb", "Failed to create RX task");
+    }
+
+    // Auto-start UWB radio (critical system component)
+    uwb_start();
+}
+
 STATIC void uwb_state_machine_sample_inputs(void)
 {
     sm_inputs.fault_present = (fault_code != FAULT_NONE);
     sm_inputs.init_device_completed = (uwb_dev != NULL);
 }
 
-STATIC void uwb_process_1kHz(void)
+STATIC void uwb_process_10Hz(void)
 {
     uwb_state_machine_sample_inputs();
     state_machine_periodic(&uwb_state_machine);
@@ -270,11 +338,69 @@ STATIC void uwb_state_initialization_on_entry(uint16_t prevState)
     }
 
     uwb_port_register_isr_callbacks(uwb_dev);
-    uwb_port_set_rx_callback(uwb_process_received_message);
+    uwb_port_set_rx_callback(uwb_isr_rx_callback);
     uwb_port_set_tx_done_callback(uwb_tx_done_callback);
     uwb_port_enable_rx_interrupt();
 
     rx_stats = (uwb_rx_stats_t){0};
+}
+
+STATIC void uwb_isr_rx_callback(const uint8_t* data, uint16_t length, uint64_t rx_timestamp)
+{
+    // Runs at NVIC priority 5 - highest priority that can call FreeRTOS FromISR functions
+    // Hardware read and FreeRTOS communication happen atomically in this callback
+
+    if (length > MAC_MAX_FRAME_SIZE)
+    {
+        return; // Silently drop oversized frames in ISR
+    }
+
+    uwb_rx_event_t event;
+    event.length = length;
+    event.rx_timestamp = rx_timestamp;
+    memcpy(event.data, data, length);
+
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    // Non-blocking send - drops packet if queue full (prevents ISR blocking)
+    if (xQueueSendFromISR(uwb_rx_queue, &event, &xHigherPriorityTaskWoken) != pdPASS)
+    {
+        // Queue full - packet dropped
+        debug_stats.rx_queue_overflows++;
+    }
+
+    // Trigger immediate context switch if RX task has higher priority
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+STATIC void uwb_rx_task(void* argument)
+{
+    (void)argument;
+
+    uwb_rx_event_t event;
+    uint32_t loop_count = 0;
+
+    for (;;)
+    {
+        // Block indefinitely waiting for RX events from ISR
+        if (xQueueReceive(uwb_rx_queue, &event, portMAX_DELAY) == pdPASS)
+        {
+            // Process in task context - safe to call protocol handlers
+            uwb_process_received_message(event.data, event.length, event.rx_timestamp);
+        }
+
+        // Periodic stack watermark check (every 1000 packets)
+        if (++loop_count >= 1000)
+        {
+            loop_count = 0;
+            UBaseType_t stack_remaining = uxTaskGetStackHighWaterMark(NULL);
+            if (stack_remaining < 128)
+            {
+                error_handler_log(ERROR_SEVERITY_WARNING, "uwb_rx",
+                                  "Low stack: %lu words remaining", (unsigned long)stack_remaining);
+            }
+        }
+    }
 }
 
 STATIC void uwb_process_received_message(const uint8_t* data, uint16_t length,
@@ -306,6 +432,12 @@ STATIC void uwb_process_received_message(const uint8_t* data, uint16_t length,
 
 STATIC void uwb_tx_done_callback(uint64_t tx_timestamp)
 {
+    // CRITICAL: This runs in ISR context
+    // Release TX mutex now that transmission is complete
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xSemaphoreGiveFromISR(uwb_tx_mutex, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+
     // Forward TX done notification to registered handler
     if (tx_done_handler != NULL)
     {
@@ -510,6 +642,20 @@ bool uwb_send_message(const uint8_t* data, uint16_t length, uint16_t dest_addr)
         return false;
     }
 
+    // Acquire TX mutex to prevent concurrent sends (10ms timeout)
+    TickType_t start_tick = xTaskGetTickCount();
+    if (xSemaphoreTake(uwb_tx_mutex, pdMS_TO_TICKS(10)) != pdTRUE)
+    {
+        debug_stats.tx_mutex_timeouts++;
+        error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "TX mutex timeout");
+        return false;
+    }
+    TickType_t wait_ticks = xTaskGetTickCount() - start_tick;
+    if (wait_ticks > debug_stats.tx_mutex_max_wait_ticks)
+    {
+        debug_stats.tx_mutex_max_wait_ticks = wait_ticks;
+    }
+
     uint8_t tx_buffer[MAC_MAX_FRAME_SIZE];
     mac_frame_short_t* frame = (mac_frame_short_t*)tx_buffer;
 
@@ -526,10 +672,13 @@ bool uwb_send_message(const uint8_t* data, uint16_t length, uint16_t dest_addr)
 
     if (result != UWB_PORT_SUCCESS)
     {
+        // TX failed - release mutex immediately since TX won't complete
+        xSemaphoreGive(uwb_tx_mutex);
         error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Send failed: port error %d", result);
         return false;
     }
 
+    // Success - mutex held until TX done callback fires
     return true;
 }
 
@@ -541,6 +690,20 @@ bool uwb_send_message_delayed(const uint8_t* data, uint16_t length, uint16_t des
         length > MAC_MAX_PAYLOAD_SIZE)
     {
         return false;
+    }
+
+    // Acquire TX mutex to prevent concurrent sends (10ms timeout)
+    TickType_t start_tick = xTaskGetTickCount();
+    if (xSemaphoreTake(uwb_tx_mutex, pdMS_TO_TICKS(10)) != pdTRUE)
+    {
+        debug_stats.tx_mutex_timeouts++;
+        error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Delayed TX mutex timeout");
+        return false;
+    }
+    TickType_t wait_ticks = xTaskGetTickCount() - start_tick;
+    if (wait_ticks > debug_stats.tx_mutex_max_wait_ticks)
+    {
+        debug_stats.tx_mutex_max_wait_ticks = wait_ticks;
     }
 
     uint8_t tx_buffer[MAC_MAX_FRAME_SIZE];
@@ -563,11 +726,14 @@ bool uwb_send_message_delayed(const uint8_t* data, uint16_t length, uint16_t des
 
     if (result != UWB_PORT_SUCCESS)
     {
+        // TX failed - release mutex immediately since TX won't complete
+        xSemaphoreGive(uwb_tx_mutex);
         error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Delayed send failed: port error %d",
                           result);
         return false;
     }
 
+    // Success - mutex held until TX done callback fires
     return true;
 }
 

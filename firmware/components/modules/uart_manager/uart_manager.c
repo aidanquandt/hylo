@@ -2,13 +2,15 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "uart_manager.h"
-#include "cmsis_os2.h"
+#include "FreeRTOS.h"
 #include "error_handler.h"
 #include "imu.h"
 #include "module.h"
 #include "platform_os.h"
 #include "platform_system.h"
 #include "platform_uart.h"
+#include "queue.h"
+#include "task.h"
 #include "uart_cmd_router.h"
 #include "uwb.h"
 #include <stdio.h>
@@ -20,7 +22,7 @@
 #define UART_TX_QUEUE_SIZE 32U
 #define UART_TX_MSG_MAX_LENGTH 256U
 #define UART_TASK_STACK_SIZE 512U
-#define UART_TASK_PRIORITY osPriorityNormal
+#define UART_TASK_PRIORITY (3U) // Medium priority (below UWB RX=6, above ranging=4)
 #define UART_PRINT_BUFFER_SIZE 256U
 #define UART_RX_BUFFER_SIZE 256U
 #define UART_CMD_MAX_LENGTH 128U
@@ -60,8 +62,8 @@ const module_S uart_manager_module = {
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-STATIC osMessageQueueId_t uart_tx_queue = NULL;
-STATIC osThreadId_t uart_tx_task_handle = NULL;
+STATIC QueueHandle_t uart_tx_queue = NULL;
+STATIC TaskHandle_t uart_tx_task_handle = NULL;
 STATIC volatile uint32_t dropped_messages = 0U;
 STATIC volatile uint32_t tx_errors = 0U;
 STATIC uint8_t rx_dma_buffer[UART_RX_BUFFER_SIZE] __attribute__((section(".dma_buffer")));
@@ -91,7 +93,7 @@ STATIC void uart_manager_default_cmd_handler(const char* cmd, uint16_t length);
  *---------------------------------------------------------------------------*/
 STATIC bool is_in_isr_context(void)
 {
-    return (SCB->ICSR & SCB_ICSR_VECTACTIVE_Msk) != 0U;
+    return platform_os_is_in_isr();
 }
 
 STATIC void uart_tx_task(void* argument)
@@ -101,16 +103,17 @@ STATIC void uart_tx_task(void* argument)
 
     for (;;)
     {
-        osStatus_t status = osMessageQueueGet(uart_tx_queue, &msg, NULL, osWaitForever);
-
-        if (status == osOK && msg.length > 0U && msg.length <= UART_TX_MSG_MAX_LENGTH)
+        if (xQueueReceive(uart_tx_queue, &msg, portMAX_DELAY) == pdPASS)
         {
-            platform_uart_status_E tx_status =
-                platform_uart_transmit_blocking(msg.data, msg.length);
-
-            if (tx_status != PLATFORM_UART_SUCCESS)
+            if (msg.length > 0U && msg.length <= UART_TX_MSG_MAX_LENGTH)
             {
-                tx_errors++;
+                platform_uart_status_E tx_status =
+                    platform_uart_transmit_blocking(msg.data, msg.length);
+
+                if (tx_status != PLATFORM_UART_SUCCESS)
+                {
+                    tx_errors++;
+                }
             }
         }
     }
@@ -123,12 +126,10 @@ STATIC void uart_tx_task(void* argument)
 STATIC void uart_manager_init(void)
 {
     // Create message queue
-    uart_tx_queue = osMessageQueueNew(UART_TX_QUEUE_SIZE, sizeof(uart_tx_message_t), NULL);
+    uart_tx_queue = xQueueCreate(UART_TX_QUEUE_SIZE, sizeof(uart_tx_message_t));
     if (uart_tx_queue == NULL)
     {
-        // Fatal error - halt for debugging
-        for (;;)
-            ;
+        error_handler_fatal("uart_manager", "Failed to create TX queue");
     }
 
     dropped_messages = 0U;
@@ -176,7 +177,7 @@ STATIC void uart_manager_default_cmd_handler(const char* cmd, uint16_t length)
         }
 
         // Small delay to allow reset messages to be transmitted
-        platform_os_delay_ms(10);
+        vTaskDelay(pdMS_TO_TICKS(10));
 
         uart_manager_print("Performing MCU reset... \r\n");
         platform_system_reset();
@@ -195,16 +196,10 @@ STATIC void uart_manager_default_cmd_handler(const char* cmd, uint16_t length)
 STATIC void uart_manager_create_task(void)
 {
     // Create dedicated transmit task
-    const osThreadAttr_t task_attr = {
-        .name = "UART_TX",
-        .stack_size = UART_TASK_STACK_SIZE * sizeof(uint32_t),
-        .priority = UART_TASK_PRIORITY,
-    };
-
-    uart_tx_task_handle = osThreadNew(uart_tx_task, NULL, &task_attr);
-    if (uart_tx_task_handle == NULL)
+    BaseType_t task_result = xTaskCreate(uart_tx_task, "UART_TX", UART_TASK_STACK_SIZE, NULL,
+                                         UART_TASK_PRIORITY, &uart_tx_task_handle);
+    if (task_result != pdPASS)
     {
-        // Note: UART won't work for this error (task not running), but LED will blink
         error_handler_fatal("uart_manager", "Failed to create UART TX task");
     }
 }
@@ -231,17 +226,19 @@ STATIC bool uart_manager_queue_message(const uint8_t* data, uint16_t length, boo
     memcpy(msg.data, data, length);
 
     // Queue message
-    osStatus_t status;
+    BaseType_t status;
     if (from_isr)
     {
-        status = osMessageQueuePut(uart_tx_queue, &msg, 0U, 0U);
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+        status = xQueueSendFromISR(uart_tx_queue, &msg, &xHigherPriorityTaskWoken);
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
     else
     {
-        status = osMessageQueuePut(uart_tx_queue, &msg, 0U, timeout_ms);
+        status = xQueueSend(uart_tx_queue, &msg, pdMS_TO_TICKS(timeout_ms));
     }
 
-    if (status != osOK)
+    if (status != pdPASS)
     {
         // Queue full - increment drop counter atomically
         // Note: On Cortex-M, 32-bit aligned reads/writes are atomic
@@ -504,7 +501,7 @@ uint32_t uart_manager_get_queue_count(void)
         return 0U;
     }
 
-    return osMessageQueueGetCount(uart_tx_queue);
+    return (uint32_t)uxQueueMessagesWaiting(uart_tx_queue);
 }
 
 uint32_t uart_manager_get_dropped_count(void)
