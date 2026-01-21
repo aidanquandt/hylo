@@ -23,9 +23,10 @@
 #define TAG_RESPONSE_TIMEOUT_TICKS (TWR_RESPONSE_TIMEOUT_MS)
 #define TAG_RETRY_MAX 0U
 
-// Delay from response RX to final TX (in microseconds) for DS-TWR
-// Increased to allow for processing overhead
-#define RESP_RX_TO_FINAL_TX_DLY_UUS 5000
+// Delay from RESPONSE RX to FINAL TX (microseconds)
+// Conservative: 1000µs allows plenty of processing time with event-driven architecture
+// Aggressive: Can go as low as ~600µs (matching DW3000 examples)
+#define RESP_RX_TO_FINAL_TX_DLY_UUS 800
 
 /*---------------------------------------------------------------------------
  * Private Types
@@ -49,10 +50,6 @@ typedef struct
     uint16_t sequence;        // Current sequence number
     uint8_t retry_count;      // Retry attempts
 
-    // TX state tracking
-    bool waiting_for_poll_tx;  // Waiting for POLL TX timestamp
-    bool waiting_for_final_tx; // Waiting for FINAL TX timestamp
-
     // Timestamps for DS-TWR (all in device time units)
     twr_timestamp_t poll_tx;     // When we sent poll
     twr_timestamp_t resp_rx;     // When we received response
@@ -71,22 +68,10 @@ typedef struct
     tag_fault_e fault_code;
 } tag_context_t;
 
-typedef struct
-{
-    bool fault_present;
-    bool response_received;  // Response RX callback has been called
-    bool final_sent;         // Final message has been sent successfully
-    bool final_ack_received; // Final ACK received from anchor
-} tag_state_inputs_t;
-
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
 
-STATIC void tag_state_sample_inputs(void);
-STATIC uint16_t tag_transition_logic(uint16_t currentState, uint32_t stateTimer);
-STATIC void tag_state_wait_response_process(void);
-STATIC void tag_state_wait_final_ack_process(void);
 STATIC void tag_state_process_result_on_entry(uint16_t prevState);
 STATIC void tag_state_faulted_on_entry(uint16_t prevState);
 STATIC bool tag_send_poll(void);
@@ -101,16 +86,13 @@ STATIC void tag_calculate_distance(void);
  *---------------------------------------------------------------------------*/
 
 STATIC tag_context_t tag_ctx = {0};
-STATIC tag_state_inputs_t tag_inputs = {0};
 
 STATIC const state_s tag_states[] = {
     [TAG_STATE_IDLE] = {.process = NULL, .onEntry = NULL, .onExit = NULL},
-    [TAG_STATE_WAIT_RESPONSE] = {.process = tag_state_wait_response_process,
-                                 .onEntry = NULL,
-                                 .onExit = NULL},
-    [TAG_STATE_WAIT_FINAL_ACK] = {.process = tag_state_wait_final_ack_process,
-                                  .onEntry = NULL,
-                                  .onExit = NULL},
+    [TAG_STATE_SENDING_POLL] = {.process = NULL, .onEntry = NULL, .onExit = NULL},
+    [TAG_STATE_WAIT_RESPONSE] = {.process = NULL, .onEntry = NULL, .onExit = NULL},
+    [TAG_STATE_SENDING_FINAL] = {.process = NULL, .onEntry = NULL, .onExit = NULL},
+    [TAG_STATE_WAIT_FINAL_ACK] = {.process = NULL, .onEntry = NULL, .onExit = NULL},
     [TAG_STATE_PROCESS_RESULT] = {.process = NULL,
                                   .onEntry = tag_state_process_result_on_entry,
                                   .onExit = NULL},
@@ -120,7 +102,7 @@ STATIC state_machine_s tag_sm = {.prev_state = TAG_STATE_IDLE,
                                  .curr_state = TAG_STATE_IDLE,
                                  .next_state = TAG_STATE_IDLE,
                                  .timer = 0,
-                                 .transitionLogic = tag_transition_logic,
+                                 .transitionLogic = NULL, // Event-driven - no transition logic
                                  .states = tag_states};
 
 /*---------------------------------------------------------------------------
@@ -130,7 +112,6 @@ STATIC state_machine_s tag_sm = {.prev_state = TAG_STATE_IDLE,
 void tag_init(void)
 {
     memset(&tag_ctx, 0, sizeof(tag_ctx));
-    memset(&tag_inputs, 0, sizeof(tag_inputs));
 
     tag_sm.prev_state = TAG_STATE_IDLE;
     tag_sm.curr_state = TAG_STATE_IDLE;
@@ -167,8 +148,26 @@ void tag_process_1kHz(void)
         return;
     }
 
-    tag_state_sample_inputs();
-    state_machine_periodic(&tag_sm);
+    // Only check for timeouts - normal transitions happen in callbacks
+    if (tag_sm.curr_state == TAG_STATE_SENDING_POLL ||
+        tag_sm.curr_state == TAG_STATE_WAIT_RESPONSE ||
+        tag_sm.curr_state == TAG_STATE_SENDING_FINAL ||
+        tag_sm.curr_state == TAG_STATE_WAIT_FINAL_ACK)
+    {
+        // Increment timer and check timeout
+        if (tag_sm.timer < UINT32_MAX)
+        {
+            tag_sm.timer++;
+        }
+
+        if (tag_sm.timer >= TAG_RESPONSE_TIMEOUT_TICKS)
+        {
+            error_handler_log(ERROR_SEVERITY_ERROR, "tag", "Timeout in state %u",
+                              tag_sm.curr_state);
+            tag_ctx.fault_code = TAG_FAULT_TIMEOUT;
+            state_machine_force_transition(&tag_sm, TAG_STATE_FAULTED);
+        }
+    }
 }
 
 bool tag_start_ranging(uint16_t anchor_addr)
@@ -207,11 +206,6 @@ bool tag_start_ranging(uint16_t anchor_addr)
     tag_ctx.resp_tx_ts_remote = 0;
     tag_ctx.final_rx_ts_remote = 0;
 
-    // Clear state input flags
-    tag_inputs.response_received = false;
-    tag_inputs.final_ack_received = false;
-    tag_inputs.fault_present = false;
-
     // Reset state machine timer
     tag_sm.timer = 0;
 
@@ -224,8 +218,8 @@ bool tag_start_ranging(uint16_t anchor_addr)
         return false;
     }
 
-    // Transition directly to wait for response state
-    tag_sm.next_state = TAG_STATE_WAIT_RESPONSE;
+    // Transition to SENDING_POLL - will move to WAIT_RESPONSE when TX done
+    state_machine_force_transition(&tag_sm, TAG_STATE_SENDING_POLL);
 
     return true;
 }
@@ -269,101 +263,12 @@ void tag_get_status(tag_status_t* status)
 void tag_cancel_ranging(void)
 {
     tag_ctx.ranging_in_progress = false;
-    tag_sm.next_state = TAG_STATE_IDLE;
+    state_machine_force_transition(&tag_sm, TAG_STATE_IDLE);
 }
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations - State Machine
  *---------------------------------------------------------------------------*/
-
-STATIC void tag_state_sample_inputs(void)
-{
-    tag_inputs.fault_present = (tag_ctx.fault_code != TAG_FAULT_NONE);
-    // NOTE: response_received and final_sent are set by RX callback and need to persist
-    // until state transition logic checks them
-}
-
-STATIC uint16_t tag_transition_logic(uint16_t currentState, uint32_t stateTimer)
-{
-    uint16_t nextState = currentState;
-
-    switch (currentState)
-    {
-        case TAG_STATE_IDLE:
-            // Transitions handled externally via tag_start_ranging()
-            break;
-
-        case TAG_STATE_WAIT_RESPONSE:
-            if (tag_inputs.fault_present)
-            {
-                error_handler_log(ERROR_SEVERITY_ERROR, "tag", "  -> FAULTED (fault_present)\r\n");
-                nextState = TAG_STATE_FAULTED;
-            }
-            else if (tag_inputs.response_received)
-            {
-                // Send final message and transition to wait for ACK
-                if (!tag_send_final())
-                {
-                    error_handler_log(ERROR_SEVERITY_ERROR, "tag", "Failed to send final");
-                    tag_ctx.fault_code = TAG_FAULT_SEND_FAILED;
-                    nextState = TAG_STATE_FAULTED;
-                }
-                else
-                {
-                    tag_inputs.response_received = false;
-                    nextState = TAG_STATE_WAIT_FINAL_ACK;
-                }
-            }
-            else if (stateTimer >= TAG_RESPONSE_TIMEOUT_TICKS)
-            {
-                error_handler_log(ERROR_SEVERITY_ERROR, "tag", "  -> FAULTED (timeout)\r\n");
-                tag_ctx.fault_code = TAG_FAULT_TIMEOUT;
-                nextState = TAG_STATE_FAULTED;
-            }
-            break;
-
-        case TAG_STATE_WAIT_FINAL_ACK:
-            // Wait for FINAL_ACK or timeout
-            if (tag_inputs.final_ack_received)
-            {
-                nextState = TAG_STATE_PROCESS_RESULT;
-            }
-            else if (stateTimer >= TAG_RESPONSE_TIMEOUT_TICKS)
-            {
-                error_handler_log(ERROR_SEVERITY_ERROR, "tag", "  -> FAULTED (ACK timeout)\r\n");
-                tag_ctx.fault_code = TAG_FAULT_TIMEOUT;
-                nextState = TAG_STATE_FAULTED;
-            }
-            break;
-
-        case TAG_STATE_PROCESS_RESULT:
-            // Always return to idle after processing
-            nextState = TAG_STATE_IDLE;
-            break;
-
-        case TAG_STATE_FAULTED:
-            // Stay in faulted or retry
-            nextState = TAG_STATE_IDLE;
-            break;
-
-        default:
-            nextState = TAG_STATE_IDLE;
-            break;
-    }
-
-    return nextState;
-}
-
-STATIC void tag_state_wait_response_process(void)
-{
-    // Waiting is passive - response handled in RX callback
-}
-
-STATIC void tag_state_wait_final_ack_process(void)
-{
-    // Waiting for FINAL_ACK from anchor
-    // Timeout handled by state machine transition logic
-}
 
 STATIC void tag_state_process_result_on_entry(uint16_t prevState)
 {
@@ -372,9 +277,8 @@ STATIC void tag_state_process_result_on_entry(uint16_t prevState)
     tag_calculate_distance();
     tag_ctx.ranging_in_progress = false;
 
-    // Clear flags now that we've processed them
-    tag_inputs.response_received = false;
-    tag_inputs.final_ack_received = false;
+    // Automatically return to idle
+    state_machine_force_transition(&tag_sm, TAG_STATE_IDLE);
 }
 
 STATIC void tag_state_faulted_on_entry(uint16_t prevState)
@@ -388,9 +292,6 @@ STATIC void tag_state_faulted_on_entry(uint16_t prevState)
         tag_ctx.timeout_count++;
     }
 
-    // Clear flags since we're aborting this attempt
-    tag_inputs.response_received = false;
-
     // Retry logic
     if (tag_ctx.retry_count < TAG_RETRY_MAX)
     {
@@ -400,18 +301,17 @@ STATIC void tag_state_faulted_on_entry(uint16_t prevState)
         tag_ctx.retry_count++;
         tag_ctx.fault_code = TAG_FAULT_NONE;
 
-        // Reset timer for WAIT_RESPONSE state
-        tag_sm.timer = 0;
-
-        // Resend poll and transition to wait for response
+        // Resend poll and transition to SENDING_POLL
         if (tag_send_poll())
         {
-            tag_sm.next_state = TAG_STATE_WAIT_RESPONSE;
+            state_machine_force_transition(&tag_sm, TAG_STATE_SENDING_POLL);
         }
         else
         {
-            // Send failed, will stay in FAULTED and try again next cycle
+            // Send failed, return to idle
             tag_ctx.fault_code = TAG_FAULT_SEND_FAILED;
+            tag_ctx.ranging_in_progress = false;
+            state_machine_force_transition(&tag_sm, TAG_STATE_IDLE);
         }
     }
     else
@@ -420,6 +320,7 @@ STATIC void tag_state_faulted_on_entry(uint16_t prevState)
         tag_ctx.ranging_in_progress = false;
         error_handler_log(ERROR_SEVERITY_WARNING, "tag", "Ranging failed after %u retries",
                           TAG_RETRY_MAX);
+        state_machine_force_transition(&tag_sm, TAG_STATE_IDLE);
     }
 }
 
@@ -440,9 +341,6 @@ STATIC bool tag_send_poll(void)
         error_handler_log(ERROR_SEVERITY_ERROR, "tag", "POLL TX failed");
         return false;
     }
-
-    // Mark that we're waiting for TX done callback to capture timestamp
-    tag_ctx.waiting_for_poll_tx = true;
 
     return true;
 }
@@ -480,8 +378,6 @@ STATIC bool tag_send_final(void)
         return false;
     }
 
-    // Mark that we're waiting for TX done callback to capture timestamp
-    tag_ctx.waiting_for_final_tx = true;
     // Store the scheduled time as fallback
     tag_ctx.final_tx.timestamp_dtu = final_tx_time_dtu;
 
@@ -554,7 +450,19 @@ STATIC void tag_handle_response(const uint8_t* data, uint16_t length, uint16_t s
     tag_ctx.resp_rx.timestamp_dtu = rx_timestamp;
 
     tag_ctx.poll_rx_ts_remote = twr_timestamp_to_u64(resp->poll_rx_ts);
-    tag_inputs.response_received = true;
+
+    // Send final message and transition to SENDING_FINAL
+    if (!tag_send_final())
+    {
+        error_handler_log(ERROR_SEVERITY_ERROR, "tag", "Failed to send final");
+        tag_ctx.fault_code = TAG_FAULT_SEND_FAILED;
+        state_machine_force_transition(&tag_sm, TAG_STATE_FAULTED);
+    }
+    else
+    {
+        // Will move to WAIT_FINAL_ACK when TX done callback fires
+        state_machine_force_transition(&tag_sm, TAG_STATE_SENDING_FINAL);
+    }
 }
 
 STATIC void tag_handle_final_ack(const uint8_t* data, uint16_t length, uint16_t src_addr)
@@ -588,8 +496,8 @@ STATIC void tag_handle_final_ack(const uint8_t* data, uint16_t length, uint16_t 
     // Extract anchor's final RX timestamp from the ACK
     tag_ctx.final_rx_ts_remote = twr_timestamp_to_u64(ack->final_rx_ts);
 
-    // Signal that we received final ACK (triggers PROCESS_RESULT state)
-    tag_inputs.final_ack_received = true;
+    // Transition immediately to process result
+    state_machine_force_transition(&tag_sm, TAG_STATE_PROCESS_RESULT);
 }
 
 STATIC void tag_calculate_distance(void)
@@ -628,17 +536,23 @@ STATIC void tag_calculate_distance(void)
 
 void tag_tx_done_callback(uint64_t tx_timestamp)
 {
-    // Capture TX timestamp based on what we were waiting for
-    if (tag_ctx.waiting_for_poll_tx)
+    // Use state machine state to determine which TX completed
+    if (tag_sm.curr_state == TAG_STATE_SENDING_POLL)
     {
+        // Capture POLL TX timestamp
         tag_ctx.poll_tx.timestamp_dtu = tx_timestamp;
         tag_ctx.poll_tx.local_time_ms = platform_os_gettick();
-        tag_ctx.waiting_for_poll_tx = false;
+
+        // Transition to WAIT_RESPONSE now that TX is complete
+        state_machine_force_transition(&tag_sm, TAG_STATE_WAIT_RESPONSE);
     }
-    else if (tag_ctx.waiting_for_final_tx)
+    else if (tag_sm.curr_state == TAG_STATE_SENDING_FINAL)
     {
+        // Capture FINAL TX timestamp
         tag_ctx.final_tx.timestamp_dtu = tx_timestamp;
         tag_ctx.final_tx.local_time_ms = platform_os_gettick();
-        tag_ctx.waiting_for_final_tx = false;
+
+        // Transition to WAIT_FINAL_ACK now that TX is complete
+        state_machine_force_transition(&tag_sm, TAG_STATE_WAIT_FINAL_ACK);
     }
 }

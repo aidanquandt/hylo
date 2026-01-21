@@ -14,8 +14,10 @@
 typedef enum
 {
     TAG_STATE_IDLE,
-    TAG_STATE_WAIT_RESPONSE,
-    TAG_STATE_WAIT_FINAL_ACK,
+    TAG_STATE_SENDING_POLL,   // Waiting for POLL TX done
+    TAG_STATE_WAIT_RESPONSE,  // Waiting for RESPONSE RX
+    TAG_STATE_SENDING_FINAL,  // Waiting for FINAL TX done
+    TAG_STATE_WAIT_FINAL_ACK, // Waiting for FINAL_ACK RX
     TAG_STATE_PROCESS_RESULT,
     TAG_STATE_FAULTED
 } tag_state_e;

@@ -13,8 +13,10 @@
 typedef enum
 {
     ANCHOR_STATE_IDLE,
-    ANCHOR_STATE_LISTENING,
-    ANCHOR_STATE_SEND_RESPONSE,
+    ANCHOR_STATE_WAIT_POLL,         // Waiting for POLL from any tag
+    ANCHOR_STATE_SENDING_RESPONSE,  // Waiting for RESPONSE TX done
+    ANCHOR_STATE_WAIT_FINAL,        // Waiting for FINAL from specific tag
+    ANCHOR_STATE_SENDING_FINAL_ACK, // Waiting for FINAL_ACK TX done
     ANCHOR_STATE_FAULTED
 } anchor_state_e;
 

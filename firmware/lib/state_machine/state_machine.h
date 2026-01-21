@@ -28,4 +28,11 @@ typedef struct
     const state_s* states; // state machine sub state action table
 } state_machine_s;
 
+// Periodic execution - increments timer automatically
+// Use for timeout checking and timer-based logic
 void state_machine_periodic(state_machine_s* state_machine);
+
+// Event-driven state transition - forces immediate transition to specified state
+// Calls onExit for current state and onEntry for new state
+// Use this in callbacks/interrupts for immediate state changes based on events
+void state_machine_force_transition(state_machine_s* state_machine, uint16_t new_state);
