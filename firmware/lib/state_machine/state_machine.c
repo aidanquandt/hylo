@@ -49,3 +49,35 @@ void state_machine_periodic(state_machine_s* state_machine)
         }
     }
 }
+
+void state_machine_force_transition(state_machine_s* state_machine, uint16_t new_state)
+{
+    if (NULL != state_machine)
+    {
+        if (NULL != state_machine->states)
+        {
+            uint16_t curr_state = state_machine->curr_state;
+
+            if (curr_state != new_state)
+            {
+                // Call onExit for current state
+                if (NULL != state_machine->states[curr_state].onExit)
+                {
+                    state_machine->states[curr_state].onExit(new_state);
+                }
+
+                // Update state
+                state_machine->prev_state = curr_state;
+                state_machine->curr_state = new_state;
+                state_machine->next_state = new_state;
+                state_machine->timer = 0;
+
+                // Call onEntry for new state
+                if (NULL != state_machine->states[new_state].onEntry)
+                {
+                    state_machine->states[new_state].onEntry(curr_state);
+                }
+            }
+        }
+    }
+}
