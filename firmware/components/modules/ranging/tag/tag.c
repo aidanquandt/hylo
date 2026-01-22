@@ -6,9 +6,11 @@
 
 #include "tag.h"
 #include "error_handler.h"
+#include "FreeRTOS.h"
 #include "platform_os.h"
 #include "state_machine.h"
 #include "stopwatch.h"
+#include "task.h"
 #include "twr/twr_algorithm.h"
 #include "uart_manager.h"
 #include "uwb.h"
@@ -446,7 +448,7 @@ STATIC void tag_handle_response(const uint8_t* data, uint16_t length, uint16_t s
         return;
     }
 
-    tag_ctx.resp_rx.local_time_ms = platform_os_gettick();
+    tag_ctx.resp_rx.local_time_ms = xTaskGetTickCount();
     tag_ctx.resp_rx.timestamp_dtu = rx_timestamp;
 
     tag_ctx.poll_rx_ts_remote = twr_timestamp_to_u64(resp->poll_rx_ts);
@@ -521,7 +523,7 @@ STATIC void tag_calculate_distance(void)
         uart_manager_print("DS-TWR SUCCESS: distance=%.2f m, time=%u us\r\n", result.distance_m,
                            (unsigned int)elapsed_us);
         result.remote_addr = tag_ctx.target_address;
-        result.timestamp_ms = platform_os_gettick();
+        result.timestamp_ms = xTaskGetTickCount();
 
         tag_ctx.last_result = result;
         tag_ctx.successful_ranges++;
@@ -541,7 +543,7 @@ void tag_tx_done_callback(uint64_t tx_timestamp)
     {
         // Capture POLL TX timestamp
         tag_ctx.poll_tx.timestamp_dtu = tx_timestamp;
-        tag_ctx.poll_tx.local_time_ms = platform_os_gettick();
+        tag_ctx.poll_tx.local_time_ms = xTaskGetTickCount();
 
         // Transition to WAIT_RESPONSE now that TX is complete
         state_machine_force_transition(&tag_sm, TAG_STATE_WAIT_RESPONSE);
@@ -550,7 +552,7 @@ void tag_tx_done_callback(uint64_t tx_timestamp)
     {
         // Capture FINAL TX timestamp
         tag_ctx.final_tx.timestamp_dtu = tx_timestamp;
-        tag_ctx.final_tx.local_time_ms = platform_os_gettick();
+        tag_ctx.final_tx.local_time_ms = xTaskGetTickCount();
 
         // Transition to WAIT_FINAL_ACK now that TX is complete
         state_machine_force_transition(&tag_sm, TAG_STATE_WAIT_FINAL_ACK);

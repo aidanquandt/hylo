@@ -2,6 +2,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "uwb_port.h"
+#include "FreeRTOS.h"
 #include "deca_device_api.h"
 #include "deca_interface.h"
 #include "platform_gpio.h"
@@ -9,6 +10,7 @@
 #include "platform_spi.h"
 #include "platform_timer.h"
 #include "stopwatch.h"
+#include "task.h"
 #include "uart_manager.h"
 
 /*---------------------------------------------------------------------------
@@ -271,12 +273,12 @@ uwb_port_status_t uwb_port_probe_and_init(uwb_dev_t* dev)
     }
 
     dwt_softreset(0);
-    platform_os_delay_ms(3);
+    vTaskDelay(pdMS_TO_TICKS(3));
 
     uint32_t timeout = 100;
     while (!dwt_checkidlerc() && timeout--)
     {
-        platform_os_delay_ms(10);
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
     if (timeout == 0)
     {
@@ -309,7 +311,7 @@ uwb_port_status_t uwb_port_soft_reset(uwb_dev_t* dev)
     }
 
     dwt_softreset(0);
-    platform_os_delay_ms(3);
+    vTaskDelay(pdMS_TO_TICKS(3));
 
     return UWB_PORT_SUCCESS;
 }
@@ -319,7 +321,7 @@ STATIC void uwb_wakeup_device_impl(void)
     platform_spi_cs_low(UWB_PORT_CS_PIN);
     platform_os_delay_us_blocking(600);
     platform_spi_cs_high(UWB_PORT_CS_PIN);
-    platform_os_delay_ms(1);
+    vTaskDelay(pdMS_TO_TICKS(1));
 }
 
 uwb_port_status_t uwb_port_check_device_id(uwb_dev_t* dev)
@@ -615,7 +617,7 @@ void deca_usleep(unsigned long time_us)
 
 void deca_sleep(unsigned int time_ms)
 {
-    platform_os_delay_ms((uint32_t)time_ms);
+    vTaskDelay(pdMS_TO_TICKS(time_ms));
 }
 
 decaIrqStatus_t decamutexon(void)

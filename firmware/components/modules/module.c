@@ -7,7 +7,6 @@
 #include "imu.h"
 #include "ranging/ranging.h"
 #include "sensor_fusion.h"
-#include "test_beacon.h"
 #include "uart_manager.h"
 #include "uwb.h"
 
@@ -20,7 +19,6 @@ extern const module_S sensor_fusion_module;
 extern const module_S datalogger_module;
 extern const module_S uwb_module;
 extern const module_S imu_module;
-extern const module_S test_beacon_module;
 extern const module_S ranging_module;
 
 const module_S* const modules[NUM_MODULES] = {
@@ -30,6 +28,5 @@ const module_S* const modules[NUM_MODULES] = {
     [DATALOGGER_MODULE] = &datalogger_module,
     [UWB_MODULE] = &uwb_module,
     [IMU_MODULE] = &imu_module,
-    [TEST_BEACON_MODULE] = &test_beacon_module,
     [RANGING_MODULE] = &ranging_module,
 };

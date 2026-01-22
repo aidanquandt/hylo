@@ -2,11 +2,13 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "imu_port.h"
+#include "FreeRTOS.h"
 #include "bmi323.h"
 #include "gpio.h"
 #include "platform_os.h"
 #include "platform_spi.h"
 #include "platform_timer.h"
+#include "task.h"
 #include <string.h>
 
 /*---------------------------------------------------------------------------
@@ -67,7 +69,7 @@ imu_port_status_t imu_port_probe_and_init(imu_dev_t* dev)
     platform_spi_transmit(&dummy_cmd, 1);
     platform_spi_receive(dummy_rx, 3);
     platform_spi_cs_high(IMU_PORT_CS_PIN);
-    platform_os_delay_ms(2);
+    vTaskDelay(pdMS_TO_TICKS(2));
 
     int8_t rslt = bmi323_init(&dev->bmi_dev);
 
@@ -296,7 +298,7 @@ imu_port_status_t imu_port_soft_reset(imu_dev_t* dev)
         return IMU_PORT_ERROR_COMM_FAIL;
     }
 
-    platform_os_delay_ms(5);
+    vTaskDelay(pdMS_TO_TICKS(5));
 
     return IMU_PORT_SUCCESS;
 }

@@ -67,14 +67,14 @@ STATIC void imu_state_faulted_on_entry(uint16_t prevState);
  * Module Functions
  *---------------------------------------------------------------------------*/
 STATIC void imu_init(void);
-STATIC void imu_process_100Hz(void);
+STATIC void imu_process_10Hz(void);
 
 extern const module_S imu_module;
 
 const module_S imu_module = {
     .module_name = "imu",
     .module_init = imu_init,
-    .module_process_100Hz = imu_process_100Hz,
+    .module_process_10Hz = imu_process_10Hz,
 };
 
 /*---------------------------------------------------------------------------
@@ -143,7 +143,7 @@ STATIC void imu_init(void)
 {
 }
 
-STATIC void imu_process_100Hz(void)
+STATIC void imu_process_10Hz(void)
 {
     imu_state_machine_sample_inputs();
     state_machine_periodic(&imu_state_machine);
@@ -162,7 +162,7 @@ STATIC uint16_t imu_transition_logic(uint16_t currentState, uint32_t stateTimer)
     switch (currentState)
     {
         case STATE_STARTUP:
-            if (stateTimer >= MS_TO_100HZ_TICKS(STARTUP_DELAY_MS))
+            if (stateTimer >= MS_TO_10HZ_TICKS(STARTUP_DELAY_MS))
             {
                 nextState = STATE_INITIALIZATION;
             }

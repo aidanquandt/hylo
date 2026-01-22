@@ -12,9 +12,9 @@
 #include "imu.h"
 #include "ranging/ranging.h"
 #include "stopwatch.h"
-#include "test_beacon.h"
 #include "uart_manager.h"
 #include "uwb.h"
+#include "uwb_protocol_messages.h"
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
@@ -73,10 +73,10 @@ STATIC void uart_cmd_router_handle_help(void)
 STATIC void uart_cmd_router_handle_list(void)
 {
     uart_manager_print("\r\nAvailable Modules:\r\n");
-    uart_manager_print("  beacon     - Test beacon module\r\n");
+    uart_manager_print("  data       - Data communications module\r\n");
     uart_manager_print("  imu        - IMU sensor module\r\n");
-    uart_manager_print("  uwb        - UWB radio module\r\n");
-    uart_manager_print("  ranging    - TWR ranging module\r\n");
+    uart_manager_print("  uwb        - UWB radio transceiver\r\n");
+    uart_manager_print("  ranging    - TWR ranging service\r\n");
     uart_manager_print("  error      - Error handler module\r\n");
     uart_manager_print("  datalogger - System monitoring\r\n");
     uart_manager_print("  stopwatch  - Performance timing (0-9 instances)\r\n\r\n");
@@ -84,80 +84,7 @@ STATIC void uart_cmd_router_handle_list(void)
 
 STATIC void uart_cmd_router_handle_beacon(const char* action, const char* target, const char* args)
 {
-    if (strcmp(action, "get") == 0)
-    {
-        if (strcmp(target, "status") == 0)
-        {
-            beacon_status_t status;
-            test_beacon_get_status(&status);
-            const char* mode_str = (status.mode == BEACON_MODE_RESPONDER) ? "responder" : "master";
-            uart_manager_print("Beacon mode: %s\r\n", mode_str);
-        }
-        else if (strcmp(target, "stats") == 0)
-        {
-            beacon_status_t status;
-            test_beacon_get_status(&status);
-            const char* mode_str = (status.mode == BEACON_MODE_RESPONDER) ? "responder" : "master";
-            uart_manager_print("Beacon stats:\r\n");
-            uart_manager_print("  Mode: %s\r\n", mode_str);
-            uart_manager_print("  Counter: %u\r\n", status.counter);
-            uart_manager_print("  RX: %u, TX: %u\r\n", (unsigned int)status.rx_count,
-                               (unsigned int)status.tx_count);
-            uart_manager_print("  Last sender: 0x%04X\r\n", status.last_src_addr);
-        }
-        else
-        {
-            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
-        }
-    }
-    else if (strcmp(action, "set") == 0)
-    {
-        if (strcmp(target, "mode") == 0)
-        {
-            if (args == NULL || *args == '\0')
-            {
-                uart_manager_print("Usage: beacon.set.mode <responder|master>\r\n");
-                return;
-            }
-            beacon_mode_e mode;
-            if (strcmp(args, "responder") == 0)
-            {
-                mode = BEACON_MODE_RESPONDER;
-            }
-            else if (strcmp(args, "master") == 0)
-            {
-                mode = BEACON_MODE_MASTER;
-            }
-            else
-            {
-                uart_manager_print("ERR: Invalid mode. Use 'responder' or 'master'\r\n");
-                return;
-            }
-            test_beacon_set_mode(mode);
-            uart_manager_print("Mode set to %s\r\n", args);
-        }
-        else if (strcmp(target, "counter") == 0)
-        {
-            if (args == NULL || *args == '\0')
-            {
-                uart_manager_print("Usage: beacon.set.counter <value>\r\n");
-                return;
-            }
-            int value = atoi(args);
-            if (value < 0 || value > 65535)
-            {
-                uart_manager_print("ERR: Value out of range (0-65535)\r\n");
-                return;
-            }
-            test_beacon_set_counter((uint16_t)value);
-            uart_manager_print("Counter set to %u\r\n", value);
-        }
-        else
-        {
-            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
-        }
-    }
-    else if (strcmp(action, "req") == 0)
+    if (strcmp(action, "req") == 0)
     {
         if (strcmp(target, "ping") == 0)
         {
@@ -166,31 +93,22 @@ STATIC void uart_cmd_router_handle_beacon(const char* action, const char* target
             {
                 dest_addr = (uint16_t)strtol(args, NULL, 0);
             }
-            uart_manager_print("Sending ping to 0x%04X...\r\n", dest_addr);
-            if (test_beacon_send_ping(dest_addr))
+            
+            // Construct DATA protocol beacon message
+            protocol_header_t msg = {
+                .protocol_type = PROTOCOL_TYPE_DATA,
+                .msg_type = DATA_MSG_TYPE_BEACON,
+                .sequence = 0
+            };
+            
+            uart_manager_print("Sending DATA beacon to 0x%04X...\r\n", dest_addr);
+            if (uwb_send_message((const uint8_t*)&msg, sizeof(msg), dest_addr))
             {
-                uart_manager_print("Ping sent\r\n");
+                uart_manager_print("Beacon sent\r\n");
             }
             else
             {
-                uart_manager_print("Ping failed\r\n");
-            }
-        }
-        else if (strcmp(target, "ping.delayed") == 0)
-        {
-            uint16_t dest_addr = 0xFFFF;
-            if (args != NULL && *args != '\0')
-            {
-                dest_addr = (uint16_t)strtol(args, NULL, 0);
-            }
-            uart_manager_print("Sending delayed ping to 0x%04X...\r\n", dest_addr);
-            if (test_beacon_send_ping_delayed(dest_addr))
-            {
-                uart_manager_print("Delayed ping sent\r\n");
-            }
-            else
-            {
-                uart_manager_print("Delayed ping failed\r\n");
+                uart_manager_print("Beacon failed\r\n");
             }
         }
         else

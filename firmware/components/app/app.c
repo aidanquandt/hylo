@@ -2,8 +2,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "app.h"
-#include "cmsis_os.h"
-#include "cmsis_os2.h"
+#include "FreeRTOS.h"
 #include "common.h"
 #include "datalogger.h"
 #include "error_handler.h"
@@ -185,5 +184,5 @@ void app_init(void)
     app_initialize_modules();
     app_create_module_tasks();
     app_post_module_initialization();
-    osThreadExit();
+    vTaskDelete(NULL); // Delete init task - scheduler continues with created tasks
 }
