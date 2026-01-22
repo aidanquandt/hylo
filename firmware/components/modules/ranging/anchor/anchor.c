@@ -14,10 +14,6 @@
 /*---------------------------------------------------------------------------
  * Private Definitions
  *---------------------------------------------------------------------------*/
-// Delay from POLL RX to RESPONSE TX (microseconds)
-// Conservative: 1000µs allows plenty of processing time with event-driven architecture
-// Aggressive: Can go as low as ~600µs (matching DW3000 examples)
-#define POLL_RX_TO_RESP_TX_DLY_UUS 800
 #define ANCHOR_FINAL_TIMEOUT_TICKS (TWR_RESPONSE_TIMEOUT_MS) // Timeout waiting for FINAL
 
 /*---------------------------------------------------------------------------
@@ -322,32 +318,16 @@ STATIC bool anchor_send_response(void)
     response.header.sequence = anchor_ctx.sequence;
 
     // Store poll RX timestamp in response (in 5-byte format for transmission)
-    // This is the only timestamp we know with certainty at this point
     twr_u64_to_timestamp(anchor_ctx.poll_rx.timestamp_dtu, response.poll_rx_ts);
 
-    // Calculate absolute TX time (full 40-bit DTU) for delayed transmission
-    // Formula: TX_time = RX_time + response_delay
-    // Antenna delay is handled by hardware configuration
-    // (dwt_setrxantennadelay/dwt_settxantennadelay)
-    uint64_t delay_dtu = UWB_US_TO_DTU(POLL_RX_TO_RESP_TX_DLY_UUS);
-
-    // Full 40-bit absolute TX time in DTU - mask to 40 bits to handle wraparound
-    uint64_t absolute_tx_time_dtu =
-        (anchor_ctx.poll_rx.timestamp_dtu + delay_dtu) & 0xFFFFFFFFFFULL;
-
-    // Extract high 32-bits for delayed TX API (hardware requires DTUH format)
-    uint32_t absolute_tx_time_dtuh = UWB_DTU_TO_DTUH(absolute_tx_time_dtu);
-
-    // Send response with delayed transmission (pass DTUH - high 32-bits)
-    if (!uwb_send_message_delayed((uint8_t*)&response, sizeof(response), anchor_ctx.tag_address,
-                                  absolute_tx_time_dtuh))
+    // Send response immediately - actual TX timestamp captured in tx_done_callback
+    if (!uwb_send_message((uint8_t*)&response, sizeof(response), anchor_ctx.tag_address))
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "anchor", "RESPONSE delayed TX FAILED");
+        error_handler_log(ERROR_SEVERITY_ERROR, "anchor", "RESPONSE TX FAILED");
         return false;
     }
 
-    // Store the scheduled time as fallback
-    anchor_ctx.resp_tx = absolute_tx_time_dtu;
+    // Response TX timestamp will be captured in anchor_tx_done_callback()
 
     return true;
 }
