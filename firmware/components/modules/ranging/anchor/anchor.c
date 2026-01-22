@@ -33,9 +33,10 @@ typedef struct
     bool active; // Anchor is active
 
     // Current ranging context
-    bool processing_poll; // Currently processing a poll
-    uint16_t tag_address; // Tag we're responding to
-    uint16_t sequence;    // Current sequence number
+    bool processing_poll;   // Currently processing a poll
+    uint16_t tag_address;   // Tag we're responding to
+    uint16_t sequence;      // Current sequence number
+    uint32_t pending_tx_id; // Message ID of pending transmission
 
     // Timestamps
     twr_timestamp_t poll_rx; // When we received poll
@@ -53,7 +54,7 @@ typedef struct
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
-
+STATIC uint16_t anchor_transition_logic(uint16_t currentState, uint32_t stateTimer);
 STATIC void anchor_state_wait_poll_on_entry(uint16_t prevState);
 STATIC void anchor_state_wait_final_on_entry(uint16_t prevState);
 STATIC void anchor_state_faulted_on_entry(uint16_t prevState);
@@ -72,122 +73,27 @@ STATIC bool anchor_send_final_ack(uint16_t tag_addr, uint16_t sequence, uint64_t
 STATIC anchor_context_t anchor_ctx = {0};
 
 STATIC const state_s anchor_states[] = {
-    [ANCHOR_STATE_IDLE] = {.process = NULL, .onEntry = NULL, .onExit = NULL},
-    [ANCHOR_STATE_WAIT_POLL] = {.process = NULL,
-                                .onEntry = anchor_state_wait_poll_on_entry,
-                                .onExit = NULL},
-    [ANCHOR_STATE_SENDING_RESPONSE] = {.process = NULL, .onEntry = NULL, .onExit = NULL},
-    [ANCHOR_STATE_WAIT_FINAL] = {.process = NULL,
-                                 .onEntry = anchor_state_wait_final_on_entry,
-                                 .onExit = NULL},
+    [ANCHOR_STATE_IDLE]              = {.process = NULL, .onEntry = NULL, .onExit = NULL},
+    [ANCHOR_STATE_WAIT_POLL]         = {.process = NULL,
+                                        .onEntry = anchor_state_wait_poll_on_entry,
+                                        .onExit  = NULL},
+    [ANCHOR_STATE_SENDING_RESPONSE]  = {.process = NULL, .onEntry = NULL, .onExit = NULL},
+    [ANCHOR_STATE_WAIT_FINAL]        = {.process = NULL,
+                                        .onEntry = anchor_state_wait_final_on_entry,
+                                        .onExit  = NULL},
     [ANCHOR_STATE_SENDING_FINAL_ACK] = {.process = NULL, .onEntry = NULL, .onExit = NULL},
-    [ANCHOR_STATE_FAULTED] = {
-        .process = NULL, .onEntry = anchor_state_faulted_on_entry, .onExit = NULL}};
+    [ANCHOR_STATE_FAULTED]           = {
+                  .process = NULL, .onEntry = anchor_state_faulted_on_entry, .onExit = NULL}};
 
-STATIC state_machine_s anchor_sm = {.prev_state = ANCHOR_STATE_IDLE,
-                                    .curr_state = ANCHOR_STATE_IDLE,
-                                    .next_state = ANCHOR_STATE_IDLE,
-                                    .timer = 0,
-                                    .transitionLogic = NULL, // Event-driven - no transition logic
-                                    .states = anchor_states};
-
-/*---------------------------------------------------------------------------
- * Public Function Implementations
- *---------------------------------------------------------------------------*/
-
-void anchor_init(void)
-{
-    memset(&anchor_ctx, 0, sizeof(anchor_ctx));
-
-    anchor_sm.prev_state = ANCHOR_STATE_IDLE;
-    anchor_sm.curr_state = ANCHOR_STATE_IDLE;
-    anchor_sm.next_state = ANCHOR_STATE_IDLE;
-    anchor_sm.timer = 0;
-}
-
-bool anchor_start(void)
-{
-    if (!uwb_is_ready())
-    {
-        return false;
-    }
-
-    anchor_ctx.active = true;
-    state_machine_force_transition(&anchor_sm, ANCHOR_STATE_WAIT_POLL);
-
-    return true;
-}
-
-void anchor_stop(void)
-{
-    anchor_ctx.active = false;
-    anchor_ctx.processing_poll = false;
-    anchor_sm.curr_state = ANCHOR_STATE_IDLE;
-    anchor_sm.next_state = ANCHOR_STATE_IDLE;
-}
-
-void anchor_process_1kHz(void)
-{
-    if (!anchor_ctx.active)
-    {
-        return;
-    }
-
-    // Check for timeout waiting for FINAL message
-    if (anchor_sm.curr_state == ANCHOR_STATE_WAIT_FINAL)
-    {
-        if (anchor_sm.timer < UINT32_MAX)
-        {
-            anchor_sm.timer++;
-        }
-
-        if (anchor_sm.timer >= ANCHOR_FINAL_TIMEOUT_TICKS)
-        {
-            error_handler_log(ERROR_SEVERITY_WARNING, "anchor",
-                              "Timeout waiting for FINAL from tag 0x%04X", anchor_ctx.tag_address);
-            // Return to WAIT_POLL and ready for next tag
-            state_machine_force_transition(&anchor_sm, ANCHOR_STATE_WAIT_POLL);
-        }
-    }
-    else if (anchor_sm.curr_state == ANCHOR_STATE_FAULTED)
-    {
-        // Auto-recover from faults by returning to WAIT_POLL
-        state_machine_force_transition(&anchor_sm, ANCHOR_STATE_WAIT_POLL);
-    }
-}
-
-void anchor_set_address(uint16_t address)
-{
-    uwb_set_address(address, 0xDECA);
-}
-
-uint16_t anchor_get_address(void)
-{
-    return uwb_get_address();
-}
-
-void anchor_get_status(anchor_status_t* status)
-{
-    if (status == NULL)
-    {
-        return;
-    }
-
-    status->state = (anchor_state_e)anchor_sm.curr_state;
-    status->my_address = uwb_get_address();
-    status->polls_received = anchor_ctx.polls_received;
-    status->responses_sent = anchor_ctx.responses_sent;
-    status->response_failures = anchor_ctx.response_failures;
-    status->last_tag_address = anchor_ctx.last_tag_address;
-}
-
-uint32_t anchor_get_response_count(void)
-{
-    return anchor_ctx.responses_sent;
-}
+STATIC state_machine_s anchor_sm = {.prev_state      = ANCHOR_STATE_IDLE,
+                                    .curr_state      = ANCHOR_STATE_IDLE,
+                                    .next_state      = ANCHOR_STATE_IDLE,
+                                    .timer           = 0,
+                                    .transitionLogic = anchor_transition_logic,
+                                    .states          = anchor_states};
 
 /*---------------------------------------------------------------------------
- * Private Function Implementations - State Machine
+ * Private Function Implementations
  *---------------------------------------------------------------------------*/
 
 STATIC void anchor_state_wait_poll_on_entry(uint16_t prevState)
@@ -196,17 +102,44 @@ STATIC void anchor_state_wait_poll_on_entry(uint16_t prevState)
 
     // Clear any previous transaction context
     anchor_ctx.processing_poll = false;
-    anchor_ctx.tag_address = 0;
-    anchor_ctx.sequence = 0;
-    anchor_ctx.fault_code = ANCHOR_FAULT_NONE;
+    anchor_ctx.tag_address     = 0;
+    anchor_ctx.sequence        = 0;
+    anchor_ctx.fault_code      = ANCHOR_FAULT_NONE;
 }
 
 STATIC void anchor_state_wait_final_on_entry(uint16_t prevState)
 {
     (void)prevState;
 
-    // Reset timer for timeout detection
-    anchor_sm.timer = 0;
+    // Timer automatically reset by state machine framework
+}
+
+STATIC uint16_t anchor_transition_logic(uint16_t currentState, uint32_t stateTimer)
+{
+    switch (currentState)
+    {
+        case ANCHOR_STATE_WAIT_FINAL:
+            // Check for timeout waiting for FINAL message
+            if (stateTimer >= ANCHOR_FINAL_TIMEOUT_TICKS)
+            {
+                error_handler_log(ERROR_SEVERITY_WARNING, "anchor",
+                                  "Timeout waiting for FINAL from tag 0x%04X",
+                                  anchor_ctx.tag_address);
+                return ANCHOR_STATE_WAIT_POLL; // Ready for next tag
+            }
+            break;
+
+        case ANCHOR_STATE_FAULTED:
+            // Auto-recover from faults by returning to WAIT_POLL
+            return ANCHOR_STATE_WAIT_POLL;
+
+        default:
+            // No automatic transitions for other states
+            break;
+    }
+
+    // Stay in current state by default
+    return currentState;
 }
 
 STATIC void anchor_state_faulted_on_entry(uint16_t prevState)
@@ -219,50 +152,6 @@ STATIC void anchor_state_faulted_on_entry(uint16_t prevState)
     anchor_ctx.fault_code = ANCHOR_FAULT_NONE;
 
     // Will auto-recover to WAIT_POLL in process_1kHz
-}
-
-/*---------------------------------------------------------------------------
- * Private Function Implementations - TWR Protocol
- *---------------------------------------------------------------------------*/
-
-void anchor_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr,
-                        uint64_t rx_timestamp)
-{
-    // Check if it's a TWR protocol message
-    if (length >= sizeof(protocol_header_t))
-    {
-        const protocol_header_t* hdr = (const protocol_header_t*)data;
-
-        // Handle POLL messages only in WAIT_POLL state
-        if (hdr->protocol_type == PROTOCOL_TYPE_TWR && hdr->msg_type == TWR_MSG_TYPE_POLL)
-        {
-            if (anchor_sm.curr_state != ANCHOR_STATE_WAIT_POLL)
-            {
-                error_handler_log(ERROR_SEVERITY_INFO, "anchor",
-                                  "POLL rejected - wrong state (state=%u)", anchor_sm.curr_state);
-                return;
-            }
-            anchor_handle_poll(data, length, src_addr, rx_timestamp);
-        }
-        // Handle FINAL messages only in WAIT_FINAL state from the expected tag
-        else if (hdr->protocol_type == PROTOCOL_TYPE_TWR && hdr->msg_type == TWR_MSG_TYPE_FINAL)
-        {
-            if (anchor_sm.curr_state != ANCHOR_STATE_WAIT_FINAL)
-            {
-                error_handler_log(ERROR_SEVERITY_INFO, "anchor",
-                                  "FINAL rejected - wrong state (state=%u)", anchor_sm.curr_state);
-                return;
-            }
-            if (src_addr != anchor_ctx.tag_address)
-            {
-                error_handler_log(ERROR_SEVERITY_INFO, "anchor",
-                                  "FINAL rejected - wrong tag (0x%04X vs expected 0x%04X)",
-                                  src_addr, anchor_ctx.tag_address);
-                return;
-            }
-            anchor_handle_final(data, length, src_addr, rx_timestamp);
-        }
-    }
 }
 
 STATIC void anchor_handle_poll(const uint8_t* data, uint16_t length, uint16_t src_addr,
@@ -280,9 +169,10 @@ STATIC void anchor_handle_poll(const uint8_t* data, uint16_t length, uint16_t sr
     const protocol_twr_poll_msg_t* poll = (const protocol_twr_poll_msg_t*)data;
 
     // Record poll details and clear old timestamps
-    anchor_ctx.tag_address = src_addr;
-    anchor_ctx.sequence = poll->header.sequence;
+    anchor_ctx.tag_address     = src_addr;
+    anchor_ctx.sequence        = poll->header.sequence;
     anchor_ctx.processing_poll = true;
+    anchor_ctx.pending_tx_id   = 0; // Will be set when sending response
 
     // Clear previous ranging timestamps
     memset(&anchor_ctx.poll_rx, 0, sizeof(anchor_ctx.poll_rx));
@@ -314,20 +204,23 @@ STATIC bool anchor_send_response(void)
 {
     protocol_twr_response_msg_t response;
     response.header.protocol_type = PROTOCOL_TYPE_TWR;
-    response.header.msg_type = TWR_MSG_TYPE_RESPONSE;
-    response.header.sequence = anchor_ctx.sequence;
+    response.header.msg_type      = TWR_MSG_TYPE_RESPONSE;
+    response.header.sequence      = anchor_ctx.sequence;
 
     // Store poll RX timestamp in response (in 5-byte format for transmission)
     twr_u64_to_timestamp(anchor_ctx.poll_rx.timestamp_dtu, response.poll_rx_ts);
 
     // Send response immediately - actual TX timestamp captured in tx_done_callback
-    if (!uwb_send_message((uint8_t*)&response, sizeof(response), anchor_ctx.tag_address))
+    uwb_send_result_t result =
+        uwb_send_message((uint8_t*)&response, sizeof(response), anchor_ctx.tag_address);
+    if (!result.success)
     {
         error_handler_log(ERROR_SEVERITY_ERROR, "anchor", "RESPONSE TX FAILED");
         return false;
     }
 
-    // Response TX timestamp will be captured in anchor_tx_done_callback()
+    // Store message ID to validate TX callback
+    anchor_ctx.pending_tx_id = result.message_id;
 
     return true;
 }
@@ -379,8 +272,8 @@ STATIC bool anchor_send_final_ack(uint16_t tag_addr, uint16_t sequence, uint64_t
 {
     protocol_twr_final_ack_msg_t ack;
     ack.header.protocol_type = PROTOCOL_TYPE_TWR;
-    ack.header.msg_type = TWR_MSG_TYPE_FINAL_ACK;
-    ack.header.sequence = sequence;
+    ack.header.msg_type      = TWR_MSG_TYPE_FINAL_ACK;
+    ack.header.sequence      = sequence;
 
     // Encode anchor's response TX timestamp (measured from earlier) in the ACK message
     twr_u64_to_timestamp(resp_tx_ts, ack.resp_tx_ts);
@@ -389,35 +282,180 @@ STATIC bool anchor_send_final_ack(uint16_t tag_addr, uint16_t sequence, uint64_t
     twr_u64_to_timestamp(final_rx_ts, ack.final_rx_ts);
 
     // Send ACK immediately (no delayed TX needed for ACK)
-    if (!uwb_send_message((uint8_t*)&ack, sizeof(ack), tag_addr))
+    uwb_send_result_t result = uwb_send_message((uint8_t*)&ack, sizeof(ack), tag_addr);
+    if (!result.success)
     {
         error_handler_log(ERROR_SEVERITY_ERROR, "anchor", "Failed to send ACK to 0x%04X", tag_addr);
         return false;
     }
 
+    // Store message ID for TX callback validation (FINAL_ACK doesn't need timestamp)
+    anchor_ctx.pending_tx_id = result.message_id;
+
     return true;
 }
 
-void anchor_tx_done_callback(uint64_t tx_timestamp)
+/*---------------------------------------------------------------------------
+ * Public Function Implementations
+ *---------------------------------------------------------------------------*/
+
+void anchor_init(void)
 {
-    // Use state machine state to determine which TX completed
+    memset(&anchor_ctx, 0, sizeof(anchor_ctx));
+
+    anchor_sm.prev_state = ANCHOR_STATE_IDLE;
+    anchor_sm.curr_state = ANCHOR_STATE_IDLE;
+    anchor_sm.next_state = ANCHOR_STATE_IDLE;
+    anchor_sm.timer      = 0;
+}
+
+bool anchor_start(void)
+{
+    if (!uwb_is_ready())
+    {
+        return false;
+    }
+
+    anchor_ctx.active = true;
+    state_machine_force_transition(&anchor_sm, ANCHOR_STATE_WAIT_POLL);
+
+    return true;
+}
+
+void anchor_stop(void)
+{
+    anchor_ctx.active          = false;
+    anchor_ctx.processing_poll = false;
+    anchor_sm.curr_state       = ANCHOR_STATE_IDLE;
+    anchor_sm.next_state       = ANCHOR_STATE_IDLE;
+}
+
+void anchor_process_1kHz(void)
+{
+    if (!anchor_ctx.active)
+    {
+        return;
+    }
+
+    // Let state machine handle periodic processing including timeouts
+    state_machine_periodic(&anchor_sm);
+}
+
+void anchor_set_address(uint16_t address)
+{
+    uwb_set_address(address, 0xDECA);
+}
+
+uint16_t anchor_get_address(void)
+{
+    return uwb_get_address();
+}
+
+void anchor_get_status(anchor_status_t* status)
+{
+    if (status == NULL)
+    {
+        return;
+    }
+
+    status->state             = (anchor_state_e)anchor_sm.curr_state;
+    status->my_address        = uwb_get_address();
+    status->polls_received    = anchor_ctx.polls_received;
+    status->responses_sent    = anchor_ctx.responses_sent;
+    status->response_failures = anchor_ctx.response_failures;
+    status->last_tag_address  = anchor_ctx.last_tag_address;
+}
+
+uint32_t anchor_get_response_count(void)
+{
+    return anchor_ctx.responses_sent;
+}
+
+void anchor_tx_done_callback(uint32_t message_id, uint64_t tx_timestamp)
+{
     if (anchor_sm.curr_state == ANCHOR_STATE_SENDING_RESPONSE)
     {
-        // Capture RESPONSE TX timestamp
-        anchor_ctx.resp_tx = tx_timestamp;
-
-        // Update statistics
-        anchor_ctx.responses_sent++;
-        anchor_ctx.last_tag_address = anchor_ctx.tag_address;
-        anchor_ctx.processing_poll = false;
-
-        // Transition to WAIT_FINAL
-        state_machine_force_transition(&anchor_sm, ANCHOR_STATE_WAIT_FINAL);
+        // Validate this timestamp belongs to our pending message
+        if (message_id == anchor_ctx.pending_tx_id)
+        {
+            anchor_ctx.resp_tx = tx_timestamp;
+            anchor_ctx.responses_sent++;
+            anchor_ctx.last_tag_address = anchor_ctx.tag_address;
+            anchor_ctx.processing_poll  = false;
+            anchor_ctx.pending_tx_id    = 0; // Clear pending ID
+            state_machine_force_transition(&anchor_sm, ANCHOR_STATE_WAIT_FINAL);
+        }
+        else
+        {
+            // Wrong message ID - stale or unexpected callback
+            error_handler_log(ERROR_SEVERITY_WARNING, "anchor",
+                              "TX callback with wrong message ID (got %u, expected %u)",
+                              (unsigned int)message_id, (unsigned int)anchor_ctx.pending_tx_id);
+            state_machine_force_transition(&anchor_sm, ANCHOR_STATE_WAIT_POLL);
+        }
     }
     else if (anchor_sm.curr_state == ANCHOR_STATE_SENDING_FINAL_ACK)
     {
-        // FINAL_ACK TX complete, transaction finished
-        // Return to WAIT_POLL for next tag
+        // FINAL_ACK TX complete - validate message ID and finish transaction
+        if (message_id == anchor_ctx.pending_tx_id)
+        {
+            anchor_ctx.pending_tx_id = 0; // Clear pending ID
+            state_machine_force_transition(&anchor_sm, ANCHOR_STATE_WAIT_POLL);
+        }
+        else
+        {
+            error_handler_log(ERROR_SEVERITY_WARNING, "anchor",
+                              "FINAL_ACK TX callback with wrong message ID");
+            state_machine_force_transition(&anchor_sm, ANCHOR_STATE_WAIT_POLL);
+        }
+    }
+    else
+    {
+        // Unexpected state - log and recover
+        error_handler_log(ERROR_SEVERITY_WARNING, "anchor", "Unexpected TX callback in state %u",
+                          anchor_sm.curr_state);
+        anchor_ctx.pending_tx_id = 0;
         state_machine_force_transition(&anchor_sm, ANCHOR_STATE_WAIT_POLL);
+    }
+}
+
+void anchor_rx_callback(const uint8_t* data, uint16_t length, uint16_t src_addr,
+                        uint64_t rx_timestamp)
+{
+    // Check if it's a TWR protocol message
+    if (length >= sizeof(protocol_header_t))
+    {
+        const protocol_header_t* hdr = (const protocol_header_t*)data;
+
+        switch (hdr->msg_type)
+        {
+            case TWR_MSG_TYPE_POLL:
+                // Always accept polls - each poll starts a new ranging transaction
+                // This preempts any ongoing transaction (tag handles retries)
+                anchor_handle_poll(data, length, src_addr, rx_timestamp);
+                break;
+
+            case TWR_MSG_TYPE_FINAL:
+                if (anchor_sm.curr_state != ANCHOR_STATE_WAIT_FINAL)
+                {
+                    error_handler_log(ERROR_SEVERITY_INFO, "anchor",
+                                      "FINAL rejected - wrong state (state=%u)",
+                                      anchor_sm.curr_state);
+                    return;
+                }
+                if (src_addr != anchor_ctx.tag_address)
+                {
+                    error_handler_log(ERROR_SEVERITY_INFO, "anchor",
+                                      "FINAL rejected - wrong tag (0x%04X vs expected 0x%04X)",
+                                      src_addr, anchor_ctx.tag_address);
+                    return;
+                }
+                anchor_handle_final(data, length, src_addr, rx_timestamp);
+                break;
+
+            default:
+                // Ignore unknown message types
+                break;
+        }
     }
 }

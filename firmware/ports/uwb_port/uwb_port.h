@@ -35,17 +35,17 @@ typedef struct uwb_dev_s uwb_dev_t;
  *---------------------------------------------------------------------------*/
 typedef enum
 {
-    UWB_PORT_SUCCESS = 0,
-    UWB_PORT_ERROR_NULL_PTR = -1,
-    UWB_PORT_ERROR_COMM_FAIL = -2,
+    UWB_PORT_SUCCESS          = 0,
+    UWB_PORT_ERROR_NULL_PTR   = -1,
+    UWB_PORT_ERROR_COMM_FAIL  = -2,
     UWB_PORT_ERROR_INVALID_ID = -3,
-    UWB_PORT_ERROR_TIMEOUT = -4,
-    UWB_PORT_ERROR_INIT_FAIL = -5,
-    UWB_PORT_ERROR_CONFIG = -6,
-    UWB_PORT_ERROR_TX_FAIL = -7,
-    UWB_PORT_ERROR_RX_FAIL = -8,
-    UWB_PORT_ERROR_NO_DATA = -9,
-    UWB_PORT_ERROR_UNKNOWN = -99
+    UWB_PORT_ERROR_TIMEOUT    = -4,
+    UWB_PORT_ERROR_INIT_FAIL  = -5,
+    UWB_PORT_ERROR_CONFIG     = -6,
+    UWB_PORT_ERROR_TX_FAIL    = -7,
+    UWB_PORT_ERROR_RX_FAIL    = -8,
+    UWB_PORT_ERROR_NO_DATA    = -9,
+    UWB_PORT_ERROR_UNKNOWN    = -99
 } uwb_port_status_t;
 
 typedef enum
@@ -74,9 +74,6 @@ void uwb_port_wakeup_device(uwb_dev_t* dev);
 uwb_port_status_t uwb_port_soft_reset(uwb_dev_t* dev);
 uwb_port_status_t uwb_port_check_device_id(uwb_dev_t* dev);
 uint32_t uwb_port_read_device_id(uwb_dev_t* dev);
-float uwb_port_read_temperature(uwb_dev_t* dev);
-float uwb_port_read_voltage(uwb_dev_t* dev);
-void uwb_port_read_temp_and_voltage(uwb_dev_t* dev, float* temperature, float* voltage);
 void uwb_port_set_pan_id(uwb_dev_t* dev, uint16_t pan_id);
 void uwb_port_set_address(uwb_dev_t* dev, uint16_t address);
 uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel);
@@ -94,6 +91,7 @@ uint32_t uwb_port_read_status_register_high(void);
 void uwb_port_register_isr_callbacks(uwb_dev_t* dev);
 void uwb_port_set_rx_callback(uwb_port_rx_callback_t callback);
 void uwb_port_set_tx_done_callback(uwb_port_tx_done_callback_t callback);
+void uwb_port_print_aidan_stats(void);
 
 /*---------------------------------------------------------------------------
  * Platform Compatibility Functions (required by Qorvo DW3000 driver)

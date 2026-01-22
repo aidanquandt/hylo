@@ -22,6 +22,7 @@ typedef struct
 {
     ranging_mode_e mode;
     bool active;
+    int state;
     uint32_t successful_ranges;
     uint32_t failed_ranges;
     uint32_t messages_processed;

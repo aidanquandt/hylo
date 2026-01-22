@@ -5,6 +5,7 @@
 #include "FreeRTOS.h"
 #include "deca_device_api.h"
 #include "deca_interface.h"
+#include "error_handler.h"
 #include "platform_gpio.h"
 #include "platform_os.h"
 #include "platform_spi.h"
@@ -45,20 +46,20 @@ STATIC bool validate_channel(const uwb_channel_t channel);
  * Private Variables
  *---------------------------------------------------------------------------*/
 STATIC struct dwt_spi_s uwb_spi_fns = {
-    .readfromspi = uwb_spi_read,
-    .writetospi = uwb_spi_write,
+    .readfromspi       = uwb_spi_read,
+    .writetospi        = uwb_spi_write,
     .writetospiwithcrc = uwb_spi_write_crc,
-    .setslowrate = uwb_spi_set_slow_rate,
-    .setfastrate = uwb_spi_set_fast_rate,
+    .setslowrate       = uwb_spi_set_slow_rate,
+    .setfastrate       = uwb_spi_set_fast_rate,
 };
 
 STATIC struct uwb_dev_s uwb_device = {.dw_chip = {
-                                          .SPI = &uwb_spi_fns,
+                                          .SPI                   = &uwb_spi_fns,
                                           .wakeup_device_with_io = uwb_wakeup_device_impl,
                                       }};
 
-STATIC uwb_dev_t* current_device = NULL;
-STATIC uwb_port_rx_callback_t rx_callback = NULL;
+STATIC uwb_dev_t* current_device                    = NULL;
+STATIC uwb_port_rx_callback_t rx_callback           = NULL;
 STATIC uwb_port_tx_done_callback_t tx_done_callback = NULL;
 
 /*---------------------------------------------------------------------------
@@ -191,8 +192,14 @@ STATIC void uwb_spi_set_fast_rate(void)
     platform_spi_cs_high(UWB_PORT_CS_PIN);
 }
 
+STATIC uint32_t aidan_rx_ok_callback_count      = 0;
+STATIC uint32_t aidan_rx_timeout_callback_count = 0;
+STATIC uint32_t aidan_rx_error_arfe_count       = 0;
+STATIC uint32_t aidan_rx_error_overrun_count    = 0;
+STATIC uint32_t aidan_rx_error_corrupted_count  = 0;
 STATIC void uwb_port_rx_ok_callback(const dwt_cb_data_t* cb_data)
 {
+    aidan_rx_ok_callback_count++;
     if (cb_data == NULL)
         return;
 
@@ -219,16 +226,83 @@ STATIC void uwb_port_rx_ok_callback(const dwt_cb_data_t* cb_data)
 
 STATIC void uwb_port_rx_timeout_callback(const dwt_cb_data_t* cb_data)
 {
+    aidan_rx_timeout_callback_count++;
     (void)cb_data;
+    error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX timeout");
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
 }
 
 STATIC void uwb_port_rx_error_callback(const dwt_cb_data_t* cb_data)
 {
-    (void)cb_data;
+    if (cb_data->status & DWT_INT_ARFE_BIT_MASK)
+    {
+        aidan_rx_error_arfe_count++;
+        error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "RX Filtered: Address Mismatch (ARFE)");
+    }
+    else if (cb_data->status & DWT_INT_RXOVRR_BIT_MASK)
+    {
+        aidan_rx_error_overrun_count++;
+        error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX Error: Buffer Overrun (RXOVRR)");
+        dwt_forcetrxoff();
+    }
+    else
+    {
+        aidan_rx_error_corrupted_count++;
+    }
+    error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port",
+                      "RX Error: Packet Corrupted (Status Lo: 0x%08lX, Hi: 0x%08lX)",
+                      (unsigned long)cb_data->status, (unsigned long)cb_data->status_hi);
+
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
 }
 
+// STATIC void uwb_port_rx_error_callback(const dwt_cb_data_t* cb_data)
+// {
+//     // 1. DO NOT TRUST cb_data. Read the hardware register directly.
+//     uint8_t real_status_hi = dwt_readsysstatushi();
+//     uint32_t real_status_lo = cb_data->status; // Low status is usually reliable, but you can
+//     read it too if you want.
+
+//     // 2. Check for Address Rejection (ARFE)
+//     if (real_status_lo & DWT_INT_ARFE_BIT_MASK)
+//     {
+//         aidan_rx_error_arfe_count++;
+//         error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "RX Filtered: Address Mismatch
+//         (ARFE)");
+//     }
+//     // 3. Check for Overrun using the MANUAL value (Bit 1 of High Register)
+//     else if ((real_status_lo & DWT_INT_RXOVRR_BIT_MASK) || (real_status_hi & 0x02))
+//     {
+//         aidan_rx_error_overrun_count++;
+//         error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX Error: Buffer Overrun (RXOVRR)
+//         - FOUND IT");
+
+//         // CRITICAL: Manually clear the bit that the driver missed
+//         dwt_writesysstatushi(0x02);
+
+//         // Clear Low bit too just in case
+//         dwt_writesysstatuslo(DWT_INT_RXOVRR_BIT_MASK);
+
+//         // Reset the State Machine
+//         dwt_forcetrxoff();
+//     }
+//     // 4. Packet Corruption
+//     else
+//     {
+//         aidan_rx_error_corrupted_count++;
+//         error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port",
+//                           "RX Error: Packet Corrupted (Lo: 0x%08lX, Hi: 0x%02X)",
+//                           (unsigned long)real_status_lo, (unsigned int)real_status_hi);
+//     }
+
+//     // 5. Always Restart RX
+//     dwt_rxenable(DWT_START_RX_IMMEDIATE);
+// }
+
+STATIC uint32_t aidan_tx_done_callback_count = 0;
 STATIC void uwb_port_tx_done_callback(const dwt_cb_data_t* cb_data)
 {
+    aidan_tx_done_callback_count++;
     (void)cb_data;
 
     if (current_device != NULL)
@@ -260,11 +334,11 @@ uwb_port_status_t uwb_port_probe_and_init(uwb_dev_t* dev)
 
     static const struct dwt_driver_s* driver_list[] = {&dw3000_driver};
 
-    struct dwt_probe_s probe_data = {.dw = &dev->dw_chip,
-                                     .spi = &uwb_spi_fns,
+    struct dwt_probe_s probe_data = {.dw                    = &dev->dw_chip,
+                                     .spi                   = &uwb_spi_fns,
                                      .wakeup_device_with_io = uwb_wakeup_device_impl,
-                                     .driver_list = (struct dwt_driver_s**)driver_list,
-                                     .dw_driver_num = 1};
+                                     .driver_list           = (struct dwt_driver_s**)driver_list,
+                                     .dw_driver_num         = 1};
 
     int ret = dwt_probe(&probe_data);
     if (ret != DWT_SUCCESS)
@@ -350,55 +424,6 @@ uint32_t uwb_port_read_device_id(uwb_dev_t* dev)
     return dwt_readdevid();
 }
 
-float uwb_port_read_temperature(uwb_dev_t* dev)
-{
-    if (dev == NULL)
-    {
-        return 0.0f;
-    }
-
-    uint16_t raw_reading = dwt_readtempvbat();
-
-    uint8_t raw_temp = (uint8_t)(raw_reading >> 8);
-    return dwt_convertrawtemperature(raw_temp);
-}
-
-float uwb_port_read_voltage(uwb_dev_t* dev)
-{
-    if (dev == NULL)
-    {
-        return 0.0f;
-    }
-
-    uint16_t raw_reading = dwt_readtempvbat();
-
-    uint8_t raw_voltage = (uint8_t)(raw_reading & 0xFFU);
-    return dwt_convertrawvoltage(raw_voltage);
-}
-
-void uwb_port_read_temp_and_voltage(uwb_dev_t* dev, float* temperature, float* voltage)
-{
-    if (dev == NULL || (temperature == NULL && voltage == NULL))
-    {
-        return;
-    }
-
-    uint16_t raw_reading = dwt_readtempvbat();
-
-    uint8_t raw_temp = (uint8_t)(raw_reading >> 8);
-    uint8_t raw_voltage = (uint8_t)(raw_reading & 0xFFU);
-
-    if (temperature != NULL)
-    {
-        *temperature = dwt_convertrawtemperature(raw_temp);
-    }
-
-    if (voltage != NULL)
-    {
-        *voltage = dwt_convertrawvoltage(raw_voltage);
-    }
-}
-
 void uwb_port_set_pan_id(uwb_dev_t* dev, uint16_t pan_id)
 {
     if (dev == NULL)
@@ -429,25 +454,24 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel)
         return UWB_PORT_ERROR_CONFIG;
     }
 
-    // Stop any active TX/RX operation before reconfiguring
     dwt_forcetrxoff();
 
-    // Clear all RX status flags to start with clean state
-    dwt_writesysstatuslo(SYS_STATUS_ALL_RX_GOOD | SYS_STATUS_ALL_RX_ERR);
+    dwt_writesysstatuslo(0xFFFFFFFF);
+    dwt_writesysstatushi(0xFF);
 
-    dwt_config_t config = {.chan = (uint8_t)channel,
+    dwt_config_t config = {.chan           = (uint8_t)channel,
                            .txPreambLength = DWT_PLEN_128,
-                           .rxPAC = DWT_PAC8,
-                           .txCode = 9,
-                           .rxCode = 9,
-                           .sfdType = DWT_SFD_DW_8,
-                           .dataRate = DWT_BR_6M8,
-                           .phrMode = DWT_PHRMODE_STD,
-                           .phrRate = DWT_PHRRATE_STD,
-                           .sfdTO = (129 + 8 - 8),
-                           .stsMode = DWT_STS_MODE_OFF,
-                           .stsLength = DWT_STS_LEN_64,
-                           .pdoaMode = DWT_PDOA_M0};
+                           .rxPAC          = DWT_PAC8,
+                           .txCode         = 9,
+                           .rxCode         = 9,
+                           .sfdType        = DWT_SFD_DW_8,
+                           .dataRate       = DWT_BR_6M8,
+                           .phrMode        = DWT_PHRMODE_STD,
+                           .phrRate        = DWT_PHRRATE_STD,
+                           .sfdTO          = (129 + 8 - 8),
+                           .stsMode        = DWT_STS_MODE_OFF,
+                           .stsLength      = DWT_STS_LEN_64,
+                           .pdoaMode       = DWT_PDOA_M0};
 
     if (dwt_configure(&config) != DWT_SUCCESS)
     {
@@ -472,8 +496,10 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel)
     return UWB_PORT_SUCCESS;
 }
 
+STATIC uint32_t aidan_send_message_count = 0;
 uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uint16_t length)
 {
+    aidan_send_message_count++;
     if (dev == NULL || data == NULL)
         return UWB_PORT_ERROR_NULL_PTR;
     if (length == 0 || length > UWB_MAX_MESSAGE_LENGTH)
@@ -549,8 +575,17 @@ void uwb_port_enable_rx_interrupt(void)
 {
     dwt_writesysstatuslo(DWT_INT_ALL_LO);
     dwt_writesysstatushi(DWT_INT_ALL_HI);
-    dwt_setinterrupt(DWT_INT_RXFCG_BIT_MASK | DWT_INT_RXFCE_BIT_MASK | DWT_INT_RXPTO_BIT_MASK |
-                         DWT_INT_TXFRS_BIT_MASK,
+
+    dwt_setinterrupt(DWT_INT_TXFRS_BIT_MASK |      // TX Done
+                         DWT_INT_RXFCG_BIT_MASK |  // RX Good
+                         DWT_INT_RXFCE_BIT_MASK |  // RX Error (CRC)
+                         DWT_INT_RXPTO_BIT_MASK |  // Preamble Timeout
+                         DWT_INT_RXPHE_BIT_MASK |  // PHY Header Error
+                         DWT_INT_RXFSL_BIT_MASK |  // Sync Loss
+                         DWT_INT_RXOVRR_BIT_MASK | // RX Overrun
+                         DWT_INT_ARFE_BIT_MASK |   // Address Filter
+                         DWT_INT_RXFTO_BIT_MASK |  // Frame Wait Timeout
+                         DWT_INT_RXSTO_BIT_MASK,   // SFD Timeout
                      0, DWT_ENABLE_INT_ONLY);
 }
 
@@ -563,18 +598,18 @@ void uwb_port_register_isr_callbacks(uwb_dev_t* dev)
 {
     current_device = dev;
 
-    dwt_callbacks_s callbacks = {.cbRxOk = uwb_port_rx_ok_callback,
-                                 .cbRxTo = uwb_port_rx_timeout_callback,
-                                 .cbRxErr = uwb_port_rx_error_callback,
-                                 .cbTxDone = uwb_port_tx_done_callback,
-                                 .cbSPIErr = NULL,
-                                 .cbSPIRDErr = NULL,
-                                 .cbSPIRdy = NULL,
+    dwt_callbacks_s callbacks = {.cbRxOk      = uwb_port_rx_ok_callback,
+                                 .cbRxTo      = uwb_port_rx_timeout_callback,
+                                 .cbRxErr     = uwb_port_rx_error_callback,
+                                 .cbTxDone    = uwb_port_tx_done_callback,
+                                 .cbSPIErr    = NULL,
+                                 .cbSPIRDErr  = NULL,
+                                 .cbSPIRdy    = NULL,
                                  .cbDualSPIEv = NULL,
-                                 .cbFrmRdy = NULL,
-                                 .cbCiaDone = NULL,
-                                 .devErr = NULL,
-                                 .cbSysEvent = NULL};
+                                 .cbFrmRdy    = NULL,
+                                 .cbCiaDone   = NULL,
+                                 .devErr      = NULL,
+                                 .cbSysEvent  = NULL};
 
     dwt_setcallbacks(&callbacks);
 }
@@ -589,6 +624,35 @@ void uwb_port_set_tx_done_callback(uwb_port_tx_done_callback_t callback)
     tx_done_callback = callback;
 }
 
+void uwb_port_print_aidan_stats(void)
+{
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "aidan_rx_ok_callback_count: %lu",
+                      (unsigned long)aidan_rx_ok_callback_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "aidan_rx_timeout_callback_count: %lu",
+                      (unsigned long)aidan_rx_timeout_callback_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "aidan_rx_error_arfe_count: %lu",
+                      (unsigned long)aidan_rx_error_arfe_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "aidan_rx_error_overrun_count: %lu",
+                      (unsigned long)aidan_rx_error_overrun_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "aidan_rx_error_corrupted_count: %lu",
+                      (unsigned long)aidan_rx_error_corrupted_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "aidan_tx_done_callback_count: %lu",
+                      (unsigned long)aidan_tx_done_callback_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "aidan_send_message_count: %lu",
+                      (unsigned long)aidan_send_message_count);
+
+    uint32_t irq_status = uwb_port_read_irq_status();
+    uint32_t status_lo  = uwb_port_read_status_register_low();
+    uint32_t status_hi  = uwb_port_read_status_register_high();
+
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "irq_status: 0x%08lX",
+                      (unsigned long)irq_status);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "status_lo: 0x%08lX",
+                      (unsigned long)status_lo);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "status_hi: 0x%08lX",
+                      (unsigned long)status_hi);
+}
+
 uint32_t uwb_port_read_irq_status(void)
 {
     return dwt_checkirq();
@@ -597,7 +661,7 @@ uint32_t uwb_port_read_irq_status(void)
 uint32_t uwb_port_read_status_register_low(void)
 {
     decaIrqStatus_t irq_status = decamutexon();
-    uint32_t status = dwt_readsysstatuslo();
+    uint32_t status            = dwt_readsysstatuslo();
     decamutexoff(irq_status);
     return status;
 }
@@ -605,7 +669,7 @@ uint32_t uwb_port_read_status_register_low(void)
 uint32_t uwb_port_read_status_register_high(void)
 {
     decaIrqStatus_t irq_status = decamutexon();
-    uint32_t status = dwt_readsysstatushi();
+    uint32_t status            = dwt_readsysstatushi();
     decamutexoff(irq_status);
     return status;
 }

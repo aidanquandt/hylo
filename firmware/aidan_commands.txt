@@ -9,14 +9,27 @@ ranging.set.mode tag
 ranging.req.range 0x0001
 
 
+TWR AUTO-RANGING:
+
+uwb.set.address 0x0001
+ranging.set.mode anchor
+
+uwb.set.address 0x0002
+rangingmgr.req.start
+rangingmgr.get.status
+rangingmgr.req.stop
 
 
 BEACON SEND:
 
 uwb.set.address 0x0001
+beacon.req.ping 0x0002
 
 uwb.set.address 0x0002
 beacon.req.ping 0x0001
+
+uwb.get.stats
+uwb.get.aidan_stats
 
 uwb.set.address 0x0002
 beacon.req.ping.delayed 0x0001
@@ -24,3 +37,9 @@ beacon.req.ping.delayed 0x0001
 stopwatch.get.0
 stopwatch.get.1
 stopwatch.get.all
+
+
+
+after send message to self, you cannot send, but you CAN receive
+
+after receiving, you can then again send messages
