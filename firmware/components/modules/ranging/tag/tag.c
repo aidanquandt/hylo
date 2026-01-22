@@ -5,8 +5,8 @@
  *---------------------------------------------------------------------------*/
 
 #include "tag.h"
-#include "error_handler.h"
 #include "FreeRTOS.h"
+#include "error_handler.h"
 #include "platform_os.h"
 #include "state_machine.h"
 #include "stopwatch.h"
@@ -24,11 +24,6 @@
 // Convert timeout from milliseconds to 1kHz ticks (1 tick = 1ms at 1kHz)
 #define TAG_RESPONSE_TIMEOUT_TICKS (TWR_RESPONSE_TIMEOUT_MS)
 #define TAG_RETRY_MAX 0U
-
-// Delay from RESPONSE RX to FINAL TX (microseconds)
-// Conservative: 1000µs allows plenty of processing time with event-driven architecture
-// Aggressive: Can go as low as ~600µs (matching DW3000 examples)
-#define RESP_RX_TO_FINAL_TX_DLY_UUS 800
 
 /*---------------------------------------------------------------------------
  * Private Types
@@ -357,31 +352,18 @@ STATIC bool tag_send_final(void)
     // Convert response RX timestamp to 5-byte format
     twr_u64_to_timestamp(tag_ctx.resp_rx.timestamp_dtu, final.resp_rx_ts);
 
-    // Calculate the scheduled final TX time (full 40-bit DTU)
-    // Formula: TX_time = RX_time + response_delay
-    // Antenna delay is handled by hardware configuration
-    // (dwt_setrxantennadelay/dwt_settxantennadelay)
-    uint64_t delay_dtu = UWB_US_TO_DTU(RESP_RX_TO_FINAL_TX_DLY_UUS);
+    // Note: final_tx_ts will be filled with actual TX timestamp in tx_done_callback
+    // For now, send with zero as placeholder (will be overwritten by actual timestamp)
+    memset(final.final_tx_ts, 0, sizeof(final.final_tx_ts));
 
-    // Full 40-bit absolute TX time in DTU - mask to 40 bits to handle wraparound
-    uint64_t final_tx_time_dtu = (tag_ctx.resp_rx.timestamp_dtu + delay_dtu) & 0xFFFFFFFFFFULL;
-
-    // Extract high 32-bits for delayed TX API (hardware requires DTUH format)
-    uint32_t final_tx_time_dtuh = UWB_DTU_TO_DTUH(final_tx_time_dtu);
-
-    // Encode the scheduled TX timestamp in the final message
-    twr_u64_to_timestamp(final_tx_time_dtu, final.final_tx_ts);
-
-    // Send final message with delayed TX (pass DTUH - high 32-bits)
-    if (!uwb_send_message_delayed((uint8_t*)&final, sizeof(final), tag_ctx.target_address,
-                                  final_tx_time_dtuh))
+    // Send final message immediately - actual TX timestamp captured in tx_done_callback
+    if (!uwb_send_message((uint8_t*)&final, sizeof(final), tag_ctx.target_address))
     {
         error_handler_log(ERROR_SEVERITY_ERROR, "tag", "FINAL TX failed");
         return false;
     }
 
-    // Store the scheduled time as fallback
-    tag_ctx.final_tx.timestamp_dtu = final_tx_time_dtu;
+    // FINAL TX timestamp will be captured in tag_tx_done_callback()
 
     return true;
 }
