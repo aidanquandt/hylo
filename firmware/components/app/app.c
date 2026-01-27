@@ -49,7 +49,7 @@ STATIC void app_post_module_initialization(void);
  *---------------------------------------------------------------------------*/
 STATIC void module_task_1Hz(void* argument)
 {
-    modules_E module = (modules_E)(uintptr_t)argument;
+    modules_E module    = (modules_E)(uintptr_t)argument;
     TickType_t lastWake = xTaskGetTickCount();
     for (;;)
     {
@@ -60,7 +60,7 @@ STATIC void module_task_1Hz(void* argument)
 
 STATIC void module_task_10Hz(void* argument)
 {
-    modules_E module = (modules_E)(uintptr_t)argument;
+    modules_E module    = (modules_E)(uintptr_t)argument;
     TickType_t lastWake = xTaskGetTickCount();
     for (;;)
     {
@@ -71,7 +71,7 @@ STATIC void module_task_10Hz(void* argument)
 
 STATIC void module_task_100Hz(void* argument)
 {
-    modules_E module = (modules_E)(uintptr_t)argument;
+    modules_E module    = (modules_E)(uintptr_t)argument;
     TickType_t lastWake = xTaskGetTickCount();
     for (;;)
     {
@@ -82,7 +82,7 @@ STATIC void module_task_100Hz(void* argument)
 
 STATIC void module_task_1kHz(void* argument)
 {
-    modules_E module = (modules_E)(uintptr_t)argument;
+    modules_E module    = (modules_E)(uintptr_t)argument;
     TickType_t lastWake = xTaskGetTickCount();
     for (;;)
     {

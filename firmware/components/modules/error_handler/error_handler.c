@@ -33,14 +33,14 @@ const module_S error_handler_module = {
  * Private Variables
  *---------------------------------------------------------------------------*/
 STATIC error_record_t error_history[ERROR_HISTORY_SIZE];
-STATIC uint32_t error_history_head = 0U;
-STATIC uint32_t error_history_count = 0U;
+STATIC uint32_t error_history_head   = 0U;
+STATIC uint32_t error_history_count  = 0U;
 STATIC SemaphoreHandle_t error_mutex = NULL;
 
-STATIC uint32_t error_count_info = 0U;
+STATIC uint32_t error_count_info    = 0U;
 STATIC uint32_t error_count_warning = 0U;
-STATIC uint32_t error_count_error = 0U;
-STATIC uint32_t error_count_fatal = 0U;
+STATIC uint32_t error_count_error   = 0U;
+STATIC uint32_t error_count_fatal   = 0U;
 STATIC uint32_t dropped_error_count = 0U;
 
 /*---------------------------------------------------------------------------
@@ -64,13 +64,13 @@ STATIC void error_handler_init(void)
     }
 
     memset(error_history, 0, sizeof(error_history));
-    error_history_head = 0U;
+    error_history_head  = 0U;
     error_history_count = 0U;
 
-    error_count_info = 0U;
+    error_count_info    = 0U;
     error_count_warning = 0U;
-    error_count_error = 0U;
-    error_count_fatal = 0U;
+    error_count_error   = 0U;
+    error_count_fatal   = 0U;
     dropped_error_count = 0U;
 }
 
@@ -122,7 +122,7 @@ void error_handler_log(error_severity_e severity, const char* module, const char
     }
 
     error_record_t record;
-    record.severity = severity;
+    record.severity     = severity;
     record.timestamp_ms = xTaskGetTickCount();
 
     strncpy(record.module, module, sizeof(record.module) - 1);
@@ -240,13 +240,13 @@ void error_handler_clear_history(void)
     if (xSemaphoreTake(error_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
     {
         memset(error_history, 0, sizeof(error_history));
-        error_history_head = 0U;
+        error_history_head  = 0U;
         error_history_count = 0U;
 
-        error_count_info = 0U;
+        error_count_info    = 0U;
         error_count_warning = 0U;
-        error_count_error = 0U;
-        error_count_fatal = 0U;
+        error_count_error   = 0U;
+        error_count_fatal   = 0U;
         dropped_error_count = 0U;
 
         xSemaphoreGive(error_mutex);

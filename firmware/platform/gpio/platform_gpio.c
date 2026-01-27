@@ -23,7 +23,7 @@ platform_gpio_state_t platform_gpio_read_pin(platform_gpio_pin_t pin)
     switch (pin)
     {
         case PLATFORM_GPIO_PIN_LED_GREEN:
-            port = LED1_GPIO_PORT;
+            port    = LED1_GPIO_PORT;
             pin_num = LED1_PIN;
             break;
         default:

@@ -10,7 +10,7 @@
  *---------------------------------------------------------------------------*/
 typedef enum
 {
-    PLATFORM_GPIO_LOW = 0,
+    PLATFORM_GPIO_LOW  = 0,
     PLATFORM_GPIO_HIGH = 1
 } platform_gpio_state_t;
 

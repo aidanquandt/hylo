@@ -41,7 +41,7 @@ void stopwatch_stop(uint8_t id)
         return;
     }
 
-    stopwatches[id].stop_time = platform_get_timestamp();
+    stopwatches[id].stop_time  = platform_get_timestamp();
     stopwatches[id].is_running = false;
 }
 

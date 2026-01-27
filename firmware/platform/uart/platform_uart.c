@@ -89,6 +89,6 @@ uint16_t platform_uart_get_rx_dma_position(void)
 {
     uint16_t dma_counter = (uint16_t)__HAL_DMA_GET_COUNTER(PLATFORM_UART_RX->hdmarx);
     uint16_t buffer_size = PLATFORM_UART_RX->RxXferSize;
-    uint16_t write_pos = buffer_size - dma_counter;
+    uint16_t write_pos   = buffer_size - dma_counter;
     return write_pos;
 }

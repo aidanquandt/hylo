@@ -30,11 +30,11 @@ STATIC const spi_cs_map_t cs_map[] = {
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-STATIC SPI_HandleTypeDef* current_spi = NULL;
-STATIC volatile uint32_t spi_transmit_count = 0;
-STATIC volatile uint32_t spi_receive_count = 0;
-STATIC volatile uint32_t spi_cs_low_count = 0;
-STATIC volatile uint32_t spi_cs_high_count = 0;
+STATIC SPI_HandleTypeDef* current_spi             = NULL;
+STATIC volatile uint32_t spi_transmit_count       = 0;
+STATIC volatile uint32_t spi_receive_count        = 0;
+STATIC volatile uint32_t spi_cs_low_count         = 0;
+STATIC volatile uint32_t spi_cs_high_count        = 0;
 STATIC volatile HAL_StatusTypeDef last_hal_status = HAL_OK;
 
 /*---------------------------------------------------------------------------
@@ -125,7 +125,7 @@ platform_spi_status_E platform_spi_receive(uint8_t* data, uint16_t length)
     }
 
     HAL_StatusTypeDef status = HAL_SPI_Receive(current_spi, data, length, SPI_TIMEOUT_MS);
-    last_hal_status = status;
+    last_hal_status          = status;
 
     if (status == HAL_OK)
     {

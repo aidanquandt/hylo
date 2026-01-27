@@ -12,7 +12,7 @@
 typedef enum
 {
     PLATFORM_SPI_SUCCESS = 0,
-    PLATFORM_SPI_ERROR = -1,
+    PLATFORM_SPI_ERROR   = -1,
     PLATFORM_SPI_TIMEOUT = -2,
 } platform_spi_status_E;
 
