@@ -42,7 +42,7 @@ void platform_os_delay_us_blocking(uint32_t delay_us)
     if (from_isr || delay_us <= 100)
     {
         uint32_t cycles = (SystemCoreClock / 1000000UL) * delay_us;
-        uint32_t start = DWT->CYCCNT;
+        uint32_t start  = DWT->CYCCNT;
 
         while ((DWT->CYCCNT - start) < cycles)
         {
@@ -60,7 +60,7 @@ void platform_os_delay_us_blocking(uint32_t delay_us)
     vTaskSuspendAll();
 
     uint32_t cycles = (SystemCoreClock / 1000000UL) * delay_us;
-    uint32_t start = DWT->CYCCNT;
+    uint32_t start  = DWT->CYCCNT;
 
     while ((DWT->CYCCNT - start) < cycles)
     {

@@ -83,7 +83,7 @@ twr_status_e twr_calculate_ss_twr(uint64_t poll_tx_ts, uint64_t poll_rx_ts, uint
 
     // Success!
     result->distance_m = distance;
-    result->valid = true;
+    result->valid      = true;
 
     return TWR_SUCCESS;
 }
@@ -139,7 +139,7 @@ twr_status_e twr_calculate_ds_twr(uint64_t poll_tx_ts, uint64_t poll_rx_ts, uint
     // DS-TWR formula: ToF = (Da × Db - Ra × Rb) / (Ra + Rb + Da + Db)
     // Where: Da = Rb + 2×ToF, Db = Ra + 2×ToF
     // This gives: Da×Db - Ra×Rb = 2×ToF×(Ra + Rb + 2×ToF)
-    double numerator = Da_d * Db_d - Ra_d * Rb_d;
+    double numerator   = Da_d * Db_d - Ra_d * Rb_d;
     double denominator = Ra_d + Rb_d + Da_d + Db_d;
 
     if (denominator < TWR_MIN_TIMESTAMP_DIFF_DTU)
@@ -166,7 +166,7 @@ twr_status_e twr_calculate_ds_twr(uint64_t poll_tx_ts, uint64_t poll_rx_ts, uint
 
     // Success!
     result->distance_m = distance;
-    result->valid = true;
+    result->valid      = true;
 
     return TWR_SUCCESS;
 }

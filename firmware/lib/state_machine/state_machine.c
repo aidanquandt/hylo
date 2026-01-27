@@ -70,7 +70,7 @@ void state_machine_force_transition(state_machine_s* state_machine, uint16_t new
                 state_machine->prev_state = curr_state;
                 state_machine->curr_state = new_state;
                 state_machine->next_state = new_state;
-                state_machine->timer = 0;
+                state_machine->timer      = 0;
 
                 // Call onEntry for new state
                 if (NULL != state_machine->states[new_state].onEntry)

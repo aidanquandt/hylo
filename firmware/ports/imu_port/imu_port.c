@@ -34,11 +34,11 @@ STATIC bool validate_odr(imu_odr_t odr);
  * Private Variables
  *---------------------------------------------------------------------------*/
 STATIC struct imu_dev_s imu_device = {.bmi_dev = {
-                                          .intf = BMI3_SPI_INTF,
-                                          .read = imu_spi_read,
-                                          .write = imu_spi_write,
-                                          .delay_us = imu_delay_us,
-                                          .intf_ptr = NULL,
+                                          .intf           = BMI3_SPI_INTF,
+                                          .read           = imu_spi_read,
+                                          .write          = imu_spi_write,
+                                          .delay_us       = imu_delay_us,
+                                          .intf_ptr       = NULL,
                                           .read_write_len = 32,
                                       }};
 
@@ -106,7 +106,7 @@ uint8_t imu_port_read_chip_id(imu_dev_t* dev)
     }
 
     uint8_t chip_id_buf[2] = {0};
-    int8_t rslt = bmi3_get_regs(BMI3_REG_CHIP_ID, chip_id_buf, 2, &dev->bmi_dev);
+    int8_t rslt            = bmi3_get_regs(BMI3_REG_CHIP_ID, chip_id_buf, 2, &dev->bmi_dev);
 
     if (rslt != BMI3_OK)
     {
@@ -124,7 +124,7 @@ float imu_port_read_temperature(imu_dev_t* dev)
     }
 
     struct bmi3_sensor_data sensor_data = {0};
-    sensor_data.type = BMI323_TEMP;
+    sensor_data.type                    = BMI323_TEMP;
 
     int8_t rslt = bmi323_get_sensor_data(&sensor_data, 1, &dev->bmi_dev);
 
@@ -144,7 +144,7 @@ imu_port_status_t imu_port_read_accel(imu_dev_t* dev, imu_sensor_data_t* accel)
     }
 
     struct bmi3_sensor_data sensor_data = {0};
-    sensor_data.type = BMI323_ACCEL;
+    sensor_data.type                    = BMI323_ACCEL;
 
     int8_t rslt = bmi323_get_sensor_data(&sensor_data, 1, &dev->bmi_dev);
     if (rslt != BMI3_OK)
@@ -167,7 +167,7 @@ imu_port_status_t imu_port_read_gyro(imu_dev_t* dev, imu_sensor_data_t* gyro)
     }
 
     struct bmi3_sensor_data sensor_data = {0};
-    sensor_data.type = BMI323_GYRO;
+    sensor_data.type                    = BMI323_GYRO;
 
     int8_t rslt = bmi323_get_sensor_data(&sensor_data, 1, &dev->bmi_dev);
     if (rslt != BMI3_OK)
@@ -191,8 +191,8 @@ imu_port_status_t imu_port_read_accel_and_gyro(imu_dev_t* dev, imu_sensor_data_t
     }
 
     struct bmi3_sensor_data sensor_data[2] = {0};
-    sensor_data[0].type = BMI323_ACCEL;
-    sensor_data[1].type = BMI323_GYRO;
+    sensor_data[0].type                    = BMI323_ACCEL;
+    sensor_data[1].type                    = BMI323_GYRO;
 
     int8_t rslt = bmi323_get_sensor_data(sensor_data, 2, &dev->bmi_dev);
     if (rslt != BMI3_OK)
@@ -230,7 +230,7 @@ imu_port_status_t imu_port_configure_accel(imu_dev_t* dev, imu_accel_range_t ran
     }
 
     struct bmi3_sens_config config = {0};
-    config.type = BMI323_ACCEL;
+    config.type                    = BMI323_ACCEL;
 
     int8_t rslt = bmi323_get_sensor_config(&config, 1, &dev->bmi_dev);
     if (rslt != BMI3_OK)
@@ -238,8 +238,8 @@ imu_port_status_t imu_port_configure_accel(imu_dev_t* dev, imu_accel_range_t ran
         return IMU_PORT_ERROR_COMM_FAIL;
     }
 
-    config.cfg.acc.range = (uint8_t)range;
-    config.cfg.acc.odr = (uint16_t)odr;
+    config.cfg.acc.range    = (uint8_t)range;
+    config.cfg.acc.odr      = (uint16_t)odr;
     config.cfg.acc.acc_mode = BMI3_ACC_MODE_NORMAL; // Enable accelerometer
 
     rslt = bmi323_set_sensor_config(&config, 1, &dev->bmi_dev);
@@ -264,7 +264,7 @@ imu_port_status_t imu_port_configure_gyro(imu_dev_t* dev, imu_gyro_range_t range
     }
 
     struct bmi3_sens_config config = {0};
-    config.type = BMI323_GYRO;
+    config.type                    = BMI323_GYRO;
 
     int8_t rslt = bmi323_get_sensor_config(&config, 1, &dev->bmi_dev);
     if (rslt != BMI3_OK)
@@ -272,8 +272,8 @@ imu_port_status_t imu_port_configure_gyro(imu_dev_t* dev, imu_gyro_range_t range
         return IMU_PORT_ERROR_COMM_FAIL;
     }
 
-    config.cfg.gyr.range = (uint16_t)range;
-    config.cfg.gyr.odr = (uint16_t)odr;
+    config.cfg.gyr.range    = (uint16_t)range;
+    config.cfg.gyr.odr      = (uint16_t)odr;
     config.cfg.gyr.gyr_mode = BMI3_GYR_MODE_NORMAL; // Enable gyroscope
 
     rslt = bmi323_set_sensor_config(&config, 1, &dev->bmi_dev);

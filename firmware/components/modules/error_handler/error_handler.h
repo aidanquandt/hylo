@@ -16,10 +16,10 @@
  *---------------------------------------------------------------------------*/
 typedef enum
 {
-    ERROR_SEVERITY_INFO = 0U,    // Informational message
+    ERROR_SEVERITY_INFO    = 0U, // Informational message
     ERROR_SEVERITY_WARNING = 1U, // Warning - potential issue
-    ERROR_SEVERITY_ERROR = 2U,   // Error - functionality impaired
-    ERROR_SEVERITY_FATAL = 3U    // Fatal - system cannot continue
+    ERROR_SEVERITY_ERROR   = 2U, // Error - functionality impaired
+    ERROR_SEVERITY_FATAL   = 3U  // Fatal - system cannot continue
 } error_severity_e;
 
 typedef struct

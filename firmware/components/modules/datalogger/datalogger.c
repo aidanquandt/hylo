@@ -24,7 +24,7 @@ STATIC void datalogger_process_1Hz(void);
 
 extern const module_S datalogger_module;
 const module_S datalogger_module = {
-    .module_name = "datalogger",
+    .module_name        = "datalogger",
     .module_process_1Hz = datalogger_process_1Hz,
 };
 
@@ -46,12 +46,12 @@ STATIC UBaseType_t num_tracked_tasks = 0;
  *---------------------------------------------------------------------------*/
 STATIC void datalogger_monitor_rtos_usage(void)
 {
-    STATIC uint32_t prev_total_runtime = 0U;
-    STATIC uint32_t prev_task_runtime[MAX_NUM_TASKS] = {0};
+    STATIC uint32_t prev_total_runtime                   = 0U;
+    STATIC uint32_t prev_task_runtime[MAX_NUM_TASKS]     = {0};
     STATIC TaskHandle_t prev_task_handles[MAX_NUM_TASKS] = {NULL};
 
     uint32_t total_runtime = 0U;
-    num_tracked_tasks = uxTaskGetSystemState(task_status_array, MAX_NUM_TASKS, &total_runtime);
+    num_tracked_tasks      = uxTaskGetSystemState(task_status_array, MAX_NUM_TASKS, &total_runtime);
     if ((num_tracked_tasks == 0U) || (total_runtime == 0U))
     {
         return;
@@ -75,7 +75,7 @@ STATIC void datalogger_monitor_rtos_usage(void)
     for (UBaseType_t task_index = 0U; task_index < num_tracked_tasks; ++task_index)
     {
         TaskHandle_t current_handle = task_status_array[task_index].xHandle;
-        uint32_t current_runtime = task_status_array[task_index].ulRunTimeCounter;
+        uint32_t current_runtime    = task_status_array[task_index].ulRunTimeCounter;
 
         uint32_t previous_runtime = 0U;
         for (uint8_t prev_index = 0U; prev_index < MAX_NUM_TASKS; ++prev_index)
@@ -135,7 +135,7 @@ uint32_t datalogger_get_task_usage(task_cpu_info_t* tasks, uint32_t max_tasks)
     uint32_t count = (num_tracked_tasks < max_tasks) ? num_tracked_tasks : max_tasks;
     for (uint32_t i = 0; i < count; i++)
     {
-        tasks[i].task_name = task_status_array[i].pcTaskName;
+        tasks[i].task_name   = task_status_array[i].pcTaskName;
         tasks[i].cpu_percent = cpu_usage[i];
     }
 
@@ -144,9 +144,9 @@ uint32_t datalogger_get_task_usage(task_cpu_info_t* tasks, uint32_t max_tasks)
 
 STATIC void datalogger_monitor_uart_health(void)
 {
-    uint32_t queue_count = uart_manager_get_queue_count();
+    uint32_t queue_count         = uart_manager_get_queue_count();
     STATIC uint32_t prev_dropped = 0U;
-    uint32_t dropped = uart_manager_get_dropped_count();
+    uint32_t dropped             = uart_manager_get_dropped_count();
 
     if (dropped > prev_dropped)
     {

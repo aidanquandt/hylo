@@ -53,28 +53,28 @@ STATIC void uart_manager_process_10Hz(void);
 extern const module_S uart_manager_module;
 
 const module_S uart_manager_module = {
-    .module_name = "uart_manager",
-    .module_init = uart_manager_init,
-    .module_create_task = uart_manager_create_task,
+    .module_name         = "uart_manager",
+    .module_init         = uart_manager_init,
+    .module_create_task  = uart_manager_create_task,
     .module_process_10Hz = uart_manager_process_10Hz,
 };
 
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-STATIC QueueHandle_t uart_tx_queue = NULL;
-STATIC TaskHandle_t uart_tx_task_handle = NULL;
+STATIC QueueHandle_t uart_tx_queue        = NULL;
+STATIC TaskHandle_t uart_tx_task_handle   = NULL;
 STATIC volatile uint32_t dropped_messages = 0U;
-STATIC volatile uint32_t tx_errors = 0U;
+STATIC volatile uint32_t tx_errors        = 0U;
 STATIC uint8_t rx_dma_buffer[UART_RX_BUFFER_SIZE] __attribute__((section(".dma_buffer")));
 STATIC uint8_t cmd_buffer[UART_CMD_MAX_LENGTH];
-STATIC uint16_t cmd_length = 0U;
-STATIC uint16_t last_checked_pos = 0U;
-STATIC uart_cmd_callback_t cmd_callback = NULL;
-STATIC uint32_t rx_commands_received = 0U;
-STATIC uint32_t rx_buffer_overruns = 0U;
+STATIC uint16_t cmd_length               = 0U;
+STATIC uint16_t last_checked_pos         = 0U;
+STATIC uart_cmd_callback_t cmd_callback  = NULL;
+STATIC uint32_t rx_commands_received     = 0U;
+STATIC uint32_t rx_buffer_overruns       = 0U;
 STATIC volatile bool command_in_progress = false;
-STATIC bool last_was_cr = false;
+STATIC bool last_was_cr                  = false;
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -135,12 +135,12 @@ STATIC void uart_manager_init(void)
     dropped_messages = 0U;
 
     // Initialize RX state
-    cmd_length = 0U;
-    last_checked_pos = 0U;
+    cmd_length           = 0U;
+    last_checked_pos     = 0U;
     rx_commands_received = 0U;
-    rx_buffer_overruns = 0U;
-    last_was_cr = false;
-    tx_errors = 0U;
+    rx_buffer_overruns   = 0U;
+    last_was_cr          = false;
+    tx_errors            = 0U;
 
     // Initialize command router
     uart_cmd_router_init();
@@ -388,7 +388,7 @@ STATIC void uart_manager_process_rx_buffer(void)
             // Skip LF if previous character was CR (prevents double processing of \r\n)
             if (c == UART_CMD_DELIMITER && last_was_cr)
             {
-                last_was_cr = false;
+                last_was_cr      = false;
                 last_checked_pos = (last_checked_pos + 1) % UART_RX_BUFFER_SIZE;
                 continue;
             }
@@ -456,7 +456,7 @@ bool uart_manager_transmit(const uint8_t* data, size_t length)
     }
 
     // Detect ISR context and set appropriate timeout
-    bool from_isr = is_in_isr_context();
+    bool from_isr       = is_in_isr_context();
     uint32_t timeout_ms = from_isr ? 0U : UART_QUEUE_TIMEOUT_MS; // Brief wait in task context
 
     return uart_manager_queue_message(data, (uint16_t)length, from_isr, timeout_ms);
