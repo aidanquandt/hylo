@@ -11,6 +11,7 @@
 #include "error_handler.h"
 #include "imu.h"
 #include "ranging/ranging.h"
+#include "ranging_manager/ranging_manager.h"
 #include "stopwatch.h"
 #include "uart_manager.h"
 #include "uwb.h"
@@ -38,6 +39,8 @@ STATIC void uart_cmd_router_handle_datalogger(const char* action, const char* ta
                                               const char* args);
 STATIC void uart_cmd_router_handle_ranging(const char* action, const char* target,
                                            const char* args);
+STATIC void uart_cmd_router_handle_ranging_manager(const char* action, const char* target,
+                                                   const char* args);
 STATIC void uart_cmd_router_handle_stopwatch(const char* action, const char* target,
                                              const char* args);
 
@@ -77,6 +80,7 @@ STATIC void uart_cmd_router_handle_list(void)
     uart_manager_print("  imu        - IMU sensor module\r\n");
     uart_manager_print("  uwb        - UWB radio transceiver\r\n");
     uart_manager_print("  ranging    - TWR ranging service\r\n");
+    uart_manager_print("  rangingmgr - Automatic ranging manager\r\n");
     uart_manager_print("  error      - Error handler module\r\n");
     uart_manager_print("  datalogger - System monitoring\r\n");
     uart_manager_print("  stopwatch  - Performance timing (0-9 instances)\r\n\r\n");
@@ -93,16 +97,16 @@ STATIC void uart_cmd_router_handle_beacon(const char* action, const char* target
             {
                 dest_addr = (uint16_t)strtol(args, NULL, 0);
             }
-            
+
             // Construct DATA protocol beacon message
-            protocol_header_t msg = {
-                .protocol_type = PROTOCOL_TYPE_DATA,
-                .msg_type = DATA_MSG_TYPE_BEACON,
-                .sequence = 0
-            };
-            
+            protocol_header_t msg = {.protocol_type = PROTOCOL_TYPE_DATA,
+                                     .msg_type      = DATA_MSG_TYPE_BEACON,
+                                     .sequence      = 0};
+
             uart_manager_print("Sending DATA beacon to 0x%04X...\r\n", dest_addr);
-            if (uwb_send_message((const uint8_t*)&msg, sizeof(msg), dest_addr))
+            uwb_send_result_t result =
+                uwb_send_message((const uint8_t*)&msg, sizeof(msg), dest_addr);
+            if (result.success)
             {
                 uart_manager_print("Beacon sent\r\n");
             }
@@ -292,6 +296,10 @@ STATIC void uart_cmd_router_handle_uwb(const char* action, const char* target, c
                                (unsigned int)stats.received, (unsigned int)stats.rx_errors,
                                (unsigned int)stats.filtered);
         }
+        else if (strcmp(target, "aidan_stats") == 0)
+        {
+            uwb_port_print_aidan_stats();
+        }
         else
         {
             uart_manager_print("ERR: Unknown target '%s'\r\n", target);
@@ -394,6 +402,61 @@ STATIC void uart_cmd_router_handle_datalogger(const char* action, const char* ta
     }
 }
 
+STATIC void uart_cmd_router_handle_ranging_manager(const char* action, const char* target,
+                                                   const char* args)
+{
+    (void)args; // Most commands don't need args
+
+    if (strcmp(action, "req") == 0)
+    {
+        if (strcmp(target, "start") == 0)
+        {
+            if (ranging_manager_start())
+            {
+                uart_manager_print("Ranging manager started (auto-ranging enabled)\r\n");
+            }
+            else
+            {
+                uart_manager_print("ERR: Failed to start ranging manager\r\n");
+            }
+        }
+        else if (strcmp(target, "stop") == 0)
+        {
+            ranging_manager_stop();
+            uart_manager_print("Ranging manager stopped\r\n");
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown request. Use: start, stop\r\n");
+        }
+    }
+    else if (strcmp(action, "get") == 0)
+    {
+        if (strcmp(target, "status") == 0)
+        {
+            bool active      = ranging_manager_is_active();
+            uint32_t success = ranging_manager_get_success_count();
+            uint32_t failure = ranging_manager_get_failure_count();
+            float success_rate =
+                (success + failure > 0) ? (100.0f * success / (success + failure)) : 0.0f;
+
+            uart_manager_print("Ranging Manager Status:\r\n");
+            uart_manager_print("  Active: %s\r\n", active ? "YES" : "NO");
+            uart_manager_print("  Success: %u\r\n", (unsigned int)success);
+            uart_manager_print("  Failure: %u\r\n", (unsigned int)failure);
+            uart_manager_print("  Success Rate: %.1f%%\r\n", success_rate);
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown get target. Use: status\r\n");
+        }
+    }
+    else
+    {
+        uart_manager_print("ERR: Unknown action. Use: req, get\r\n");
+    }
+}
+
 STATIC void uart_cmd_router_handle_stopwatch(const char* action, const char* target,
                                              const char* args)
 {
@@ -405,7 +468,7 @@ STATIC void uart_cmd_router_handle_stopwatch(const char* action, const char* tar
             for (uint8_t i = 0; i < 10; i++)
             {
                 uint32_t elapsed = stopwatch_elapsed_us(i);
-                bool running = stopwatch_is_running(i);
+                bool running     = stopwatch_is_running(i);
                 uart_manager_print("  [%u] %lu us %s\r\n", i, (unsigned long)elapsed,
                                    running ? "(running)" : "(stopped)");
             }
@@ -420,7 +483,7 @@ STATIC void uart_cmd_router_handle_stopwatch(const char* action, const char* tar
                 return;
             }
             uint32_t elapsed = stopwatch_elapsed_us(id);
-            bool running = stopwatch_is_running(id);
+            bool running     = stopwatch_is_running(id);
             uart_manager_print("Stopwatch %u: %lu us %s\r\n", id, (unsigned long)elapsed,
                                running ? "(running)" : "(stopped)");
         }
@@ -543,6 +606,7 @@ STATIC void uart_cmd_router_handle_ranging(const char* action, const char* targe
             uart_manager_print("Ranging Status:\r\n");
             uart_manager_print("  Mode: %s\r\n", mode_str);
             uart_manager_print("  Active: %s\r\n", status.active ? "Yes" : "No");
+            uart_manager_print("  State: %d\r\n", status.state);
             uart_manager_print("  Successful: %lu\r\n", (unsigned long)status.successful_ranges);
             uart_manager_print("  Failed: %lu\r\n", (unsigned long)status.failed_ranges);
 
@@ -650,13 +714,13 @@ void uart_cmd_router_dispatch(const char* cmd_string)
     }
 
     char* module = p;
-    char* dot1 = strchr(module, '.');
+    char* dot1   = strchr(module, '.');
     if (dot1 == NULL)
     {
         uart_manager_print("ERR: Invalid format. Use module.action.target\r\n");
         return;
     }
-    *dot1 = '\0';
+    *dot1        = '\0';
     char* action = dot1 + 1;
 
     char* dot2 = strchr(action, '.');
@@ -665,15 +729,15 @@ void uart_cmd_router_dispatch(const char* cmd_string)
         uart_manager_print("ERR: Invalid format. Use module.action.target\r\n");
         return;
     }
-    *dot2 = '\0';
+    *dot2        = '\0';
     char* target = dot2 + 1;
 
-    char* args = NULL;
+    char* args  = NULL;
     char* space = strchr(target, ' ');
     if (space != NULL)
     {
         *space = '\0';
-        args = (char*)skip_whitespace(space + 1);
+        args   = (char*)skip_whitespace(space + 1);
     }
 
     if (strcmp(module, "beacon") == 0)
@@ -699,6 +763,10 @@ void uart_cmd_router_dispatch(const char* cmd_string)
     else if (strcmp(module, "ranging") == 0)
     {
         uart_cmd_router_handle_ranging(action, target, args);
+    }
+    else if (strcmp(module, "rangingmgr") == 0)
+    {
+        uart_cmd_router_handle_ranging_manager(action, target, args);
     }
     else if (strcmp(module, "stopwatch") == 0)
     {

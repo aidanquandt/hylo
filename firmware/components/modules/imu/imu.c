@@ -72,8 +72,8 @@ STATIC void imu_process_10Hz(void);
 extern const module_S imu_module;
 
 const module_S imu_module = {
-    .module_name = "imu",
-    .module_init = imu_init,
+    .module_name         = "imu",
+    .module_init         = imu_init,
     .module_process_10Hz = imu_process_10Hz,
 };
 
@@ -81,24 +81,24 @@ const module_S imu_module = {
  * Private Variables
  *---------------------------------------------------------------------------*/
 STATIC const state_s imu_states[] = {
-    [STATE_STARTUP] = {.process = NULL, .onEntry = NULL, .onExit = NULL},
+    [STATE_STARTUP]        = {.process = NULL, .onEntry = NULL, .onExit = NULL},
     [STATE_INITIALIZATION] = {.process = NULL,
                               .onEntry = imu_state_initialization_on_entry,
-                              .onExit = NULL},
-    [STATE_ACTIVE] = {.process = imu_state_active_process, .onEntry = NULL, .onExit = NULL},
+                              .onExit  = NULL},
+    [STATE_ACTIVE]         = {.process = imu_state_active_process, .onEntry = NULL, .onExit = NULL},
     [STATE_FAULTED] = {.process = NULL, .onEntry = imu_state_faulted_on_entry, .onExit = NULL}};
 
-STATIC state_machine_s imu_state_machine = {.prev_state = STATE_STARTUP,
-                                            .curr_state = STATE_STARTUP,
-                                            .next_state = STATE_STARTUP,
-                                            .timer = 0,
+STATIC state_machine_s imu_state_machine = {.prev_state      = STATE_STARTUP,
+                                            .curr_state      = STATE_STARTUP,
+                                            .next_state      = STATE_STARTUP,
+                                            .timer           = 0,
                                             .transitionLogic = imu_transition_logic,
-                                            .states = imu_states};
+                                            .states          = imu_states};
 
-STATIC imu_dev_t* imu_dev = NULL;
+STATIC imu_dev_t* imu_dev                                  = NULL;
 STATIC imu_state_machine_inputs_t imu_state_machine_inputs = {0};
-STATIC imu_measurements_t measurements = {0};
-STATIC imu_fault_code_e imu_fault_code = FAULT_NONE;
+STATIC imu_measurements_t measurements                     = {0};
+STATIC imu_fault_code_e imu_fault_code                     = FAULT_NONE;
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -151,7 +151,7 @@ STATIC void imu_process_10Hz(void)
 
 STATIC void imu_state_machine_sample_inputs(void)
 {
-    imu_state_machine_inputs.fault_present = (imu_fault_code != FAULT_NONE);
+    imu_state_machine_inputs.fault_present         = (imu_fault_code != FAULT_NONE);
     imu_state_machine_inputs.init_device_completed = (imu_dev != NULL);
 }
 
@@ -314,7 +314,7 @@ void imu_get_status(imu_status_t* status)
             break;
     }
 
-    status->chip_id = measurements.chip_id;
+    status->chip_id    = measurements.chip_id;
     status->fault_code = imu_fault_code;
 }
 
@@ -325,12 +325,12 @@ bool imu_get_data(imu_data_t* data)
         return false;
     }
 
-    data->accel.x = measurements.accel.x;
-    data->accel.y = measurements.accel.y;
-    data->accel.z = measurements.accel.z;
-    data->gyro.x = measurements.gyro.x;
-    data->gyro.y = measurements.gyro.y;
-    data->gyro.z = measurements.gyro.z;
+    data->accel.x     = measurements.accel.x;
+    data->accel.y     = measurements.accel.y;
+    data->accel.z     = measurements.accel.z;
+    data->gyro.x      = measurements.gyro.x;
+    data->gyro.y      = measurements.gyro.y;
+    data->gyro.z      = measurements.gyro.z;
     data->temperature = measurements.temperature;
     return true;
 }

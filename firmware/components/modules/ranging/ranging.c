@@ -16,7 +16,7 @@
  *---------------------------------------------------------------------------*/
 STATIC void ranging_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr,
                                      uint64_t rx_timestamp);
-STATIC void ranging_tx_done_handler(uint64_t tx_timestamp);
+STATIC void ranging_tx_done_handler(uint32_t message_id, uint64_t tx_timestamp);
 
 /*---------------------------------------------------------------------------
  * Module Functions
@@ -27,8 +27,8 @@ STATIC void ranging_process_1kHz(void);
 extern const module_S ranging_module;
 
 const module_S ranging_module = {
-    .module_name = "ranging",
-    .module_init = ranging_init,
+    .module_name         = "ranging",
+    .module_init         = ranging_init,
     .module_process_1kHz = ranging_process_1kHz,
 };
 
@@ -36,7 +36,7 @@ const module_S ranging_module = {
  * Private Variables
  *---------------------------------------------------------------------------*/
 STATIC ranging_mode_e current_mode = RANGING_MODE_DISABLED;
-STATIC bool module_initialized = false;
+STATIC bool module_initialized     = false;
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -57,7 +57,7 @@ STATIC void ranging_init(void)
     // Register TX done handler
     uwb_register_tx_done_handler(ranging_tx_done_handler);
 
-    current_mode = RANGING_MODE_DISABLED;
+    current_mode       = RANGING_MODE_DISABLED;
     module_initialized = true;
 }
 
@@ -166,7 +166,7 @@ void ranging_get_status(ranging_status_t* status)
 
     memset(status, 0, sizeof(ranging_status_t));
 
-    status->mode = current_mode;
+    status->mode   = current_mode;
     status->active = (current_mode != RANGING_MODE_DISABLED);
 
     // Get mode-specific statistics
@@ -176,8 +176,9 @@ void ranging_get_status(ranging_status_t* status)
         {
             tag_status_t tag_status;
             tag_get_status(&tag_status);
-            status->successful_ranges = tag_status.successful_ranges;
-            status->failed_ranges = tag_status.failed_ranges;
+            status->state              = (int)tag_status.state;
+            status->successful_ranges  = tag_status.successful_ranges;
+            status->failed_ranges      = tag_status.failed_ranges;
             status->messages_processed = tag_status.successful_ranges + tag_status.failed_ranges;
             break;
         }
@@ -186,8 +187,9 @@ void ranging_get_status(ranging_status_t* status)
         {
             anchor_status_t anchor_status;
             anchor_get_status(&anchor_status);
-            status->successful_ranges = anchor_status.responses_sent;
-            status->failed_ranges = anchor_status.response_failures;
+            status->state              = (int)anchor_status.state;
+            status->successful_ranges  = anchor_status.responses_sent;
+            status->failed_ranges      = anchor_status.response_failures;
             status->messages_processed = anchor_status.polls_received;
             break;
         }
@@ -322,17 +324,17 @@ STATIC void ranging_protocol_handler(const uint8_t* data, uint16_t length, uint1
     }
 }
 
-STATIC void ranging_tx_done_handler(uint64_t tx_timestamp)
+STATIC void ranging_tx_done_handler(uint32_t message_id, uint64_t tx_timestamp)
 {
     // Forward TX done notification to active mode
     switch (current_mode)
     {
         case RANGING_MODE_TAG:
-            tag_tx_done_callback(tx_timestamp);
+            tag_tx_done_callback(message_id, tx_timestamp);
             break;
 
         case RANGING_MODE_ANCHOR:
-            anchor_tx_done_callback(tx_timestamp);
+            anchor_tx_done_callback(message_id, tx_timestamp);
             break;
 
         default:

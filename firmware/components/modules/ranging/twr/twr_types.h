@@ -14,8 +14,7 @@
 #define DW3000_TIME_UNITS (1.0 / 499.2e6 / 128.0)
 #define SPEED_OF_LIGHT 299792458.0
 #define TWR_TIMESTAMP_SIZE 5U
-#define TWR_RESPONSE_TIMEOUT_MS 500U
-#define TWR_PROCESSING_DELAY_US 300U
+#define TWR_RESPONSE_TIMEOUT_MS 5U
 
 /*---------------------------------------------------------------------------
  * Typedefs
