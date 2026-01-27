@@ -7,12 +7,15 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "uart_cmd_router.h"
+#include "anchor/anchor.h"
 #include "datalogger.h"
 #include "error_handler.h"
 #include "imu.h"
-#include "ranging/ranging.h"
 #include "ranging_manager/ranging_manager.h"
 #include "stopwatch.h"
+#include "tag/tag.h"
+#include "twr/twr_mode.h" // Simple mode management
+#include "twr/twr_types.h"
 #include "uart_manager.h"
 #include "uwb.h"
 #include "uwb_protocol_messages.h"
@@ -99,9 +102,8 @@ STATIC void uart_cmd_router_handle_beacon(const char* action, const char* target
             }
 
             // Construct DATA protocol beacon message
-            protocol_header_t msg = {.protocol_type = PROTOCOL_TYPE_DATA,
-                                     .msg_type      = DATA_MSG_TYPE_BEACON,
-                                     .sequence      = 0};
+            protocol_header_t msg = {
+                .protocol_type = PROTOCOL_TYPE_DATA, .msg_type = DATA_MSG_BEACON, .sequence = 0};
 
             uart_manager_print("Sending DATA beacon to 0x%04X...\r\n", dest_addr);
             uwb_send_result_t result =
@@ -529,18 +531,18 @@ STATIC void uart_cmd_router_handle_ranging(const char* action, const char* targe
                 return;
             }
 
-            ranging_mode_e mode;
+            twr_mode_e mode;
             if (strcmp(args, "tag") == 0)
             {
-                mode = RANGING_MODE_TAG;
+                mode = TWR_MODE_TAG;
             }
             else if (strcmp(args, "anchor") == 0)
             {
-                mode = RANGING_MODE_ANCHOR;
+                mode = TWR_MODE_ANCHOR;
             }
             else if (strcmp(args, "disabled") == 0)
             {
-                mode = RANGING_MODE_DISABLED;
+                mode = TWR_MODE_DISABLED;
             }
             else
             {
@@ -548,11 +550,11 @@ STATIC void uart_cmd_router_handle_ranging(const char* action, const char* targe
                 return;
             }
 
-            if (ranging_set_mode(mode))
+            if (twr_mode_request(mode, "uart_cmd"))
             {
-                const char* mode_str = (mode == RANGING_MODE_TAG)      ? "TAG"
-                                       : (mode == RANGING_MODE_ANCHOR) ? "ANCHOR"
-                                                                       : "DISABLED";
+                const char* mode_str = (mode == TWR_MODE_TAG)      ? "TAG"
+                                       : (mode == TWR_MODE_ANCHOR) ? "ANCHOR"
+                                                                   : "DISABLED";
                 uart_manager_print("Ranging mode set to: %s\r\n", mode_str);
             }
             else
@@ -572,20 +574,9 @@ STATIC void uart_cmd_router_handle_ranging(const char* action, const char* targe
 
             // Set at UWB level for both modes
             uwb_set_address(address, 0xDECA);
+            anchor_set_address(address); // Also set anchor address
 
-            ranging_mode_e current_mode = ranging_get_mode();
-            if (current_mode == RANGING_MODE_TAG)
-            {
-                uart_manager_print("Tag address set to: 0x%04X\r\n", address);
-            }
-            else if (current_mode == RANGING_MODE_ANCHOR)
-            {
-                uart_manager_print("Anchor address set to: 0x%04X\r\n", address);
-            }
-            else
-            {
-                uart_manager_print("Address set to: 0x%04X\r\n", address);
-            }
+            uart_manager_print("Address set to: 0x%04X\r\n", address);
         }
         else
         {
@@ -596,37 +587,47 @@ STATIC void uart_cmd_router_handle_ranging(const char* action, const char* targe
     {
         if (strcmp(target, "status") == 0)
         {
-            ranging_status_t status;
-            ranging_get_status(&status);
-
-            const char* mode_str = (status.mode == RANGING_MODE_TAG)      ? "TAG"
-                                   : (status.mode == RANGING_MODE_ANCHOR) ? "ANCHOR"
+            twr_mode_e current_mode = twr_mode_get_current();
+            const char* mode_str    = (current_mode == TWR_MODE_TAG)      ? "TAG"
+                                      : (current_mode == TWR_MODE_ANCHOR) ? "ANCHOR"
                                                                           : "DISABLED";
 
             uart_manager_print("Ranging Status:\r\n");
             uart_manager_print("  Mode: %s\r\n", mode_str);
-            uart_manager_print("  Active: %s\r\n", status.active ? "Yes" : "No");
-            uart_manager_print("  State: %d\r\n", status.state);
-            uart_manager_print("  Successful: %lu\r\n", (unsigned long)status.successful_ranges);
-            uart_manager_print("  Failed: %lu\r\n", (unsigned long)status.failed_ranges);
+            uart_manager_print("  Transitioning: %s\r\n",
+                               twr_mode_is_transitioning() ? "Yes" : "No");
 
-            if (status.mode == RANGING_MODE_ANCHOR)
+            if (current_mode == TWR_MODE_TAG)
             {
-                uint16_t addr = ranging_anchor_get_address();
-                uart_manager_print("  Anchor Address: 0x%04X\r\n", addr);
-            }
-            else if (status.mode == RANGING_MODE_TAG)
-            {
+                tag_status_t tag_status;
+                tag_get_status(&tag_status);
+                uart_manager_print("  State: %d\r\n", tag_status.state);
+                uart_manager_print("  Successful: %lu\r\n",
+                                   (unsigned long)tag_status.successful_ranges);
+                uart_manager_print("  Failed: %lu\r\n", (unsigned long)tag_status.failed_ranges);
+
                 uint16_t addr = uwb_get_address();
                 uart_manager_print("  Tag Address: 0x%04X\r\n", addr);
+            }
+            else if (current_mode == TWR_MODE_ANCHOR)
+            {
+                anchor_status_t anchor_status;
+                anchor_get_status(&anchor_status);
+                uart_manager_print("  State: %d\r\n", anchor_status.state);
+                uart_manager_print("  Polls Received: %lu\r\n",
+                                   (unsigned long)anchor_status.polls_received);
+                uart_manager_print("  Responses Sent: %lu\r\n",
+                                   (unsigned long)anchor_status.responses_sent);
+                uart_manager_print("  Anchor Address: 0x%04X\r\n", anchor_get_address());
             }
         }
         else if (strcmp(target, "result") == 0)
         {
-            float distance, rssi;
-            if (ranging_tag_get_result(&distance, &rssi))
+            twr_result_t result;
+            if (tag_get_last_result(&result))
             {
-                uart_manager_print("Last Range: %.2f m, RSSI: %.1f dBm\r\n", distance, rssi);
+                uart_manager_print("Last Range: %.2f m, RSSI: %.1f dBm\r\n", result.distance_m,
+                                   result.rssi_dbm);
             }
             else
             {
@@ -650,9 +651,13 @@ STATIC void uart_cmd_router_handle_ranging(const char* action, const char* targe
 
             uint16_t anchor_addr = (uint16_t)strtoul(args, NULL, 0);
 
-            if (!ranging_tag_start(anchor_addr))
+            if (!tag_start_ranging(anchor_addr))
             {
                 uart_manager_print("ERR: Failed to start ranging (check mode and UWB status)\r\n");
+            }
+            else
+            {
+                uart_manager_print("Ranging started to anchor 0x%04X\r\n", anchor_addr);
             }
         }
         else

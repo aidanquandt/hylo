@@ -3,14 +3,13 @@
 /*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
+#include "common.h"
+#include "twr/twr_state_machine.h"
 #include <stdbool.h>
 #include <stdint.h>
 
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
-bool ranging_manager_start(void);
-void ranging_manager_stop(void);
-bool ranging_manager_is_active(void);
-uint32_t ranging_manager_get_success_count(void);
-uint32_t ranging_manager_get_failure_count(void);
+
+// Note: No public functions needed - ranging is handled automatically by mode system

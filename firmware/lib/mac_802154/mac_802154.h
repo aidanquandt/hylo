@@ -14,40 +14,64 @@
  * 802.15.4 Frame Control Field Values
  *---------------------------------------------------------------------------*/
 // Frame type (bits 0-2)
-#define MAC_FC_TYPE_BEACON (0x0000)  // Beacon frame
-#define MAC_FC_TYPE_DATA (0x0001)    // Data frame
-#define MAC_FC_TYPE_ACK (0x0002)     // Acknowledgment frame
-#define MAC_FC_TYPE_COMMAND (0x0003) // MAC command frame
+typedef enum
+{
+    MAC_FC_TYPE_BEACON  = 0x0000, // Beacon frame
+    MAC_FC_TYPE_DATA    = 0x0001, // Data frame
+    MAC_FC_TYPE_ACK     = 0x0002, // Acknowledgment frame
+    MAC_FC_TYPE_COMMAND = 0x0003  // MAC command frame
+} mac_frame_type_e;
 
 // Security (bit 3)
-#define MAC_FC_SEC_ENABLED (0x0008)  // Security enabled
-#define MAC_FC_SEC_DISABLED (0x0000) // No security
+typedef enum
+{
+    MAC_FC_SEC_DISABLED = 0x0000, // No security
+    MAC_FC_SEC_ENABLED  = 0x0008  // Security enabled
+} mac_security_e;
 
 // Frame pending (bit 4)
-#define MAC_FC_FRAME_PEND_YES (0x0010) // More data pending
-#define MAC_FC_FRAME_PEND_NO (0x0000)  // No frame pending
+typedef enum
+{
+    MAC_FC_FRAME_PEND_NO  = 0x0000, // No frame pending
+    MAC_FC_FRAME_PEND_YES = 0x0010  // More data pending
+} mac_frame_pending_e;
 
 // Acknowledgment request (bit 5)
-#define MAC_FC_ACK_REQ_YES (0x0020) // ACK requested
-#define MAC_FC_ACK_REQ_NO (0x0000)  // No ACK requested
+typedef enum
+{
+    MAC_FC_ACK_REQ_NO  = 0x0000, // No ACK requested
+    MAC_FC_ACK_REQ_YES = 0x0020  // ACK requested
+} mac_ack_request_e;
 
 // PAN ID compression (bit 6)
-#define MAC_FC_PANID_COMP_YES (0x0040) // PAN ID compression
-#define MAC_FC_PANID_COMP_NO (0x0000)  // No PAN ID compression
+typedef enum
+{
+    MAC_FC_PANID_COMP_NO  = 0x0000, // No PAN ID compression
+    MAC_FC_PANID_COMP_YES = 0x0040  // PAN ID compression
+} mac_panid_compression_e;
 
 // Destination addressing mode (bits 10-11)
-#define MAC_FC_DST_ADDR_NONE (0x0000)  // No destination address
-#define MAC_FC_DST_ADDR_SHORT (0x0800) // 16-bit destination address
-#define MAC_FC_DST_ADDR_LONG (0x0C00)  // 64-bit destination address
+typedef enum
+{
+    MAC_FC_DST_ADDR_NONE  = 0x0000, // No destination address
+    MAC_FC_DST_ADDR_SHORT = 0x0800, // 16-bit destination address
+    MAC_FC_DST_ADDR_LONG  = 0x0C00  // 64-bit destination address
+} mac_dst_addr_mode_e;
 
 // Frame version (bits 12-13)
-#define MAC_FC_FRAME_VER_2003 (0x0000) // IEEE 802.15.4-2003
-#define MAC_FC_FRAME_VER_2006 (0x1000) // IEEE 802.15.4-2006
+typedef enum
+{
+    MAC_FC_FRAME_VER_2003 = 0x0000, // IEEE 802.15.4-2003
+    MAC_FC_FRAME_VER_2006 = 0x1000  // IEEE 802.15.4-2006
+} mac_frame_version_e;
 
 // Source addressing mode (bits 14-15)
-#define MAC_FC_SRC_ADDR_NONE (0x0000)  // No source address
-#define MAC_FC_SRC_ADDR_SHORT (0x8000) // 16-bit source address
-#define MAC_FC_SRC_ADDR_LONG (0xC000)  // 64-bit source address
+typedef enum
+{
+    MAC_FC_SRC_ADDR_NONE  = 0x0000, // No source address
+    MAC_FC_SRC_ADDR_SHORT = 0x8000, // 16-bit source address
+    MAC_FC_SRC_ADDR_LONG  = 0xC000  // 64-bit source address
+} mac_src_addr_mode_e;
 
 /*---------------------------------------------------------------------------
  * Common MAC Constants

@@ -5,9 +5,9 @@
 #include "datalogger.h"
 #include "error_handler.h"
 #include "imu.h"
-#include "ranging/ranging.h"
 #include "ranging_manager/ranging_manager.h"
 #include "sensor_fusion.h"
+#include "twr/twr.h"
 #include "uart_manager.h"
 #include "uwb.h"
 
@@ -20,7 +20,7 @@ extern const module_S sensor_fusion_module;
 extern const module_S datalogger_module;
 extern const module_S uwb_module;
 extern const module_S imu_module;
-extern const module_S ranging_module;
+extern const module_S twr_module;
 extern const module_S ranging_manager_module;
 
 const module_S* const modules[NUM_MODULES] = {
@@ -30,6 +30,6 @@ const module_S* const modules[NUM_MODULES] = {
     [DATALOGGER_MODULE]      = &datalogger_module,
     [UWB_MODULE]             = &uwb_module,
     [IMU_MODULE]             = &imu_module,
-    [RANGING_MODULE]         = &ranging_module,
+    [TWR_MODULE]             = &twr_module,
     [RANGING_MANAGER_MODULE] = &ranging_manager_module,
 };

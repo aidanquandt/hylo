@@ -18,7 +18,7 @@ typedef enum
     DATALOGGER_MODULE,
     UWB_MODULE,
     IMU_MODULE,
-    RANGING_MODULE,
+    TWR_MODULE,
     RANGING_MANAGER_MODULE,
     NUM_MODULES
 } modules_E;

@@ -1,23 +1,25 @@
 
-TWR:
+TWR (Updated for new architecture):
+
+uwb.set.address 0x0001
+ranging.set.mode anchor
+
+uwb.set.address 0x0002  
+ranging.set.mode tag
+ranging.req.range 0x0001
+ranging.get.status  # Shows current mode and transition status
+
+
+TWR AUTO-RANGING (Updated for new architecture):
 
 uwb.set.address 0x0001
 ranging.set.mode anchor
 
 uwb.set.address 0x0002
 ranging.set.mode tag
-ranging.req.range 0x0001
-
-
-TWR AUTO-RANGING:
-
-uwb.set.address 0x0001
-ranging.set.mode anchor
-
-uwb.set.address 0x0002
 rangingmgr.req.start
-rangingmgr.get.status
-rangingmgr.req.stop
+rangingmgr.get.status    # Check status
+rangingmgr.req.stop      # Stop auto-ranging
 
 
 BEACON SEND:
