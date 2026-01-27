@@ -1,9 +1,6 @@
 /*---------------------------------------------------------------------------
- * @file    twr_state_machine.c
- * @brief   Unified TWR state machine implementation
- * @details Generic state machine with role-specific callback system
+ * Includes
  *---------------------------------------------------------------------------*/
-
 #include "twr_state_machine.h"
 #include "error_handler.h"
 #include "uwb_protocol_messages.h"
@@ -12,7 +9,6 @@
 /*---------------------------------------------------------------------------
  * Private Definitions
  *---------------------------------------------------------------------------*/
-// Forward declaration for external usage
 void twr_transition_to(twr_context_t* ctx, twr_state_e new_state);
 
 /*---------------------------------------------------------------------------
@@ -22,9 +18,86 @@ STATIC void twr_handle_timeout(twr_context_t* ctx);
 STATIC bool twr_validate_message(const twr_event_t* event, twr_context_t* ctx);
 
 /*---------------------------------------------------------------------------
- * Public Function Implementations
+ * Private Function Implementations
  *---------------------------------------------------------------------------*/
 
+void twr_transition_to(twr_context_t* ctx, twr_state_e new_state)
+{
+    if (ctx->state != new_state)
+    {
+        ctx->state       = new_state;
+        ctx->state_timer = 0;
+
+        // Handle state entry actions
+        if (new_state == TWR_STATE_PROCESSING)
+        {
+            ctx->callbacks->process_result(ctx);
+            // Auto-transition back to idle after processing
+            twr_transition_to(ctx, TWR_STATE_IDLE);
+        }
+    }
+}
+
+STATIC void twr_handle_timeout(twr_context_t* ctx)
+{
+    twr_event_t timeout_event = {
+        .type    = TWR_EVENT_TIMEOUT,
+        .timeout = {.elapsed_ms = ctx->state_timer, .expected_msg = ctx->expected_msg}};
+
+    ctx->timeout_count++;
+    ctx->callbacks->handle_timeout(&timeout_event, ctx);
+}
+
+STATIC bool twr_validate_message(const twr_event_t* event, twr_context_t* ctx)
+{
+    if (event->rx.length < sizeof(protocol_header_t))
+    {
+        return false;
+    }
+
+    const protocol_header_t* header = (const protocol_header_t*)event->rx.data;
+
+    // Check protocol type
+    if (header->protocol_type != PROTOCOL_TYPE_TWR)
+    {
+        return false;
+    }
+
+    // Check message type matches expected
+    twr_msg_type_e rx_msg_type = (twr_msg_type_e)header->msg_type;
+    if (rx_msg_type != ctx->expected_msg)
+    {
+        return false;
+    }
+
+    // Check sequence (except for POLL to anchor)
+    if (!(ctx->role == TWR_ROLE_ANCHOR && rx_msg_type == TWR_MSG_POLL))
+    {
+        if (header->sequence != ctx->sequence)
+        {
+            return false;
+        }
+    }
+
+    // Check source address - anchor accepts any source for POLL
+    if (ctx->peer_address != 0 && event->rx.src_addr != ctx->peer_address)
+    {
+        return false;
+    }
+
+    // For anchor receiving POLL, capture sender info
+    if (ctx->role == TWR_ROLE_ANCHOR && rx_msg_type == TWR_MSG_POLL)
+    {
+        ctx->peer_address = event->rx.src_addr;
+        ctx->sequence     = header->sequence;
+    }
+
+    return true;
+}
+
+/*---------------------------------------------------------------------------
+ * Public Function Implementations
+ *---------------------------------------------------------------------------*/
 void twr_init(twr_context_t* ctx, twr_role_e role, const twr_callbacks_t* callbacks,
               void* role_context)
 {
@@ -239,82 +312,4 @@ void twr_tx_done_callback(twr_context_t* ctx, uint32_t message_id, uint64_t tx_t
         }};
 
     twr_handle_event(ctx, &event);
-}
-
-/*---------------------------------------------------------------------------
- * Private Function Implementations
- *---------------------------------------------------------------------------*/
-
-void twr_transition_to(twr_context_t* ctx, twr_state_e new_state)
-{
-    if (ctx->state != new_state)
-    {
-        ctx->state       = new_state;
-        ctx->state_timer = 0;
-
-        // Handle state entry actions
-        if (new_state == TWR_STATE_PROCESSING)
-        {
-            ctx->callbacks->process_result(ctx);
-            // Auto-transition back to idle after processing
-            twr_transition_to(ctx, TWR_STATE_IDLE);
-        }
-    }
-}
-
-STATIC void twr_handle_timeout(twr_context_t* ctx)
-{
-    twr_event_t timeout_event = {
-        .type    = TWR_EVENT_TIMEOUT,
-        .timeout = {.elapsed_ms = ctx->state_timer, .expected_msg = ctx->expected_msg}};
-
-    ctx->timeout_count++;
-    ctx->callbacks->handle_timeout(&timeout_event, ctx);
-}
-
-STATIC bool twr_validate_message(const twr_event_t* event, twr_context_t* ctx)
-{
-    if (event->rx.length < sizeof(protocol_header_t))
-    {
-        return false;
-    }
-
-    const protocol_header_t* header = (const protocol_header_t*)event->rx.data;
-
-    // Check protocol type
-    if (header->protocol_type != PROTOCOL_TYPE_TWR)
-    {
-        return false;
-    }
-
-    // Check message type matches expected
-    twr_msg_type_e rx_msg_type = (twr_msg_type_e)header->msg_type;
-    if (rx_msg_type != ctx->expected_msg)
-    {
-        return false;
-    }
-
-    // Check sequence (except for POLL to anchor)
-    if (!(ctx->role == TWR_ROLE_ANCHOR && rx_msg_type == TWR_MSG_POLL))
-    {
-        if (header->sequence != ctx->sequence)
-        {
-            return false;
-        }
-    }
-
-    // Check source address - anchor accepts any source for POLL
-    if (ctx->peer_address != 0 && event->rx.src_addr != ctx->peer_address)
-    {
-        return false;
-    }
-
-    // For anchor receiving POLL, capture sender info
-    if (ctx->role == TWR_ROLE_ANCHOR && rx_msg_type == TWR_MSG_POLL)
-    {
-        ctx->peer_address = event->rx.src_addr;
-        ctx->sequence     = header->sequence;
-    }
-
-    return true;
 }

@@ -1,7 +1,13 @@
 /*---------------------------------------------------------------------------
+ * @file    twr_manager.c
+ * @brief   Two-Way Ranging (TWR) Manager - High-level ranging orchestration
+ * @details Manages automatic ranging operations with configurable rate control
+ *---------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
-#include "ranging_manager.h"
+#include "twr_manager.h"
 #include "error_handler.h"
 #include "module.h"
 #include "tag/tag.h"       // Direct tag interface
@@ -13,15 +19,15 @@
 /*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
-STATIC void ranging_manager_init(void);
-STATIC void ranging_manager_process_1kHz(void);
+STATIC void twr_manager_init(void);
+STATIC void twr_manager_process_1kHz(void);
 
-extern const module_S ranging_manager_module;
+extern const module_S twr_manager_module;
 
-const module_S ranging_manager_module = {
-    .module_name         = "ranging_manager",
-    .module_init         = ranging_manager_init,
-    .module_process_1kHz = ranging_manager_process_1kHz,
+const module_S twr_manager_module = {
+    .module_name         = "twr_manager",
+    .module_init         = twr_manager_init,
+    .module_process_1kHz = twr_manager_process_1kHz,
 };
 
 /*---------------------------------------------------------------------------
@@ -42,18 +48,18 @@ typedef struct
     uint32_t success_count;  // Total successful ranges
     uint32_t failure_count;  // Total failed ranges
     uint16_t rate_prescaler; // Prescaler counter for rate limiting
-} ranging_manager_ctx_t;
+} twr_manager_ctx_t;
 
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-STATIC ranging_manager_ctx_t ctx = {0};
+STATIC twr_manager_ctx_t ctx = {0};
 
 /*---------------------------------------------------------------------------
  * Module Function Implementations
  *---------------------------------------------------------------------------*/
 
-STATIC void ranging_manager_init(void)
+STATIC void twr_manager_init(void)
 {
     ctx.active         = false;
     ctx.initialized    = true;
@@ -63,7 +69,7 @@ STATIC void ranging_manager_init(void)
     ctx.rate_prescaler = 0;
 }
 
-STATIC void ranging_manager_process_1kHz(void)
+STATIC void twr_manager_process_1kHz(void)
 {
     if (!ctx.active || !ctx.initialized)
     {
@@ -94,7 +100,7 @@ STATIC void ranging_manager_process_1kHz(void)
             // Start new ranging attempt
             if (!tag_start_ranging(ctx.target_anchor))
             {
-                error_handler_log(ERROR_SEVERITY_WARNING, "ranging_mgr",
+                error_handler_log(ERROR_SEVERITY_WARNING, "twr_mgr",
                                   "Failed to start ranging with anchor 0x%04X", ctx.target_anchor);
             }
         }
@@ -105,11 +111,11 @@ STATIC void ranging_manager_process_1kHz(void)
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
 
-bool ranging_manager_start(void)
+bool twr_manager_start(void)
 {
     if (!ctx.initialized)
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "ranging_mgr", "Not initialized");
+        error_handler_log(ERROR_SEVERITY_ERROR, "twr_mgr", "Not initialized");
         return false;
     }
 
@@ -117,7 +123,7 @@ bool ranging_manager_start(void)
     tag_init();
     if (!tag_start())
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "ranging_mgr", "Failed to start tag");
+        error_handler_log(ERROR_SEVERITY_ERROR, "twr_mgr", "Failed to start tag");
         return false;
     }
 
@@ -127,7 +133,7 @@ bool ranging_manager_start(void)
     return true;
 }
 
-void ranging_manager_stop(void)
+void twr_manager_stop(void)
 {
     if (!ctx.initialized)
     {
@@ -141,17 +147,17 @@ void ranging_manager_stop(void)
     tag_stop();
 }
 
-bool ranging_manager_is_active(void)
+bool twr_manager_is_active(void)
 {
     return ctx.active;
 }
 
-uint32_t ranging_manager_get_success_count(void)
+uint32_t twr_manager_get_success_count(void)
 {
     return ctx.success_count;
 }
 
-uint32_t ranging_manager_get_failure_count(void)
+uint32_t twr_manager_get_failure_count(void)
 {
     return ctx.failure_count;
 }

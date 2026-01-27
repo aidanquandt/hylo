@@ -19,7 +19,7 @@ typedef enum
     UWB_MODULE,
     IMU_MODULE,
     TWR_MODULE,
-    RANGING_MANAGER_MODULE,
+    TWR_MANAGER_MODULE,
     NUM_MODULES
 } modules_E;
 
