@@ -75,7 +75,78 @@ STATIC void error_handler_init(void)
 }
 
 /*---------------------------------------------------------------------------
- * Public Function Implementations (Accessor Functions for Router)
+ * Private Function Implementations
+ *---------------------------------------------------------------------------*/
+
+STATIC void error_handler_add_to_history(const error_record_t* record)
+{
+    if (record == NULL)
+    {
+        return;
+    }
+
+    memcpy(&error_history[error_history_head], record, sizeof(error_record_t));
+
+    error_history_head = (error_history_head + 1U) % ERROR_HISTORY_SIZE;
+
+    if (error_history_count < ERROR_HISTORY_SIZE)
+    {
+        error_history_count++;
+    }
+}
+
+STATIC const char* error_handler_severity_to_string(error_severity_e severity)
+{
+    switch (severity)
+    {
+        case ERROR_SEVERITY_INFO:
+            return "INFO";
+        case ERROR_SEVERITY_WARNING:
+            return "WARN";
+        case ERROR_SEVERITY_ERROR:
+            return "ERROR";
+        case ERROR_SEVERITY_FATAL:
+            return "FATAL";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+STATIC void error_handler_increment_counter(error_severity_e severity)
+{
+    switch (severity)
+    {
+        case ERROR_SEVERITY_INFO:
+            if (error_count_info < UINT32_MAX)
+            {
+                error_count_info++;
+            }
+            break;
+        case ERROR_SEVERITY_WARNING:
+            if (error_count_warning < UINT32_MAX)
+            {
+                error_count_warning++;
+            }
+            break;
+        case ERROR_SEVERITY_ERROR:
+            if (error_count_error < UINT32_MAX)
+            {
+                error_count_error++;
+            }
+            break;
+        case ERROR_SEVERITY_FATAL:
+            if (error_count_fatal < UINT32_MAX)
+            {
+                error_count_fatal++;
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+/*---------------------------------------------------------------------------
+ * Public Function Implementations
  *---------------------------------------------------------------------------*/
 
 void error_handler_log(error_severity_e severity, const char* module, const char* format, ...)
@@ -250,76 +321,5 @@ void error_handler_clear_history(void)
         dropped_error_count = 0U;
 
         xSemaphoreGive(error_mutex);
-    }
-}
-
-/*---------------------------------------------------------------------------
- * Private Function Implementations
- *---------------------------------------------------------------------------*/
-
-STATIC void error_handler_add_to_history(const error_record_t* record)
-{
-    if (record == NULL)
-    {
-        return;
-    }
-
-    memcpy(&error_history[error_history_head], record, sizeof(error_record_t));
-
-    error_history_head = (error_history_head + 1U) % ERROR_HISTORY_SIZE;
-
-    if (error_history_count < ERROR_HISTORY_SIZE)
-    {
-        error_history_count++;
-    }
-}
-
-STATIC const char* error_handler_severity_to_string(error_severity_e severity)
-{
-    switch (severity)
-    {
-        case ERROR_SEVERITY_INFO:
-            return "INFO";
-        case ERROR_SEVERITY_WARNING:
-            return "WARN";
-        case ERROR_SEVERITY_ERROR:
-            return "ERROR";
-        case ERROR_SEVERITY_FATAL:
-            return "FATAL";
-        default:
-            return "UNKNOWN";
-    }
-}
-
-STATIC void error_handler_increment_counter(error_severity_e severity)
-{
-    switch (severity)
-    {
-        case ERROR_SEVERITY_INFO:
-            if (error_count_info < UINT32_MAX)
-            {
-                error_count_info++;
-            }
-            break;
-        case ERROR_SEVERITY_WARNING:
-            if (error_count_warning < UINT32_MAX)
-            {
-                error_count_warning++;
-            }
-            break;
-        case ERROR_SEVERITY_ERROR:
-            if (error_count_error < UINT32_MAX)
-            {
-                error_count_error++;
-            }
-            break;
-        case ERROR_SEVERITY_FATAL:
-            if (error_count_fatal < UINT32_MAX)
-            {
-                error_count_fatal++;
-            }
-            break;
-        default:
-            break;
     }
 }

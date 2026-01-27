@@ -9,8 +9,8 @@
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
-bool ranging_manager_start(void);
-void ranging_manager_stop(void);
-bool ranging_manager_is_active(void);
-uint32_t ranging_manager_get_success_count(void);
-uint32_t ranging_manager_get_failure_count(void);
+bool twr_manager_start(void);
+void twr_manager_stop(void);
+bool twr_manager_is_active(void);
+uint32_t twr_manager_get_success_count(void);
+uint32_t twr_manager_get_failure_count(void);

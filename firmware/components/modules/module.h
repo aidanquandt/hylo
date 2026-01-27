@@ -19,18 +19,10 @@ typedef enum
     UWB_MODULE,
     IMU_MODULE,
     TWR_MODULE,
-    RANGING_MANAGER_MODULE,
+    TWR_MANAGER_MODULE,
     NUM_MODULES
 } modules_E;
 
-/**
- * Module interface for two-phase initialization:
- * 1. module_init: Create RTOS resources (queues, semaphores) before scheduler starts
- * 2. module_create_task: Spawn tasks after scheduler is running
- * 3. module_process_*: Periodic callbacks driven by main application loop
- *
- * Note: UART command routing handled by uart_cmd_router which directly calls module APIs
- */
 typedef struct
 {
     const char* module_name;

@@ -14,7 +14,6 @@
 #define DW3000_CLOCK_HZ 499200000ULL
 #define DW3000_TIME_UNITS (1.0 / 499.2e6 / 128.0)
 #define SPEED_OF_LIGHT 299792458.0
-#define TWR_TIMESTAMP_SIZE 5U
 #define TWR_RESPONSE_TIMEOUT_MS 5U
 
 /*---------------------------------------------------------------------------
@@ -94,9 +93,8 @@ STATIC inline float twr_dtu_to_meters(int64_t time_dtu)
 }
 
 /*---------------------------------------------------------------------------
- * Unified TWR State Machine Types
+ * Typedefs
  *---------------------------------------------------------------------------*/
-
 // Generic TWR states that work for both tag and anchor
 typedef enum
 {
