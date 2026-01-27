@@ -13,31 +13,33 @@
  *---------------------------------------------------------------------------*/
 typedef enum
 {
-    RANGING_MODE_DISABLED = 0,
-    RANGING_MODE_TAG,
-    RANGING_MODE_ANCHOR
-} ranging_mode_e;
+    TAG_STATE_IDLE,
+    TAG_STATE_SENDING_POLL,   // Waiting for POLL TX done
+    TAG_STATE_WAIT_RESPONSE,  // Waiting for RESPONSE RX
+    TAG_STATE_SENDING_FINAL,  // Waiting for FINAL TX done
+    TAG_STATE_WAIT_FINAL_ACK, // Waiting for FINAL_ACK RX
+    TAG_STATE_PROCESS_RESULT,
+    TAG_STATE_FAULTED
+} tag_state_e;
 
 typedef struct
 {
-    ranging_mode_e mode;
-    bool active;
-    int state;
+    tag_state_e state;
+    uint16_t target_address;
     uint32_t successful_ranges;
     uint32_t failed_ranges;
-    uint32_t messages_processed;
-} ranging_status_t;
+    uint32_t timeout_count;
+    twr_result_t last_result;
+} tag_status_t;
 
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
-bool ranging_set_mode(ranging_mode_e mode);
-ranging_mode_e ranging_get_mode(void);
-void ranging_get_status(ranging_status_t* status);
-bool ranging_tag_start(uint16_t anchor_addr);
-bool ranging_tag_is_active(void);
-bool ranging_tag_get_result(float* distance_m, float* rssi_dbm);
-void ranging_tag_cancel(void);
-void ranging_anchor_set_address(uint16_t address);
-uint16_t ranging_anchor_get_address(void);
-uint32_t ranging_anchor_get_response_count(void);
+void tag_init(void);
+bool tag_start(void);
+void tag_stop(void);
+bool tag_start_ranging(uint16_t anchor_addr);
+bool tag_is_ranging(void);
+bool tag_get_last_result(twr_result_t* result);
+void tag_get_status(tag_status_t* status);
+void tag_cancel_ranging(void);

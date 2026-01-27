@@ -4,7 +4,9 @@
 #include "ranging_manager.h"
 #include "error_handler.h"
 #include "module.h"
-#include "ranging.h"
+#include "tag/tag.h"       // Direct tag interface
+#include "twr/twr_mode.h"  // Simple mode management
+#include "twr/twr_types.h" // For twr_result_t
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -75,11 +77,11 @@ STATIC void ranging_manager_process_1kHz(void)
         ctx.rate_prescaler = 0;
 
         // Only start new ranging if previous one completed
-        if (!ranging_tag_is_active())
+        if (!tag_is_ranging())
         {
             // Check if last result was successful or failed
-            float distance_m;
-            if (ranging_tag_get_result(&distance_m, NULL))
+            twr_result_t result;
+            if (tag_get_last_result(&result))
             {
                 ctx.success_count++;
             }
@@ -90,7 +92,7 @@ STATIC void ranging_manager_process_1kHz(void)
             }
 
             // Start new ranging attempt
-            if (!ranging_tag_start(ctx.target_anchor))
+            if (!tag_start_ranging(ctx.target_anchor))
             {
                 error_handler_log(ERROR_SEVERITY_WARNING, "ranging_mgr",
                                   "Failed to start ranging with anchor 0x%04X", ctx.target_anchor);
@@ -111,10 +113,11 @@ bool ranging_manager_start(void)
         return false;
     }
 
-    // Set ranging mode to TAG
-    if (!ranging_set_mode(RANGING_MODE_TAG))
+    // Initialize and start tag mode
+    tag_init();
+    if (!tag_start())
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "ranging_mgr", "Failed to set TAG mode");
+        error_handler_log(ERROR_SEVERITY_ERROR, "ranging_mgr", "Failed to start tag");
         return false;
     }
 
@@ -133,11 +136,9 @@ void ranging_manager_stop(void)
 
     ctx.active = false;
 
-    // Cancel any ongoing ranging
-    ranging_tag_cancel();
-
-    // Disable ranging mode
-    ranging_set_mode(RANGING_MODE_DISABLED);
+    // Cancel any ongoing ranging and stop tag
+    tag_cancel_ranging();
+    tag_stop();
 }
 
 bool ranging_manager_is_active(void)

@@ -14,29 +14,34 @@
 /*---------------------------------------------------------------------------
  * Protocol Type Codes (Top-Level)
  *---------------------------------------------------------------------------*/
-
-#define PROTOCOL_TYPE_TWR 0x01  // Two-Way Ranging protocol
-#define PROTOCOL_TYPE_DATA 0x02 // Data exchange protocol
-// Reserve 0x03-0x0F for future protocols
+typedef enum
+{
+    PROTOCOL_TYPE_TWR  = 0x01, // Two-Way Ranging protocol
+    PROTOCOL_TYPE_DATA = 0x02  // Data exchange protocol
+    // Reserve 0x03-0x0F for future protocols
+} protocol_type_e;
 
 /*---------------------------------------------------------------------------
  * TWR Sub-Message Types
  *---------------------------------------------------------------------------*/
-
-#define TWR_MSG_TYPE_POLL 0x01     // Tag -> Anchor: Ranging request (initiates DS-TWR)
-#define TWR_MSG_TYPE_RESPONSE 0x02 // Anchor -> Tag: Response with timestamps
-#define TWR_MSG_TYPE_FINAL                                                                         \
-    0x03 // Tag -> Anchor: Final message with all timestamps (DS-TWR completion)
-#define TWR_MSG_TYPE_FINAL_ACK 0x04 // Anchor -> Tag: ACK with anchor's final RX timestamp
+typedef enum
+{
+    TWR_MSG_POLL      = 0x01, // Tag -> Anchor: Ranging request (initiates DS-TWR)
+    TWR_MSG_RESPONSE  = 0x02, // Anchor -> Tag: Response with timestamps
+    TWR_MSG_FINAL     = 0x03, // Tag -> Anchor: Final message with all timestamps
+    TWR_MSG_FINAL_ACK = 0x04  // Anchor -> Tag: ACK with anchor's final RX timestamp
+} twr_msg_type_e;
 
 /*---------------------------------------------------------------------------
  * DATA Sub-Message Types
  *---------------------------------------------------------------------------*/
-
-#define DATA_MSG_TYPE_BEACON 0x01    // Simple beacon/ping
-#define DATA_MSG_TYPE_TELEMETRY 0x02 // Sensor data
-#define DATA_MSG_TYPE_COMMAND 0x03   // Command/control
-// Reserve 0x04-0xFF for future data types
+typedef enum
+{
+    DATA_MSG_BEACON    = 0x01, // Simple beacon/ping
+    DATA_MSG_TELEMETRY = 0x02, // Sensor data
+    DATA_MSG_COMMAND   = 0x03  // Command/control
+    // Reserve 0x04-0xFF for future data types
+} data_msg_type_e;
 
 /*---------------------------------------------------------------------------
  * Common Message Header
@@ -68,7 +73,7 @@ typedef struct
  */
 typedef struct
 {
-    protocol_header_t header; // protocol_type = PROTOCOL_TYPE_TWR, msg_type = TWR_MSG_TYPE_POLL
+    protocol_header_t header; // protocol_type = PROTOCOL_TYPE_TWR, msg_type = TWR_MSG_POLL
 } __attribute__((packed)) protocol_twr_poll_msg_t;
 
 /**
@@ -77,7 +82,7 @@ typedef struct
  */
 typedef struct
 {
-    protocol_header_t header; // protocol_type = PROTOCOL_TYPE_TWR, msg_type = TWR_MSG_TYPE_RESPONSE
+    protocol_header_t header; // protocol_type = PROTOCOL_TYPE_TWR, msg_type = TWR_MSG_RESPONSE
     uint8_t poll_rx_ts[5];    // When anchor received poll (40-bit timestamp)
     // Note: resp_tx_ts is sent later in FINAL_ACK after actual transmission
 } __attribute__((packed)) protocol_twr_response_msg_t;
@@ -88,7 +93,7 @@ typedef struct
  */
 typedef struct
 {
-    protocol_header_t header; // protocol_type = PROTOCOL_TYPE_TWR, msg_type = TWR_MSG_TYPE_FINAL
+    protocol_header_t header; // protocol_type = PROTOCOL_TYPE_TWR, msg_type = TWR_MSG_FINAL
     uint8_t resp_rx_ts[5];    // When tag received response (40-bit timestamp)
     uint8_t final_tx_ts[5];   // When tag will send final (40-bit timestamp, pre-calculated)
 } __attribute__((packed)) protocol_twr_final_msg_t;
@@ -99,10 +104,9 @@ typedef struct
  */
 typedef struct
 {
-    protocol_header_t
-        header;             // protocol_type = PROTOCOL_TYPE_TWR, msg_type = TWR_MSG_TYPE_FINAL_ACK
-    uint8_t resp_tx_ts[5];  // When anchor actually transmitted response (40-bit timestamp)
-    uint8_t final_rx_ts[5]; // When anchor received final message (40-bit timestamp)
+    protocol_header_t header; // protocol_type = PROTOCOL_TYPE_TWR, msg_type = TWR_MSG_FINAL_ACK
+    uint8_t resp_tx_ts[5];    // When anchor actually transmitted response (40-bit timestamp)
+    uint8_t final_rx_ts[5];   // When anchor received final message (40-bit timestamp)
 } __attribute__((packed)) protocol_twr_final_ack_msg_t;
 
 /**
