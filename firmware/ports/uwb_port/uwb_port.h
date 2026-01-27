@@ -91,7 +91,7 @@ uint32_t uwb_port_read_status_register_high(void);
 void uwb_port_register_isr_callbacks(uwb_dev_t* dev);
 void uwb_port_set_rx_callback(uwb_port_rx_callback_t callback);
 void uwb_port_set_tx_done_callback(uwb_port_tx_done_callback_t callback);
-void uwb_port_print_aidan_stats(void);
+void uwb_port_print_statistics(void);
 
 /*---------------------------------------------------------------------------
  * Platform Compatibility Functions (required by Qorvo DW3000 driver)

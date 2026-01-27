@@ -1,10 +1,4 @@
 /*---------------------------------------------------------------------------
- * @file    twr_manager.c
- * @brief   Two-Way Ranging (TWR) Manager - High-level ranging orchestration
- * @details Manages automatic ranging operations with configurable rate control
- *---------------------------------------------------------------------------*/
-
-/*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
 #include "twr_manager.h"

@@ -24,6 +24,23 @@ struct uwb_dev_s
     uint64_t last_rx_ts;
 };
 
+typedef struct
+{
+    uint32_t rx_ok_count;
+    uint32_t rx_timeout_count;
+    uint32_t rx_error_arfe_count;
+    uint32_t rx_error_overrun_count;
+    uint32_t rx_error_crc_count;
+    uint32_t rx_error_preamble_timeout_count;
+    uint32_t rx_error_phy_header_count;
+    uint32_t rx_error_sync_loss_count;
+    uint32_t rx_error_frame_timeout_count;
+    uint32_t rx_error_sfd_timeout_count;
+    uint32_t rx_error_other_count;
+    uint32_t tx_done_count;
+    uint32_t send_message_count;
+} uwb_port_statistics_t;
+
 /*---------------------------------------------------------------------------
  * External Driver Declaration
  *---------------------------------------------------------------------------*/
@@ -61,6 +78,7 @@ STATIC struct uwb_dev_s uwb_device = {.dw_chip = {
 STATIC uwb_dev_t* current_device                    = NULL;
 STATIC uwb_port_rx_callback_t rx_callback           = NULL;
 STATIC uwb_port_tx_done_callback_t tx_done_callback = NULL;
+STATIC uwb_port_statistics_t uwb_port_stats         = {0};
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -192,14 +210,9 @@ STATIC void uwb_spi_set_fast_rate(void)
     platform_spi_cs_high(UWB_PORT_CS_PIN);
 }
 
-STATIC uint32_t aidan_rx_ok_callback_count      = 0;
-STATIC uint32_t aidan_rx_timeout_callback_count = 0;
-STATIC uint32_t aidan_rx_error_arfe_count       = 0;
-STATIC uint32_t aidan_rx_error_overrun_count    = 0;
-STATIC uint32_t aidan_rx_error_corrupted_count  = 0;
 STATIC void uwb_port_rx_ok_callback(const dwt_cb_data_t* cb_data)
 {
-    aidan_rx_ok_callback_count++;
+    uwb_port_stats.rx_ok_count++;
     if (cb_data == NULL)
         return;
 
@@ -226,7 +239,7 @@ STATIC void uwb_port_rx_ok_callback(const dwt_cb_data_t* cb_data)
 
 STATIC void uwb_port_rx_timeout_callback(const dwt_cb_data_t* cb_data)
 {
-    aidan_rx_timeout_callback_count++;
+    uwb_port_stats.rx_timeout_count++;
     (void)cb_data;
     error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX timeout");
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
@@ -236,73 +249,59 @@ STATIC void uwb_port_rx_error_callback(const dwt_cb_data_t* cb_data)
 {
     if (cb_data->status & DWT_INT_ARFE_BIT_MASK)
     {
-        aidan_rx_error_arfe_count++;
+        uwb_port_stats.rx_error_arfe_count++;
         error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "RX Filtered: Address Mismatch (ARFE)");
     }
     else if (cb_data->status & DWT_INT_RXOVRR_BIT_MASK)
     {
-        aidan_rx_error_overrun_count++;
+        uwb_port_stats.rx_error_overrun_count++;
         error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX Error: Buffer Overrun (RXOVRR)");
         dwt_forcetrxoff();
     }
+    else if (cb_data->status & DWT_INT_RXFCE_BIT_MASK)
+    {
+        uwb_port_stats.rx_error_crc_count++;
+        error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX Error: CRC Error (RXFCE)");
+    }
+    else if (cb_data->status & DWT_INT_RXPTO_BIT_MASK)
+    {
+        uwb_port_stats.rx_error_preamble_timeout_count++;
+        error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "RX Error: Preamble Timeout (RXPTO)");
+    }
+    else if (cb_data->status & DWT_INT_RXPHE_BIT_MASK)
+    {
+        uwb_port_stats.rx_error_phy_header_count++;
+        error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX Error: PHY Header Error (RXPHE)");
+    }
+    else if (cb_data->status & DWT_INT_RXFSL_BIT_MASK)
+    {
+        uwb_port_stats.rx_error_sync_loss_count++;
+        error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX Error: Sync Loss (RXFSL)");
+    }
+    else if (cb_data->status & DWT_INT_RXFTO_BIT_MASK)
+    {
+        uwb_port_stats.rx_error_frame_timeout_count++;
+        error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "RX Error: Frame Wait Timeout (RXFTO)");
+    }
+    else if (cb_data->status & DWT_INT_RXSTO_BIT_MASK)
+    {
+        uwb_port_stats.rx_error_sfd_timeout_count++;
+        error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "RX Error: SFD Timeout (RXSTO)");
+    }
     else
     {
-        aidan_rx_error_corrupted_count++;
+        uwb_port_stats.rx_error_other_count++;
+        error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port",
+                          "RX Error: Unknown (Status Lo: 0x%08lX, Hi: 0x%08lX)",
+                          (unsigned long)cb_data->status, (unsigned long)cb_data->status_hi);
     }
-    error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port",
-                      "RX Error: Packet Corrupted (Status Lo: 0x%08lX, Hi: 0x%08lX)",
-                      (unsigned long)cb_data->status, (unsigned long)cb_data->status_hi);
 
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
 }
 
-// STATIC void uwb_port_rx_error_callback(const dwt_cb_data_t* cb_data)
-// {
-//     // 1. DO NOT TRUST cb_data. Read the hardware register directly.
-//     uint8_t real_status_hi = dwt_readsysstatushi();
-//     uint32_t real_status_lo = cb_data->status; // Low status is usually reliable, but you can
-//     read it too if you want.
-
-//     // 2. Check for Address Rejection (ARFE)
-//     if (real_status_lo & DWT_INT_ARFE_BIT_MASK)
-//     {
-//         aidan_rx_error_arfe_count++;
-//         error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "RX Filtered: Address Mismatch
-//         (ARFE)");
-//     }
-//     // 3. Check for Overrun using the MANUAL value (Bit 1 of High Register)
-//     else if ((real_status_lo & DWT_INT_RXOVRR_BIT_MASK) || (real_status_hi & 0x02))
-//     {
-//         aidan_rx_error_overrun_count++;
-//         error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX Error: Buffer Overrun (RXOVRR)
-//         - FOUND IT");
-
-//         // CRITICAL: Manually clear the bit that the driver missed
-//         dwt_writesysstatushi(0x02);
-
-//         // Clear Low bit too just in case
-//         dwt_writesysstatuslo(DWT_INT_RXOVRR_BIT_MASK);
-
-//         // Reset the State Machine
-//         dwt_forcetrxoff();
-//     }
-//     // 4. Packet Corruption
-//     else
-//     {
-//         aidan_rx_error_corrupted_count++;
-//         error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port",
-//                           "RX Error: Packet Corrupted (Lo: 0x%08lX, Hi: 0x%02X)",
-//                           (unsigned long)real_status_lo, (unsigned int)real_status_hi);
-//     }
-
-//     // 5. Always Restart RX
-//     dwt_rxenable(DWT_START_RX_IMMEDIATE);
-// }
-
-STATIC uint32_t aidan_tx_done_callback_count = 0;
 STATIC void uwb_port_tx_done_callback(const dwt_cb_data_t* cb_data)
 {
-    aidan_tx_done_callback_count++;
+    uwb_port_stats.tx_done_count++;
     (void)cb_data;
 
     if (current_device != NULL)
@@ -496,10 +495,9 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel)
     return UWB_PORT_SUCCESS;
 }
 
-STATIC uint32_t aidan_send_message_count = 0;
 uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uint16_t length)
 {
-    aidan_send_message_count++;
+    uwb_port_stats.send_message_count++;
     if (dev == NULL || data == NULL)
         return UWB_PORT_ERROR_NULL_PTR;
     if (length == 0 || length > UWB_MAX_MESSAGE_LENGTH)
@@ -624,22 +622,34 @@ void uwb_port_set_tx_done_callback(uwb_port_tx_done_callback_t callback)
     tx_done_callback = callback;
 }
 
-void uwb_port_print_aidan_stats(void)
+void uwb_port_print_statistics(void)
 {
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "aidan_rx_ok_callback_count: %lu",
-                      (unsigned long)aidan_rx_ok_callback_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "aidan_rx_timeout_callback_count: %lu",
-                      (unsigned long)aidan_rx_timeout_callback_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "aidan_rx_error_arfe_count: %lu",
-                      (unsigned long)aidan_rx_error_arfe_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "aidan_rx_error_overrun_count: %lu",
-                      (unsigned long)aidan_rx_error_overrun_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "aidan_rx_error_corrupted_count: %lu",
-                      (unsigned long)aidan_rx_error_corrupted_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "aidan_tx_done_callback_count: %lu",
-                      (unsigned long)aidan_tx_done_callback_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "aidan_send_message_count: %lu",
-                      (unsigned long)aidan_send_message_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_ok_count: %lu",
+                      (unsigned long)uwb_port_stats.rx_ok_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_timeout_count: %lu",
+                      (unsigned long)uwb_port_stats.rx_timeout_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_arfe_count: %lu",
+                      (unsigned long)uwb_port_stats.rx_error_arfe_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_overrun_count: %lu",
+                      (unsigned long)uwb_port_stats.rx_error_overrun_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_crc_count: %lu",
+                      (unsigned long)uwb_port_stats.rx_error_crc_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_preamble_timeout_count: %lu",
+                      (unsigned long)uwb_port_stats.rx_error_preamble_timeout_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_phy_header_count: %lu",
+                      (unsigned long)uwb_port_stats.rx_error_phy_header_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_sync_loss_count: %lu",
+                      (unsigned long)uwb_port_stats.rx_error_sync_loss_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_frame_timeout_count: %lu",
+                      (unsigned long)uwb_port_stats.rx_error_frame_timeout_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_sfd_timeout_count: %lu",
+                      (unsigned long)uwb_port_stats.rx_error_sfd_timeout_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_other_count: %lu",
+                      (unsigned long)uwb_port_stats.rx_error_other_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "tx_done_count: %lu",
+                      (unsigned long)uwb_port_stats.tx_done_count);
+    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "send_message_count: %lu",
+                      (unsigned long)uwb_port_stats.send_message_count);
 
     uint32_t irq_status = uwb_port_read_irq_status();
     uint32_t status_lo  = uwb_port_read_status_register_low();

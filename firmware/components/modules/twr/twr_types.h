@@ -93,9 +93,8 @@ STATIC inline float twr_dtu_to_meters(int64_t time_dtu)
 }
 
 /*---------------------------------------------------------------------------
- * Unified TWR State Machine Types
+ * Typedefs
  *---------------------------------------------------------------------------*/
-
 // Generic TWR states that work for both tag and anchor
 typedef enum
 {

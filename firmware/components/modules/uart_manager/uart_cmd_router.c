@@ -40,8 +40,7 @@ STATIC void uart_cmd_router_handle_uwb(const char* action, const char* target, c
 STATIC void uart_cmd_router_handle_error(const char* action, const char* target, const char* args);
 STATIC void uart_cmd_router_handle_datalogger(const char* action, const char* target,
                                               const char* args);
-STATIC void uart_cmd_router_handle_ranging(const char* action, const char* target,
-                                           const char* args);
+STATIC void uart_cmd_router_handle_twr(const char* action, const char* target, const char* args);
 STATIC void uart_cmd_router_handle_twr_manager(const char* action, const char* target,
                                                const char* args);
 STATIC void uart_cmd_router_handle_stopwatch(const char* action, const char* target,
@@ -82,7 +81,7 @@ STATIC void uart_cmd_router_handle_list(void)
     uart_manager_print("  data       - Data communications module\r\n");
     uart_manager_print("  imu        - IMU sensor module\r\n");
     uart_manager_print("  uwb        - UWB radio transceiver\r\n");
-    uart_manager_print("  ranging    - TWR ranging service\r\n");
+    uart_manager_print("  twr        - Two-Way Ranging service\r\n");
     uart_manager_print("  twrmgr - Two-Way Ranging manager\r\n");
     uart_manager_print("  error      - Error handler module\r\n");
     uart_manager_print("  datalogger - System monitoring\r\n");
@@ -297,10 +296,7 @@ STATIC void uart_cmd_router_handle_uwb(const char* action, const char* target, c
             uart_manager_print("RX: %u received, %u errors, %u filtered\r\n",
                                (unsigned int)stats.received, (unsigned int)stats.rx_errors,
                                (unsigned int)stats.filtered);
-        }
-        else if (strcmp(target, "aidan_stats") == 0)
-        {
-            uwb_port_print_aidan_stats();
+            uwb_port_print_statistics();
         }
         else
         {
@@ -519,7 +515,7 @@ STATIC void uart_cmd_router_handle_stopwatch(const char* action, const char* tar
     }
 }
 
-STATIC void uart_cmd_router_handle_ranging(const char* action, const char* target, const char* args)
+STATIC void uart_cmd_router_handle_twr(const char* action, const char* target, const char* args)
 {
     if (strcmp(action, "set") == 0)
     {
@@ -555,11 +551,11 @@ STATIC void uart_cmd_router_handle_ranging(const char* action, const char* targe
                 const char* mode_str = (mode == TWR_MODE_TAG)      ? "TAG"
                                        : (mode == TWR_MODE_ANCHOR) ? "ANCHOR"
                                                                    : "DISABLED";
-                uart_manager_print("Ranging mode set to: %s\r\n", mode_str);
+                uart_manager_print("TWR mode set to: %s\r\n", mode_str);
             }
             else
             {
-                uart_manager_print("ERR: Failed to set ranging mode\r\n");
+                uart_manager_print("ERR: Failed to set TWR mode\r\n");
             }
         }
         else if (strcmp(target, "address") == 0)
@@ -765,9 +761,9 @@ void uart_cmd_router_dispatch(const char* cmd_string)
     {
         uart_cmd_router_handle_datalogger(action, target, args);
     }
-    else if (strcmp(module, "ranging") == 0)
+    else if (strcmp(module, "twr") == 0)
     {
-        uart_cmd_router_handle_ranging(action, target, args);
+        uart_cmd_router_handle_twr(action, target, args);
     }
     else if (strcmp(module, "twrmgr") == 0)
     {

@@ -49,7 +49,7 @@ STATIC const twr_callbacks_t anchor_callbacks = {
 
 void anchor_init(void)
 {
-    twr_init(&anchor_twr_ctx, TWR_ROLE_ANCHOR, &anchor_callbacks, &anchor_status);
+    twr_state_machine_init(&anchor_twr_ctx, TWR_ROLE_ANCHOR, &anchor_callbacks, &anchor_status);
     memset(&anchor_status, 0, sizeof(anchor_status));
     anchor_status.my_address = anchor_address;
 }
@@ -69,12 +69,12 @@ bool anchor_start(void)
     }
 
     // No registration needed - ranging.c dispatches based on mode
-    return twr_start(&anchor_twr_ctx, 0); // Anchor doesn't specify peer initially
+    return twr_state_machine_start(&anchor_twr_ctx, 0); // Anchor doesn't specify peer initially
 }
 
 void anchor_stop(void)
 {
-    twr_stop(&anchor_twr_ctx);
+    twr_state_machine_stop(&anchor_twr_ctx);
 }
 
 void anchor_set_address(uint16_t address)
@@ -93,7 +93,7 @@ void anchor_get_status(anchor_status_t* status)
     if (status != NULL)
     {
         *status                   = anchor_status;
-        status->state             = (anchor_state_e)twr_get_state(&anchor_twr_ctx);
+        status->state             = (anchor_state_e)twr_state_machine_get_state(&anchor_twr_ctx);
         status->polls_received    = anchor_twr_ctx.successful_transactions;
         status->responses_sent    = anchor_twr_ctx.successful_transactions;
         status->response_failures = anchor_twr_ctx.failed_transactions;
@@ -186,7 +186,7 @@ STATIC void anchor_handle_message_impl(const twr_event_t* event, twr_context_t* 
             // Send response
             if (ctx->callbacks->send_message(TWR_MSG_RESPONSE, ctx))
             {
-                twr_transition_to(ctx, TWR_STATE_SENDING);
+                twr_state_machine_transition_to(ctx, TWR_STATE_SENDING);
             }
             else
             {
@@ -217,12 +217,12 @@ STATIC void anchor_handle_message_impl(const twr_event_t* event, twr_context_t* 
             // Send final ACK
             if (ctx->callbacks->send_message(TWR_MSG_FINAL_ACK, ctx))
             {
-                twr_transition_to(ctx, TWR_STATE_SENDING);
+                twr_state_machine_transition_to(ctx, TWR_STATE_SENDING);
             }
             else
             {
                 error_handler_log(ERROR_SEVERITY_ERROR, "anchor", "Failed to send final ACK");
-                twr_transition_to(ctx, TWR_STATE_WAITING); // Back to listening
+                twr_state_machine_transition_to(ctx, TWR_STATE_WAITING); // Back to listening
             }
             break;
         }
@@ -246,7 +246,7 @@ STATIC void anchor_handle_tx_complete_impl(const twr_event_t* event, twr_context
 
         // Wait for final
         ctx->expected_msg = TWR_MSG_FINAL;
-        twr_transition_to(ctx, TWR_STATE_WAITING);
+        twr_state_machine_transition_to(ctx, TWR_STATE_WAITING);
     }
     else if (msg_type == TWR_MSG_FINAL_ACK)
     {
@@ -254,7 +254,7 @@ STATIC void anchor_handle_tx_complete_impl(const twr_event_t* event, twr_context
         ctx->successful_transactions++;
         ctx->expected_msg = TWR_MSG_POLL;
         ctx->peer_address = 0; // Ready to accept POLL from any tag
-        twr_transition_to(ctx, TWR_STATE_WAITING);
+        twr_state_machine_transition_to(ctx, TWR_STATE_WAITING);
     }
 
     ctx->pending_tx_id = 0; // Clear pending ID
@@ -270,7 +270,7 @@ STATIC void anchor_handle_timeout_impl(const twr_event_t* event, twr_context_t* 
     ctx->failed_transactions++;
     ctx->expected_msg = TWR_MSG_POLL;
     ctx->peer_address = 0; // Ready to accept POLL from any tag
-    twr_transition_to(ctx, TWR_STATE_WAITING);
+    twr_state_machine_transition_to(ctx, TWR_STATE_WAITING);
 }
 
 STATIC void anchor_handle_fault_impl(const twr_event_t* event, twr_context_t* ctx)
@@ -283,7 +283,7 @@ STATIC void anchor_handle_fault_impl(const twr_event_t* event, twr_context_t* ct
 
     // Return to listening state
     ctx->expected_msg = TWR_MSG_POLL;
-    twr_transition_to(ctx, TWR_STATE_WAITING);
+    twr_state_machine_transition_to(ctx, TWR_STATE_WAITING);
 }
 
 STATIC void anchor_process_result_impl(twr_context_t* ctx)

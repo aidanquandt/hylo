@@ -9,7 +9,7 @@
 /*---------------------------------------------------------------------------
  * Private Definitions
  *---------------------------------------------------------------------------*/
-void twr_transition_to(twr_context_t* ctx, twr_state_e new_state);
+void twr_state_machine_transition_to(twr_context_t* ctx, twr_state_e new_state);
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -21,19 +21,17 @@ STATIC bool twr_validate_message(const twr_event_t* event, twr_context_t* ctx);
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
 
-void twr_transition_to(twr_context_t* ctx, twr_state_e new_state)
+void twr_state_machine_transition_to(twr_context_t* ctx, twr_state_e new_state)
 {
     if (ctx->state != new_state)
     {
         ctx->state       = new_state;
         ctx->state_timer = 0;
 
-        // Handle state entry actions
         if (new_state == TWR_STATE_PROCESSING)
         {
             ctx->callbacks->process_result(ctx);
-            // Auto-transition back to idle after processing
-            twr_transition_to(ctx, TWR_STATE_IDLE);
+            twr_state_machine_transition_to(ctx, TWR_STATE_IDLE);
         }
     }
 }
@@ -57,20 +55,17 @@ STATIC bool twr_validate_message(const twr_event_t* event, twr_context_t* ctx)
 
     const protocol_header_t* header = (const protocol_header_t*)event->rx.data;
 
-    // Check protocol type
     if (header->protocol_type != PROTOCOL_TYPE_TWR)
     {
         return false;
     }
 
-    // Check message type matches expected
     twr_msg_type_e rx_msg_type = (twr_msg_type_e)header->msg_type;
     if (rx_msg_type != ctx->expected_msg)
     {
         return false;
     }
 
-    // Check sequence (except for POLL to anchor)
     if (!(ctx->role == TWR_ROLE_ANCHOR && rx_msg_type == TWR_MSG_POLL))
     {
         if (header->sequence != ctx->sequence)
@@ -79,13 +74,11 @@ STATIC bool twr_validate_message(const twr_event_t* event, twr_context_t* ctx)
         }
     }
 
-    // Check source address - anchor accepts any source for POLL
     if (ctx->peer_address != 0 && event->rx.src_addr != ctx->peer_address)
     {
         return false;
     }
 
-    // For anchor receiving POLL, capture sender info
     if (ctx->role == TWR_ROLE_ANCHOR && rx_msg_type == TWR_MSG_POLL)
     {
         ctx->peer_address = event->rx.src_addr;
@@ -98,8 +91,8 @@ STATIC bool twr_validate_message(const twr_event_t* event, twr_context_t* ctx)
 /*---------------------------------------------------------------------------
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
-void twr_init(twr_context_t* ctx, twr_role_e role, const twr_callbacks_t* callbacks,
-              void* role_context)
+void twr_state_machine_init(twr_context_t* ctx, twr_role_e role, const twr_callbacks_t* callbacks,
+                            void* role_context)
 {
     if (ctx == NULL || callbacks == NULL)
     {
@@ -114,7 +107,7 @@ void twr_init(twr_context_t* ctx, twr_role_e role, const twr_callbacks_t* callba
     ctx->pending_tx_msg = TWR_MSG_POLL; // Initialize to a default value
 }
 
-bool twr_start(twr_context_t* ctx, uint16_t peer_addr)
+bool twr_state_machine_start(twr_context_t* ctx, uint16_t peer_addr)
 {
     if (ctx == NULL || ctx->state != TWR_STATE_IDLE)
     {
@@ -135,12 +128,11 @@ bool twr_start(twr_context_t* ctx, uint16_t peer_addr)
 
     if (ctx->role == TWR_ROLE_TAG)
     {
-        // Tag initiates with POLL
         ctx->expected_msg = TWR_MSG_RESPONSE;
 
         if (ctx->callbacks->send_message(TWR_MSG_POLL, ctx))
         {
-            twr_transition_to(ctx, TWR_STATE_SENDING);
+            twr_state_machine_transition_to(ctx, TWR_STATE_SENDING);
             return true;
         }
         else
@@ -151,22 +143,21 @@ bool twr_start(twr_context_t* ctx, uint16_t peer_addr)
     }
     else
     {
-        // Anchor waits for POLL
         ctx->expected_msg = TWR_MSG_POLL;
-        twr_transition_to(ctx, TWR_STATE_WAITING);
+        twr_state_machine_transition_to(ctx, TWR_STATE_WAITING);
         return true;
     }
 }
 
-void twr_stop(twr_context_t* ctx)
+void twr_state_machine_stop(twr_context_t* ctx)
 {
     if (ctx != NULL)
     {
-        twr_transition_to(ctx, TWR_STATE_IDLE);
+        twr_state_machine_transition_to(ctx, TWR_STATE_IDLE);
     }
 }
 
-void twr_process(twr_context_t* ctx)
+void twr_state_machine_process(twr_context_t* ctx)
 {
     if (ctx == NULL)
     {
@@ -182,10 +173,9 @@ void twr_process(twr_context_t* ctx)
             twr_handle_timeout(ctx);
         }
     }
-    // Add timeout for SENDING state to prevent getting stuck
     else if (ctx->state == TWR_STATE_SENDING)
     {
-        if (ctx->state_timer >= 10) // 10ms timeout for TX completion
+        if (ctx->state_timer >= TWR_TX_COMPLETION_TIMEOUT_MS) // Safety timeout for TX completion
         {
             error_handler_log(ERROR_SEVERITY_WARNING, "twr_sm",
                               "TX completion timeout in SENDING state, resetting");
@@ -193,22 +183,21 @@ void twr_process(twr_context_t* ctx)
             ctx->timeout_count++;
             ctx->failed_transactions++;
 
-            // Reset to waiting state for anchors, idle for tags
             if (ctx->role == TWR_ROLE_ANCHOR)
             {
                 ctx->expected_msg = TWR_MSG_POLL;
                 ctx->peer_address = 0; // Ready to accept POLL from any tag
-                twr_transition_to(ctx, TWR_STATE_WAITING);
+                twr_state_machine_transition_to(ctx, TWR_STATE_WAITING);
             }
             else
             {
-                twr_transition_to(ctx, TWR_STATE_IDLE);
+                twr_state_machine_transition_to(ctx, TWR_STATE_IDLE);
             }
         }
     }
 }
 
-void twr_handle_event(twr_context_t* ctx, const twr_event_t* event)
+void twr_state_machine_handle_event(twr_context_t* ctx, const twr_event_t* event)
 {
     if (ctx == NULL || event == NULL)
     {
@@ -267,49 +256,7 @@ void twr_handle_event(twr_context_t* ctx, const twr_event_t* event)
     }
 }
 
-twr_state_e twr_get_state(const twr_context_t* ctx)
+twr_state_e twr_state_machine_get_state(const twr_context_t* ctx)
 {
     return (ctx != NULL) ? ctx->state : TWR_STATE_IDLE;
-}
-
-bool twr_is_active(const twr_context_t* ctx)
-{
-    return (ctx != NULL) && (ctx->state != TWR_STATE_IDLE);
-}
-
-void twr_cancel(twr_context_t* ctx)
-{
-    if (ctx != NULL)
-    {
-        twr_transition_to(ctx, TWR_STATE_IDLE);
-    }
-}
-
-void twr_rx_callback(twr_context_t* ctx, const uint8_t* data, uint16_t length, uint16_t src_addr,
-                     uint64_t rx_timestamp)
-{
-    if (ctx == NULL)
-        return;
-
-    twr_event_t event = {
-        .type = TWR_EVENT_RX_MESSAGE,
-        .rx = {.data = data, .length = length, .src_addr = src_addr, .rx_timestamp = rx_timestamp}};
-
-    twr_handle_event(ctx, &event);
-}
-
-void twr_tx_done_callback(twr_context_t* ctx, uint32_t message_id, uint64_t tx_timestamp)
-{
-    if (ctx == NULL)
-        return;
-
-    twr_event_t event = {
-        .type = TWR_EVENT_TX_COMPLETE,
-        .tx   = {
-              .message_id   = message_id,
-              .tx_timestamp = tx_timestamp,
-              .msg_type     = TWR_MSG_POLL // Placeholder - actual type determined in callback
-        }};
-
-    twr_handle_event(ctx, &event);
 }

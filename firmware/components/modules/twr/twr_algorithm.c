@@ -1,8 +1,6 @@
 /*---------------------------------------------------------------------------
- * @file    twr_algorithm.c
- * @brief   Two-Way Ranging algorithm implementation
+ * Includes
  *---------------------------------------------------------------------------*/
-
 #include "twr_algorithm.h"
 #include "uwb_port.h"
 #include <math.h>
@@ -11,14 +9,8 @@
 /*---------------------------------------------------------------------------
  * Private Definitions
  *---------------------------------------------------------------------------*/
-
-// Maximum reasonable distance (meters) - for sanity checking
 #define TWR_MAX_REASONABLE_DISTANCE_M 1000.0f
-
-// Maximum timestamp difference (milliseconds) - for timeout detection
 #define TWR_MAX_TIMESTAMP_DIFF_MS 100U
-
-// Minimum timestamp difference (device time units) - avoid divide-by-zero
 #define TWR_MIN_TIMESTAMP_DIFF_DTU 1000ULL
 
 /*---------------------------------------------------------------------------
@@ -33,25 +25,18 @@ twr_status_e twr_calculate_ss_twr(uint64_t poll_tx_ts, uint64_t poll_rx_ts, uint
         return TWR_ERROR_NULL_PTR;
     }
 
-    // Initialize result
     memset(result, 0, sizeof(twr_result_t));
     result->valid = false;
 
-    // Validate all timestamps
     if (!twr_validate_timestamp(poll_tx_ts) || !twr_validate_timestamp(poll_rx_ts) ||
         !twr_validate_timestamp(resp_tx_ts) || !twr_validate_timestamp(resp_rx_ts))
     {
         return TWR_ERROR_INVALID_TIMESTAMP;
     }
 
-    // Calculate time differences
-    // Round trip time (at tag)
     int64_t round_trip = twr_timestamp_diff(poll_tx_ts, resp_rx_ts);
-
-    // Reply time (at anchor)
     int64_t reply_time = twr_timestamp_diff(poll_rx_ts, resp_tx_ts);
 
-    // Sanity checks
     if (round_trip <= 0 || reply_time <= 0)
     {
         return TWR_ERROR_INVALID_TIMESTAMP;
@@ -72,10 +57,7 @@ twr_status_e twr_calculate_ss_twr(uint64_t poll_tx_ts, uint64_t poll_rx_ts, uint
         return TWR_ERROR_CALCULATION_FAILED;
     }
 
-    // Convert to distance
     float distance = twr_dtu_to_meters(tof_dtu);
-
-    // Sanity check distance
     if (distance < 0.0f || distance > TWR_MAX_REASONABLE_DISTANCE_M)
     {
         return TWR_ERROR_OUT_OF_RANGE;
@@ -155,16 +137,12 @@ twr_status_e twr_calculate_ds_twr(uint64_t poll_tx_ts, uint64_t poll_rx_ts, uint
         return TWR_ERROR_CALCULATION_FAILED;
     }
 
-    // Convert to distance
     float distance = twr_dtu_to_meters((int64_t)tof_dtu);
-
-    // Sanity check distance
     if (distance < 0.0f || distance > TWR_MAX_REASONABLE_DISTANCE_M)
     {
         return TWR_ERROR_OUT_OF_RANGE;
     }
 
-    // Success!
     result->distance_m = distance;
     result->valid      = true;
 
@@ -173,7 +151,6 @@ twr_status_e twr_calculate_ds_twr(uint64_t poll_tx_ts, uint64_t poll_rx_ts, uint
 
 bool twr_validate_timestamp(uint64_t timestamp)
 {
-    // Check if non-zero and within 40-bit range
     uint64_t mask_40bit = 0xFFFFFFFFFFULL;
     return (timestamp != 0) && (timestamp == (timestamp & mask_40bit));
 }
@@ -185,16 +162,13 @@ bool twr_validate_timestamp_order(uint64_t ts1, uint64_t ts2, uint32_t max_diff_
         return false;
     }
 
-    // Calculate difference
     int64_t diff_dtu = twr_timestamp_diff(ts1, ts2);
 
     if (diff_dtu <= 0)
     {
-        // ts2 must be after ts1
         return false;
     }
 
-    // Convert max_diff_ms to DTU for comparison
     int64_t max_diff_dtu = (int64_t)(UWB_MS_TO_DTUH(max_diff_ms));
 
     return (diff_dtu <= max_diff_dtu);

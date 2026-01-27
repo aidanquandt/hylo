@@ -1,9 +1,3 @@
-/*---------------------------------------------------------------------------
- * @file    twr_manager.h
- * @brief   Two-Way Ranging (TWR) Manager - Public API
- * @details High-level API for managing automatic ranging operations
- *---------------------------------------------------------------------------*/
-
 #pragma once
 
 /*---------------------------------------------------------------------------
