@@ -3,7 +3,7 @@
  *---------------------------------------------------------------------------*/
 #include "error_handler.h"
 #include "FreeRTOS.h"
-#include "feature_config.h"
+#include "common/feature_config.h"
 #include "module.h"
 #include "platform_gpio.h"
 #include "platform_os.h"

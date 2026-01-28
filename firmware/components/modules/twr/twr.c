@@ -3,8 +3,8 @@
  *---------------------------------------------------------------------------*/
 #include "twr.h"
 #include "anchor/anchor.h"
+#include "common/feature_config.h"
 #include "error_handler.h"
-#include "feature_config.h"
 #include "module.h"
 #include "tag/tag.h"
 #include "twr/twr_mode.h"          // Simple mode manager

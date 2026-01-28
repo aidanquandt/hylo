@@ -14,10 +14,6 @@ STATIC uint32_t backoff_get_random_jitter(uint32_t delay_ms);
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
-
-/**
- * @brief Calculate base^exponent with overflow protection
- */
 STATIC uint32_t backoff_power(uint32_t base, uint32_t exponent)
 {
     if (exponent == 0)
@@ -39,11 +35,6 @@ STATIC uint32_t backoff_power(uint32_t base, uint32_t exponent)
     return result;
 }
 
-/**
- * @brief Generate random jitter factor (50% to 100% of delay)
- *
- * This prevents "thundering herd" where multiple clients retry at exact same time
- */
 STATIC uint32_t backoff_get_random_jitter(uint32_t delay_ms)
 {
     // Generate jitter: delay * (0.5 + 0.5 * rand)
