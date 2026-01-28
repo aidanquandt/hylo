@@ -16,6 +16,7 @@
 #include "twr/twr_mode.h" // Simple mode management
 #include "twr/twr_types.h"
 #include "twr_manager/twr_manager.h"
+#include "twr_scheduler/twr_scheduler.h"
 #include "uart_manager.h"
 #include "uwb.h"
 #include "uwb_protocol_messages.h"
@@ -465,20 +466,144 @@ STATIC void uart_cmd_router_handle_twr_manager(const char* action, const char* t
             float success_rate =
                 (success + failure > 0) ? (100.0f * success / (success + failure)) : 0.0f;
 
+            // Get scheduler status
+            twr_scheduler_status_t sched_status;
+            twr_scheduler_get_status(&sched_status);
+
             uart_manager_print("TWR Manager Status:\r\n");
             uart_manager_print("  Active: %s\r\n", active ? "YES" : "NO");
             uart_manager_print("  Success: %u\r\n", (unsigned int)success);
             uart_manager_print("  Failure: %u\r\n", (unsigned int)failure);
             uart_manager_print("  Success Rate: %.1f%%\r\n", success_rate);
+            uart_manager_print("  Anchors Configured: %d\r\n", sched_status.anchor_count);
+            uart_manager_print("  Current Target: 0x%04X\r\n", sched_status.current_target);
         }
         else
         {
             uart_manager_print("ERR: Unknown get target. Use: status\r\n");
         }
     }
+    else if (strcmp(action, "add") == 0)
+    {
+        if (strcmp(target, "anchor") == 0)
+        {
+            if (args == NULL || args[0] == '\0')
+            {
+                uart_manager_print("ERR: Missing anchor address (e.g., 0x0001)\r\n");
+                return;
+            }
+
+            // Parse address
+            uint16_t address = (uint16_t)strtoul(args, NULL, 0);
+
+            if (twr_scheduler_add_anchor(address))
+            {
+                uart_manager_print("Added anchor 0x%04X (total: %d)\r\n", address,
+                                   twr_scheduler_get_anchor_count());
+            }
+            else
+            {
+                uart_manager_print("ERR: Failed to add anchor 0x%04X\r\n", address);
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown add target. Use: anchor\r\n");
+        }
+    }
+    else if (strcmp(action, "remove") == 0)
+    {
+        if (strcmp(target, "anchor") == 0)
+        {
+            if (args == NULL || args[0] == '\0')
+            {
+                uart_manager_print("ERR: Missing anchor address (e.g., 0x0001)\r\n");
+                return;
+            }
+
+            uint16_t address = (uint16_t)strtoul(args, NULL, 0);
+
+            if (twr_scheduler_remove_anchor(address))
+            {
+                uart_manager_print("Removed anchor 0x%04X (remaining: %d)\r\n", address,
+                                   twr_scheduler_get_anchor_count());
+            }
+            else
+            {
+                uart_manager_print("ERR: Anchor 0x%04X not found\r\n", address);
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown remove target. Use: anchor\r\n");
+        }
+    }
+    else if (strcmp(action, "set") == 0)
+    {
+        if (strcmp(target, "anchors") == 0)
+        {
+            if (args == NULL || args[0] == '\0')
+            {
+                uart_manager_print(
+                    "ERR: Missing anchor addresses (e.g., 0x0001 0x0002 0x0003)\r\n");
+                return;
+            }
+
+            // Parse multiple addresses
+            uint16_t addresses[TWR_SCHEDULER_MAX_ANCHORS];
+            uint8_t count   = 0;
+            const char* ptr = args;
+
+            while (*ptr != '\0' && count < TWR_SCHEDULER_MAX_ANCHORS)
+            {
+                ptr = skip_whitespace(ptr);
+                if (*ptr == '\0')
+                    break;
+
+                addresses[count] = (uint16_t)strtoul(ptr, (char**)&ptr, 0);
+                count++;
+            }
+
+            if (count == 0)
+            {
+                uart_manager_print("ERR: No valid addresses parsed\r\n");
+                return;
+            }
+
+            if (twr_scheduler_set_anchors(addresses, count))
+            {
+                uart_manager_print("Set %d anchors: ", count);
+                for (uint8_t i = 0; i < count; i++)
+                {
+                    uart_manager_print("0x%04X ", addresses[i]);
+                }
+                uart_manager_print("\r\n");
+            }
+            else
+            {
+                uart_manager_print("ERR: Failed to set anchors\r\n");
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown set target. Use: anchors\r\n");
+        }
+    }
+    else if (strcmp(action, "clear") == 0)
+    {
+        if (strcmp(target, "anchors") == 0)
+        {
+            twr_scheduler_clear_all();
+            uart_manager_print("Cleared all anchors\r\n");
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown clear target. Use: anchors\r\n");
+        }
+    }
     else
     {
-        uart_manager_print("ERR: Unknown action. Use: req, get\r\n");
+        uart_manager_print("ERR: Unknown action. Use: req, get, add, remove, set, clear\r\n");
     }
 }
 

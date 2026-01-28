@@ -9,13 +9,13 @@
 #include "tag/tag.h"       // Direct tag interface
 #include "twr/twr_mode.h"  // Simple mode management
 #include "twr/twr_types.h" // For twr_result_t
+#include "twr_scheduler/twr_scheduler.h"
 #include <stdbool.h>
 #include <stdint.h>
 
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define TARGET_ANCHOR_ADDRESS 0x0001                  // Default anchor to range with
 #define RANGING_RATE_HZ 100                           // Target ranging rate (Hz)
 #define RANGING_PERIOD_TICKS (1000 / RANGING_RATE_HZ) // Period in 1kHz ticks
 
@@ -32,7 +32,6 @@ typedef enum
 
 typedef struct
 {
-    uint16_t target_anchor;        // Current target anchor address
     uint32_t success_count;        // Total successful ranges
     uint32_t failure_count;        // Total failed ranges
     uint32_t consecutive_failures; // Track consecutive failures for backoff
@@ -101,7 +100,8 @@ STATIC const state_s states[] = {
 
 STATIC void twr_manager_init(void)
 {
-    ctx.target_anchor        = TARGET_ANCHOR_ADDRESS;
+    twr_scheduler_init();
+
     ctx.success_count        = 0;
     ctx.failure_count        = 0;
     ctx.consecutive_failures = 0;
@@ -205,13 +205,20 @@ STATIC void twr_manager_state_ranging_process(void)
         twr_result_t result;
         bool ranging_succeeded = tag_get_last_result(&result);
 
+        // Get the anchor we just ranged with
+        uint16_t ranged_anchor = twr_scheduler_get_current_target();
+
         if (ranging_succeeded)
         {
-            // Success - reset backoff
+            // Success - reset backoff and advance to next anchor
             ctx.success_count++;
             ctx.consecutive_failures = 0;
             ctx.backoff_delay_ms     = 0;
             sm_inputs.needs_backoff  = false;
+
+            // Report success to scheduler and advance
+            twr_scheduler_report_result(ranged_anchor, true);
+            twr_scheduler_get_next_target(); // Advance to next
         }
         else
         {
@@ -222,6 +229,10 @@ STATIC void twr_manager_state_ranging_process(void)
             // Calculate backoff delay for next state
             ctx.backoff_delay_ms    = backoff_calculate(&backoff_config, ctx.consecutive_failures);
             sm_inputs.needs_backoff = true; // Signal transition to BACKING_OFF
+
+            // Report failure to scheduler and advance
+            twr_scheduler_report_result(ranged_anchor, false);
+            twr_scheduler_get_next_target(); // Advance to next
 
             error_handler_log(ERROR_SEVERITY_WARNING, "twr_mgr",
                               "Ranging failed (consecutive: %lu)",
@@ -239,14 +250,23 @@ STATIC void twr_manager_state_ranging_process(void)
         // (consecutive_failures doesn't block attempts - it only affects backoff duration)
         if (!is_ranging && !ctx.ranging_in_progress)
         {
-            if (tag_start_ranging(ctx.target_anchor))
+            uint16_t target_anchor = twr_scheduler_get_current_target();
+            if (target_anchor != 0x0000)
             {
-                ctx.ranging_in_progress = true;
+                if (tag_start_ranging(target_anchor))
+                {
+                    ctx.ranging_in_progress = true;
+                }
+                else
+                {
+                    error_handler_log(ERROR_SEVERITY_WARNING, "twr_mgr",
+                                      "Failed to start ranging with anchor 0x%04X", target_anchor);
+                }
             }
             else
             {
                 error_handler_log(ERROR_SEVERITY_WARNING, "twr_mgr",
-                                  "Failed to start ranging with anchor 0x%04X", ctx.target_anchor);
+                                  "No anchors configured in scheduler");
             }
         }
     }
