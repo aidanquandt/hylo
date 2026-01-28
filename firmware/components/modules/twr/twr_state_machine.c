@@ -7,13 +7,9 @@
 #include <string.h>
 
 /*---------------------------------------------------------------------------
- * Private Definitions
- *---------------------------------------------------------------------------*/
-void twr_state_machine_transition_to(twr_context_t* ctx, twr_state_e new_state);
-
-/*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
+void twr_state_machine_transition_to(twr_context_t* ctx, twr_state_e new_state);
 STATIC void twr_handle_timeout(twr_context_t* ctx);
 STATIC bool twr_validate_message(const twr_event_t* event, twr_context_t* ctx);
 

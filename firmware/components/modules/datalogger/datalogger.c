@@ -18,10 +18,16 @@
 #define MAX_NUM_TASKS 20U
 
 /*---------------------------------------------------------------------------
- * Module Functions
+ * Private Function Prototypes
  *---------------------------------------------------------------------------*/
+STATIC void datalogger_monitor_rtos_usage(void);
+STATIC void datalogger_monitor_uart_health(void);
+STATIC void datalogger_monitor_heap_usage(void);
 STATIC void datalogger_process_1Hz(void);
 
+/*---------------------------------------------------------------------------
+ * Module Functions
+ *---------------------------------------------------------------------------*/
 extern const module_S datalogger_module;
 const module_S datalogger_module = {
     .module_name        = "datalogger",
@@ -29,14 +35,7 @@ const module_S datalogger_module = {
 };
 
 /*---------------------------------------------------------------------------
- * Private function prototypes
- *---------------------------------------------------------------------------*/
-STATIC void datalogger_monitor_rtos_usage(void);
-STATIC void datalogger_monitor_uart_health(void);
-STATIC void datalogger_monitor_heap_usage(void);
-
-/*---------------------------------------------------------------------------
- * Private variables
+ * Private Variables
  *---------------------------------------------------------------------------*/
 STATIC float32_t cpu_usage[MAX_NUM_TASKS] = {0};
 STATIC TaskStatus_t task_status_array[MAX_NUM_TASKS];
@@ -45,7 +44,7 @@ STATIC uint32_t current_free_heap      = 0U;
 STATIC uint32_t minimum_ever_free_heap = 0U;
 
 /*---------------------------------------------------------------------------
- * Private function implementations
+ * Private Function Implementations
  *---------------------------------------------------------------------------*/
 STATIC void datalogger_monitor_rtos_usage(void)
 {

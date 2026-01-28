@@ -16,15 +16,9 @@
 #include <string.h>
 
 /*---------------------------------------------------------------------------
- * Private Definitions
+ * Defines
  *---------------------------------------------------------------------------*/
 #define TWR_MAX_RETRIES 2U
-
-/*---------------------------------------------------------------------------
- * Private Variables
- *---------------------------------------------------------------------------*/
-twr_context_t tag_twr_ctx; // Made non-static for external access
-STATIC tag_status_t tag_status = {0};
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -39,6 +33,9 @@ STATIC void tag_process_result_impl(twr_context_t* ctx);
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
+twr_context_t tag_twr_ctx; // Made non-static for external access
+STATIC tag_status_t tag_status = {0};
+
 STATIC const twr_callbacks_t tag_callbacks = {.send_message       = tag_send_message_impl,
                                               .handle_message     = tag_handle_message_impl,
                                               .handle_tx_complete = tag_handle_tx_complete_impl,
@@ -47,7 +44,7 @@ STATIC const twr_callbacks_t tag_callbacks = {.send_message       = tag_send_mes
                                               .process_result     = tag_process_result_impl};
 
 /*---------------------------------------------------------------------------
- * Private Callback Implementations
+ * Private Function Implementations
  *---------------------------------------------------------------------------*/
 
 STATIC bool tag_send_message_impl(twr_msg_type_e msg_type, twr_context_t* ctx)
@@ -222,6 +219,7 @@ STATIC void tag_handle_timeout_impl(const twr_event_t* event, twr_context_t* ctx
     {
         error_handler_log(ERROR_SEVERITY_WARNING, "tag", "Max retries exceeded");
         ctx->failed_transactions++;
+        ctx->last_result.valid = false; // Invalidate cached result on failure
         twr_state_machine_transition_to(ctx, TWR_STATE_IDLE);
     }
 }

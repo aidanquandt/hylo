@@ -34,9 +34,6 @@ platform_gpio_state_t platform_gpio_read_pin(platform_gpio_pin_t pin)
     return (state == GPIO_PIN_SET) ? PLATFORM_GPIO_HIGH : PLATFORM_GPIO_LOW;
 }
 
-/*---------------------------------------------------------------------------
- * HAL Callbacks
- *---------------------------------------------------------------------------*/
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == UWB_IRQ_Pin)

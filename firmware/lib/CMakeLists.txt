@@ -3,6 +3,7 @@ add_library(lib STATIC)
 
 target_sources(lib
     PRIVATE
+        backoff/backoff.c
         counter/counter.c
         state_machine/state_machine.c
         stopwatch/stopwatch.c
@@ -10,6 +11,7 @@ target_sources(lib
 
 target_include_directories(lib
     PUBLIC
+        backoff
         common
         counter
         state_machine

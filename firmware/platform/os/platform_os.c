@@ -7,7 +7,7 @@
 #include "task.h"
 
 /*---------------------------------------------------------------------------
- * Private Definitions
+ * Defines
  *---------------------------------------------------------------------------*/
 #define PLATFORM_OS_MAX_US_DELAY 10000U // 10ms max for scheduler suspension
 

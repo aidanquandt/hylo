@@ -20,10 +20,16 @@
 #define ERROR_HISTORY_SIZE 16U
 
 /*---------------------------------------------------------------------------
- * Module Function Prototypes
+ * Private Function Prototypes
  *---------------------------------------------------------------------------*/
+STATIC void error_handler_add_to_history(const error_record_t* record);
+STATIC const char* error_handler_severity_to_string(error_severity_e severity);
+STATIC void error_handler_increment_counter(error_severity_e severity);
 STATIC void error_handler_init(void);
 
+/*---------------------------------------------------------------------------
+ * Module Functions
+ *---------------------------------------------------------------------------*/
 extern const module_S error_handler_module;
 const module_S error_handler_module = {
     .module_name = "error",
@@ -45,14 +51,7 @@ STATIC uint32_t error_count_fatal   = 0U;
 STATIC uint32_t dropped_error_count = 0U;
 
 /*---------------------------------------------------------------------------
- * Private Function Prototypes
- *---------------------------------------------------------------------------*/
-STATIC void error_handler_add_to_history(const error_record_t* record);
-STATIC const char* error_handler_severity_to_string(error_severity_e severity);
-STATIC void error_handler_increment_counter(error_severity_e severity);
-
-/*---------------------------------------------------------------------------
- * Module Function Implementations
+ * Private Function Implementations
  *---------------------------------------------------------------------------*/
 
 STATIC void error_handler_init(void)
