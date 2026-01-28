@@ -10,10 +10,10 @@
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-STATIC twr_anchor_entry_t anchor_list[TWR_SCHEDULER_MAX_ANCHORS] = {0};
-STATIC uint8_t anchor_count                                      = 0;
-STATIC uint8_t current_index                                     = 0;
-STATIC twr_scheduler_strategy_e strategy                         = TWR_SCHED_STRATEGY_ROUND_ROBIN;
+STATIC twr_anchor_entry_t anchor_list[TWR_SCHEDULER_MAX_ANCHORS];
+STATIC uint8_t anchor_count;
+STATIC uint8_t current_index;
+STATIC twr_scheduler_strategy_e strategy;
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -60,7 +60,6 @@ STATIC uint16_t get_next_round_robin(void)
     }
 
     // All anchors disabled - return 0x0000
-    error_handler_log(ERROR_SEVERITY_WARNING, "twr_sched", "All anchors disabled");
     return 0x0000;
 }
 
@@ -73,8 +72,6 @@ void twr_scheduler_init(void)
     anchor_count  = 0;
     current_index = 0;
     strategy      = TWR_SCHED_STRATEGY_ROUND_ROBIN;
-
-    error_handler_log(ERROR_SEVERITY_INFO, "twr_sched", "Scheduler initialized");
 }
 
 uint16_t twr_scheduler_get_next_target(void)
@@ -114,8 +111,14 @@ uint16_t twr_scheduler_get_current_target(void)
         return 0x0000;
     }
 
+    // Bounds check
+    if (current_index >= anchor_count)
+    {
+        current_index = 0; // Reset to start
+    }
+
     // Return current anchor without advancing
-    if (current_index < anchor_count && anchor_list[current_index].enabled)
+    if (anchor_list[current_index].enabled)
     {
         return anchor_list[current_index].address;
     }
@@ -188,6 +191,12 @@ bool twr_scheduler_remove_anchor(uint16_t address)
 
 bool twr_scheduler_set_anchors(const uint16_t* addresses, uint8_t count)
 {
+    if (addresses == NULL)
+    {
+        error_handler_log(ERROR_SEVERITY_ERROR, "twr_sched", "NULL addresses pointer");
+        return false;
+    }
+
     if (count > TWR_SCHEDULER_MAX_ANCHORS)
     {
         error_handler_log(ERROR_SEVERITY_ERROR, "twr_sched", "Anchor count %d exceeds maximum %d",
@@ -218,7 +227,11 @@ bool twr_scheduler_set_anchors(const uint16_t* addresses, uint8_t count)
 
 void twr_scheduler_clear_all(void)
 {
-    memset(anchor_list, 0, sizeof(anchor_list));
+    // Only clear entries that were actually used
+    if (anchor_count > 0)
+    {
+        memset(anchor_list, 0, anchor_count * sizeof(twr_anchor_entry_t));
+    }
     anchor_count  = 0;
     current_index = 0;
 

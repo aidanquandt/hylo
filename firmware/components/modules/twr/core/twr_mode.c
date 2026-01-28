@@ -3,8 +3,8 @@
  *---------------------------------------------------------------------------*/
 #include "twr_mode.h"
 #include "FreeRTOS.h"
-#include "anchor/anchor.h"
-#include "tag/tag.h"
+#include "../roles/anchor/anchor.h"
+#include "../roles/tag/tag.h"
 #include "task.h"
 
 /*---------------------------------------------------------------------------

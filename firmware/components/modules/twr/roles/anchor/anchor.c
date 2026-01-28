@@ -5,12 +5,14 @@
  *---------------------------------------------------------------------------*/
 
 #include "anchor.h"
-#include "../twr.h" // For registration functions
+#include "../../core/twr_protocol.h" // For registration functions
 #include "FreeRTOS.h"
 #include "error_handler.h"
+#include "stopwatch.h"
 #include "task.h"
-#include "twr/twr_mode.h" // Simple mode management
-#include "twr_state_machine.h"
+#include "../../core/twr_algorithm.h"
+#include "../../core/twr_mode.h" // Simple mode management
+#include "../../core/twr_state_machine.h"
 #include "uwb.h"
 #include "uwb_protocol_messages.h"
 #include <string.h>

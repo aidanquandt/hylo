@@ -3,7 +3,7 @@
 /*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
-#include "twr_scheduler/twr_scheduler.h"
+#include "../scheduler/twr_scheduler.h"
 #include <stdbool.h>
 #include <stdint.h>
 

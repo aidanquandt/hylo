@@ -7,16 +7,16 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "uart_cmd_router.h"
-#include "anchor/anchor.h"
 #include "datalogger.h"
 #include "error_handler.h"
 #include "imu.h"
 #include "stopwatch.h"
-#include "tag/tag.h"
-#include "twr/twr_mode.h" // Simple mode management
-#include "twr/twr_types.h"
-#include "twr_manager/twr_manager.h"
-#include "twr_scheduler/twr_scheduler.h"
+#include "twr/core/twr_mode.h" // Simple mode management
+#include "twr/core/twr_types.h"
+#include "twr/manager/twr_manager.h"
+#include "twr/roles/anchor/anchor.h"
+#include "twr/roles/tag/tag.h"
+#include "twr/scheduler/twr_scheduler.h"
 #include "uart_manager.h"
 #include "uwb.h"
 #include "uwb_protocol_messages.h"

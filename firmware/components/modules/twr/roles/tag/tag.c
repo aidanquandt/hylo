@@ -2,15 +2,15 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "tag.h"
-#include "../twr.h"
+#include "../../core/twr_protocol.h"
 #include "FreeRTOS.h"
 #include "common/feature_config.h"
 #include "error_handler.h"
 #include "stopwatch.h"
 #include "task.h"
-#include "twr/twr_mode.h"
-#include "twr_algorithm.h"
-#include "twr_state_machine.h"
+#include "../../core/twr_mode.h"
+#include "../../core/twr_algorithm.h"
+#include "../../core/twr_state_machine.h"
 #include "uwb.h"
 #include "uwb_protocol_messages.h"
 #include <string.h>

@@ -2,14 +2,14 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "twr_manager.h"
+#include "../core/twr_mode.h"  // Simple mode management
+#include "../core/twr_types.h" // For twr_result_t
+#include "../roles/tag/tag.h"  // Direct tag interface
+#include "../scheduler/twr_scheduler.h"
 #include "backoff.h"
 #include "error_handler.h"
 #include "module.h"
 #include "state_machine.h"
-#include "tag/tag.h"       // Direct tag interface
-#include "twr/twr_mode.h"  // Simple mode management
-#include "twr/twr_types.h" // For twr_result_t
-#include "twr_scheduler/twr_scheduler.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -247,26 +247,12 @@ STATIC void twr_manager_state_ranging_process(void)
         ctx.rate_prescaler = 0;
 
         // Only start new ranging if not already in progress
-        // (consecutive_failures doesn't block attempts - it only affects backoff duration)
         if (!is_ranging && !ctx.ranging_in_progress)
         {
             uint16_t target_anchor = twr_scheduler_get_current_target();
-            if (target_anchor != 0x0000)
+            if (target_anchor != 0x0000 && tag_start_ranging(target_anchor))
             {
-                if (tag_start_ranging(target_anchor))
-                {
-                    ctx.ranging_in_progress = true;
-                }
-                else
-                {
-                    error_handler_log(ERROR_SEVERITY_WARNING, "twr_mgr",
-                                      "Failed to start ranging with anchor 0x%04X", target_anchor);
-                }
-            }
-            else
-            {
-                error_handler_log(ERROR_SEVERITY_WARNING, "twr_mgr",
-                                  "No anchors configured in scheduler");
+                ctx.ranging_in_progress = true;
             }
         }
     }
@@ -303,6 +289,15 @@ STATIC void twr_manager_state_faulted_process(void)
 
 bool twr_manager_start(void)
 {
+    // Validate that anchors are configured
+    if (twr_scheduler_get_anchor_count() == 0)
+    {
+        error_handler_log(ERROR_SEVERITY_ERROR, "twr_mgr",
+                          "Cannot start: No anchors configured. Use twrmgr.add.anchor or "
+                          "twrmgr.set.anchors first");
+        return false;
+    }
+
     // Initialize and start tag mode
     tag_init();
     if (!tag_start())

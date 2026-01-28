@@ -1,14 +1,14 @@
 /*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
-#include "twr.h"
-#include "anchor/anchor.h"
+#include "twr_protocol.h"
+#include "../roles/anchor/anchor.h"
 #include "common/feature_config.h"
 #include "error_handler.h"
 #include "module.h"
-#include "tag/tag.h"
-#include "twr/twr_mode.h"          // Simple mode manager
-#include "twr/twr_state_machine.h" // For twr_process
+#include "../roles/tag/tag.h"
+#include "twr_mode.h"          // Simple mode manager
+#include "twr_state_machine.h" // For twr_process
 #include "uwb.h"
 #include "uwb_protocol_messages.h"
 #include <string.h>

@@ -6,8 +6,8 @@
 #include "error_handler.h"
 #include "imu.h"
 #include "sensor_fusion.h"
-#include "twr/twr.h"
-#include "twr_manager/twr_manager.h"
+#include "twr/core/twr_protocol.h"
+#include "twr/manager/twr_manager.h"
 #include "uart_manager.h"
 #include "uwb.h"
 
