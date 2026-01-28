@@ -4,7 +4,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "common.h"
-#include "twr/twr_types.h"
+#include "../../core/twr_types.h"
 #include <stdbool.h>
 #include <stdint.h>
 

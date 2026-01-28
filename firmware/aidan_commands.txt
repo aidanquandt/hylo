@@ -10,7 +10,43 @@ twr.req.range 0x0001
 twr.get.status  # Shows current mode and transition status
 
 
-TWR AUTO-RANGING (Updated for new architecture):
+TWR AUTO-RANGING WITH MULTI-ANCHOR SCHEDULER (NEW):
+
+# Setup anchor side
+uwb.set.address 0x0001
+twr.set.mode anchor
+
+# Setup tag side with multiple anchors
+uwb.set.address 0x0002
+twr.set.mode tag
+
+# ⚠️ IMPORTANT: Configure anchors BEFORE starting manager!
+# Option 1: Add anchors one by one
+twrmgr.add.anchor 0x0001
+twrmgr.add.anchor 0x0002
+twrmgr.add.anchor 0x0003
+
+# Option 2: Set all at once (replaces existing list)
+# twrmgr.set.anchors 0x0001 0x0002 0x0003
+
+# Now start ranging - will cycle through: 0x0001 -> 0x0002 -> 0x0003 -> 0x0001...
+twrmgr.req.start
+twrmgr.get.status
+twrmgr.req.stop
+
+# Remove an anchor from schedule
+twrmgr.remove.anchor 0x0002
+
+aidan defualt:
+uwb.set.address 0x0002
+twr.set.mode tag
+twrmgr.add.anchor 0x0001
+twrmgr.req.start
+
+# Check status
+twrmgr.get.status
+
+TWR AUTO-RANGING (Legacy - single anchor):
 
 uwb.set.address 0x0001
 twr.set.mode anchor
