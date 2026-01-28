@@ -12,15 +12,21 @@
  *---------------------------------------------------------------------------*/
 #define SPI_TIMEOUT_MS (100U)
 
-extern SPI_HandleTypeDef hspi1;
-extern SPI_HandleTypeDef hspi5;
-
+/*---------------------------------------------------------------------------
+ * Typedefs
+ *---------------------------------------------------------------------------*/
 typedef struct
 {
     GPIO_TypeDef* port;
     uint16_t pin;
     SPI_HandleTypeDef* hspi;
 } spi_cs_map_t;
+
+/*---------------------------------------------------------------------------
+ * Private Variables
+ *---------------------------------------------------------------------------*/
+extern SPI_HandleTypeDef hspi1;
+extern SPI_HandleTypeDef hspi5;
 
 STATIC const spi_cs_map_t cs_map[] = {
     [PLATFORM_SPI_CS_UWB] = {SPI1_CSn_GPIO_Port, SPI1_CSn_Pin, &hspi1},

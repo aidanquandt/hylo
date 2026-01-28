@@ -22,6 +22,9 @@ STATIC void twr_tx_done_handler(uint32_t message_id, uint64_t tx_timestamp);
 STATIC void twr_module_init(void);
 STATIC void twr_process_1kHz(void);
 
+/*---------------------------------------------------------------------------
+ * Module Functions
+ *---------------------------------------------------------------------------*/
 extern const module_S twr_module;
 
 const module_S twr_module = {

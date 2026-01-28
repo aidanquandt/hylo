@@ -16,13 +16,6 @@
 #include <string.h>
 
 /*---------------------------------------------------------------------------
- * Private Variables
- *---------------------------------------------------------------------------*/
-twr_context_t anchor_twr_ctx; // Made non-static for external access
-STATIC anchor_status_t anchor_status = {0};
-STATIC uint16_t anchor_address       = 0x1234; // Default address
-
-/*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
 STATIC bool anchor_send_message_impl(twr_msg_type_e msg_type, twr_context_t* ctx);
@@ -33,8 +26,12 @@ STATIC void anchor_handle_fault_impl(const twr_event_t* event, twr_context_t* ct
 STATIC void anchor_process_result_impl(twr_context_t* ctx);
 
 /*---------------------------------------------------------------------------
- * Role-Specific Callbacks
+ * Private Variables
  *---------------------------------------------------------------------------*/
+twr_context_t anchor_twr_ctx; // Made non-static for external access
+STATIC anchor_status_t anchor_status = {0};
+STATIC uint16_t anchor_address       = 0x1234; // Default address
+
 STATIC const twr_callbacks_t anchor_callbacks = {
     .send_message       = anchor_send_message_impl,
     .handle_message     = anchor_handle_message_impl,
@@ -107,7 +104,7 @@ uint32_t anchor_get_response_count(void)
 }
 
 /*---------------------------------------------------------------------------
- * Private Callback Implementations
+ * Private Function Implementations
  *---------------------------------------------------------------------------*/
 
 STATIC bool anchor_send_message_impl(twr_msg_type_e msg_type, twr_context_t* ctx)

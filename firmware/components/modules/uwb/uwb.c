@@ -101,25 +101,6 @@ typedef struct
 } uwb_debug_stats_t;
 
 /*---------------------------------------------------------------------------
- * Protocol Routing Variables
- *---------------------------------------------------------------------------*/
-STATIC protocol_handler_entry_t protocol_handlers[MAX_PROTOCOL_HANDLERS];
-STATIC uint8_t protocol_handler_count        = 0;
-STATIC protocol_stats_t protocol_stats       = {0};
-STATIC uwb_tx_done_handler_t tx_done_handler = NULL;
-/*---------------------------------------------------------------------------
- * Message ID Tracking
- *---------------------------------------------------------------------------*/
-STATIC uint32_t next_message_id       = 1;
-STATIC uint32_t current_tx_message_id = 0; // ID of message currently being transmitted
-/*---------------------------------------------------------------------------
- * FreeRTOS Resources
- *---------------------------------------------------------------------------*/
-STATIC QueueHandle_t uwb_rx_queue     = NULL;
-STATIC SemaphoreHandle_t uwb_tx_mutex = NULL;
-STATIC uwb_debug_stats_t debug_stats  = {0};
-
-/*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
 STATIC bool verify_device_id(void);
@@ -154,6 +135,16 @@ const module_S uwb_module = {
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
+STATIC protocol_handler_entry_t protocol_handlers[MAX_PROTOCOL_HANDLERS];
+STATIC uint8_t protocol_handler_count        = 0;
+STATIC protocol_stats_t protocol_stats       = {0};
+STATIC uwb_tx_done_handler_t tx_done_handler = NULL;
+STATIC uint32_t next_message_id              = 1;
+STATIC uint32_t current_tx_message_id        = 0; // ID of message currently being transmitted
+STATIC QueueHandle_t uwb_rx_queue            = NULL;
+STATIC SemaphoreHandle_t uwb_tx_mutex        = NULL;
+STATIC uwb_debug_stats_t debug_stats         = {0};
+
 STATIC const state_s uwb_states[] = {
     [STATE_OFF]            = {.process = NULL, .onEntry = NULL, .onExit = NULL},
     [STATE_INITIALIZATION] = {.process = NULL,

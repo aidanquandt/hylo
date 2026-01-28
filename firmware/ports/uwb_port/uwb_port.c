@@ -15,7 +15,7 @@
 #include "uart_manager.h"
 
 /*---------------------------------------------------------------------------
- * Type Definitions
+ * Typedefs
  *---------------------------------------------------------------------------*/
 struct uwb_dev_s
 {
@@ -42,13 +42,10 @@ typedef struct
 } uwb_port_statistics_t;
 
 /*---------------------------------------------------------------------------
- * External Driver Declaration
+ * Private Function Prototypes
  *---------------------------------------------------------------------------*/
 extern const struct dwt_driver_s dw3000_driver;
 
-/*---------------------------------------------------------------------------
- * Private Function Prototypes
- *---------------------------------------------------------------------------*/
 STATIC int32_t uwb_spi_read(uint16_t headerLength, uint8_t* headerBuffer, uint16_t readLength,
                             uint8_t* readBuffer);
 STATIC int32_t uwb_spi_write(uint16_t headerLength, const uint8_t* headerBuffer,

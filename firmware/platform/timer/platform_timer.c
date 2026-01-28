@@ -12,9 +12,6 @@
 #define PLATFORM_TIMER_NS_PER_TICK (101.81818182f)
 #define PLATFORM_TIMESTAMP_TIMER htim5
 
-/*---------------------------------------------------------------------------
- * External Variables
- *---------------------------------------------------------------------------*/
 extern TIM_HandleTypeDef PLATFORM_TIMESTAMP_TIMER;
 
 /*---------------------------------------------------------------------------
