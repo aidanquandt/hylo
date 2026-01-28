@@ -21,7 +21,6 @@
  * Defines
  *---------------------------------------------------------------------------*/
 #define UWB_EXPECTED_DEV_ID (0xDECA0302UL)
-#define UWB_DEFAULT_CHANNEL UWB_CHANNEL_5
 #define MAX_MESSAGE_LENGTH (MAC_MAX_FRAME_SIZE)
 #define DEFAULT_NODE_ADDRESS (0x0001)
 #define MAX_PROTOCOL_HANDLERS (8U)
@@ -334,7 +333,7 @@ STATIC void uwb_state_initialization_on_entry(uint16_t prevState)
     uwb_port_set_pan_id(uwb_dev, addressing.my_pan_id);
     uwb_port_set_address(uwb_dev, addressing.my_address);
 
-    ret = uwb_port_configure(uwb_dev, UWB_DEFAULT_CHANNEL);
+    ret = uwb_port_configure(uwb_dev);
     if (ret != UWB_PORT_SUCCESS)
     {
         fault_code = FAULT_CONFIG_FAILED;

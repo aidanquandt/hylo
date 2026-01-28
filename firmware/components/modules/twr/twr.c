@@ -4,6 +4,7 @@
 #include "twr.h"
 #include "anchor/anchor.h"
 #include "error_handler.h"
+#include "feature_config.h"
 #include "module.h"
 #include "tag/tag.h"
 #include "twr/twr_mode.h"          // Simple mode manager
@@ -50,10 +51,35 @@ STATIC void twr_module_init(void)
 
     uwb_register_tx_done_handler(twr_tx_done_handler);
     module_initialized = true;
+
+    // Note: Auto-anchor startup is deferred to twr_process_1kHz() to ensure UWB is ready
 }
 
 STATIC void twr_process_1kHz(void)
 {
+#if FEATURE_AUTO_START_ANCHOR_MODE
+    STATIC bool auto_start_completed = false;
+    if (!auto_start_completed && uwb_is_ready())
+    {
+        error_handler_log(ERROR_SEVERITY_INFO, "twr",
+                          "Auto-starting anchor mode with address 0x0001");
+
+        // Set UWB address to 0x0001
+        uwb_set_address(0x0001, 0xDECA);
+
+        // Set anchor address
+        anchor_set_address(0x0001);
+
+        // Request anchor mode
+        if (!twr_mode_request(TWR_MODE_ANCHOR, "auto_start"))
+        {
+            error_handler_log(ERROR_SEVERITY_ERROR, "twr", "Failed to request anchor mode");
+        }
+
+        auto_start_completed = true;
+    }
+#endif
+
     twr_mode_process();
 
     twr_mode_e current_mode = twr_mode_get_current();

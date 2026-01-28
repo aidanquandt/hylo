@@ -232,9 +232,17 @@ void twr_state_machine_handle_event(twr_context_t* ctx, const twr_event_t* event
             }
             else
             {
+                // Extract message type for logging
+                twr_msg_type_e rx_msg_type = TWR_MSG_POLL; // Default
+                if (event->rx.length >= sizeof(protocol_header_t))
+                {
+                    const protocol_header_t* header = (const protocol_header_t*)event->rx.data;
+                    rx_msg_type                     = (twr_msg_type_e)header->msg_type;
+                }
+
                 error_handler_log(ERROR_SEVERITY_WARNING, "twr_sm",
-                                  "RX_MESSAGE: wrong state (%d) or invalid message from 0x%04X",
-                                  ctx->state, event->rx.src_addr);
+                                  "RX_MESSAGE: wrong state (%d) or invalid msg_type=%d from 0x%04X",
+                                  ctx->state, rx_msg_type, event->rx.src_addr);
             }
             break;
 

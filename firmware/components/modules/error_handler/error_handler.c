@@ -3,6 +3,7 @@
  *---------------------------------------------------------------------------*/
 #include "error_handler.h"
 #include "FreeRTOS.h"
+#include "feature_config.h"
 #include "module.h"
 #include "platform_gpio.h"
 #include "platform_os.h"
@@ -177,8 +178,10 @@ void error_handler_log(error_severity_e severity, const char* module, const char
         }
 
         // Print directly (uart_manager_print handles ISR context)
+#if FEATURE_UART_LOGGING
         const char* severity_str = error_handler_severity_to_string(severity);
         uart_manager_print("[%s] %s: %s\r\n", severity_str, module, message);
+#endif
         return;
     }
 
@@ -210,8 +213,10 @@ void error_handler_log(error_severity_e severity, const char* module, const char
     error_handler_increment_counter(severity);
     xSemaphoreGive(error_mutex);
 
+#if FEATURE_UART_LOGGING
     const char* severity_str = error_handler_severity_to_string(severity);
     uart_manager_print("[%s] %s: %s\r\n", severity_str, record.module, record.message);
+#endif
 }
 
 void error_handler_fatal(const char* module, const char* format, ...)
@@ -223,6 +228,9 @@ void error_handler_fatal(const char* module, const char* format, ...)
     va_end(args);
     message[sizeof(message) - 1] = '\0';
 
+#if FEATURE_UART_LOGGING
+    // Note: Fatal errors are printed regardless of logging setting in many systems
+    // since they indicate critical failures. Change this behavior if needed.
     uart_manager_print("\r\n");
     uart_manager_print("==============================================\r\n");
     uart_manager_print("         FATAL ERROR - SYSTEM HALTED          \r\n");
@@ -233,6 +241,7 @@ void error_handler_fatal(const char* module, const char* format, ...)
     uart_manager_print("==============================================\r\n");
     uart_manager_print("System halted. Power cycle required.\r\n");
     uart_manager_print("\r\n");
+#endif
 
     vTaskDelay(pdMS_TO_TICKS(100));
 

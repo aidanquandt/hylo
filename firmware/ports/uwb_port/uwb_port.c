@@ -58,7 +58,6 @@ STATIC int32_t uwb_spi_write_crc(uint16_t headerLength, const uint8_t* headerBuf
 STATIC void uwb_spi_set_slow_rate(void);
 STATIC void uwb_spi_set_fast_rate(void);
 STATIC void uwb_wakeup_device_impl(void);
-STATIC bool validate_channel(const uwb_channel_t channel);
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
@@ -83,23 +82,6 @@ STATIC uwb_port_statistics_t uwb_port_stats         = {0};
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
-STATIC bool validate_channel(const uwb_channel_t channel)
-{
-    switch (channel)
-    {
-        case UWB_CHANNEL_1:
-        case UWB_CHANNEL_2:
-        case UWB_CHANNEL_3:
-        case UWB_CHANNEL_4:
-        case UWB_CHANNEL_5:
-        case UWB_CHANNEL_7:
-        case UWB_CHANNEL_9:
-            return true;
-        default:
-            return false;
-    }
-}
-
 STATIC int32_t uwb_spi_read(uint16_t headerLength, uint8_t* headerBuffer, uint16_t readLength,
                             uint8_t* readBuffer)
 {
@@ -441,16 +423,11 @@ void uwb_port_set_address(uwb_dev_t* dev, uint16_t address)
     dwt_setaddress16(address);
 }
 
-uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel)
+uwb_port_status_t uwb_port_configure(uwb_dev_t* dev)
 {
     if (dev == NULL)
     {
         return UWB_PORT_ERROR_NULL_PTR;
-    }
-
-    if (!validate_channel(channel))
-    {
-        return UWB_PORT_ERROR_CONFIG;
     }
 
     dwt_forcetrxoff();
@@ -458,7 +435,7 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel)
     dwt_writesysstatuslo(0xFFFFFFFF);
     dwt_writesysstatushi(0xFF);
 
-    dwt_config_t config = {.chan           = (uint8_t)channel,
+    dwt_config_t config = {.chan           = (uint8_t)UWB_CHANNEL_5,
                            .txPreambLength = DWT_PLEN_128,
                            .rxPAC          = DWT_PAC8,
                            .txCode         = 9,
@@ -484,7 +461,7 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel)
 
     dwt_configureframefilter(DWT_FF_ENABLE_802_15_4, DWT_FF_DATA_EN);
 
-    dwt_txconfig_t txconfig = {.PGdly = 0x34, .power = 0xFEFEFEFEUL};
+    dwt_txconfig_t txconfig = {.PGdly = 0x34, .power = 0xfdfdfdfdUL};
     dwt_configuretxrf(&txconfig);
 
     if (dwt_rxenable(DWT_START_RX_IMMEDIATE) != DWT_SUCCESS)

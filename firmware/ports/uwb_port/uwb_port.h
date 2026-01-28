@@ -76,7 +76,7 @@ uwb_port_status_t uwb_port_check_device_id(uwb_dev_t* dev);
 uint32_t uwb_port_read_device_id(uwb_dev_t* dev);
 void uwb_port_set_pan_id(uwb_dev_t* dev, uint16_t pan_id);
 void uwb_port_set_address(uwb_dev_t* dev, uint16_t address);
-uwb_port_status_t uwb_port_configure(uwb_dev_t* dev, uwb_channel_t channel);
+uwb_port_status_t uwb_port_configure(uwb_dev_t* dev);
 uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uint16_t length);
 uwb_port_status_t uwb_port_send_message_delayed(uwb_dev_t* dev, const uint8_t* data,
                                                 uint16_t length, uint64_t tx_timestamp_dtuh);

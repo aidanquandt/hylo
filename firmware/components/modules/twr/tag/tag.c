@@ -5,6 +5,7 @@
 #include "../twr.h"
 #include "FreeRTOS.h"
 #include "error_handler.h"
+#include "feature_config.h"
 #include "stopwatch.h"
 #include "task.h"
 #include "twr/twr_mode.h"
@@ -253,16 +254,17 @@ STATIC void tag_process_result_impl(twr_context_t* ctx)
     if (status == TWR_SUCCESS && result.valid)
     {
         stopwatch_stop(0);
-        uint32_t elapsed_us = stopwatch_elapsed_us(0);
 
         result.remote_addr  = ctx->peer_address;
         result.timestamp_ms = xTaskGetTickCount();
 
         ctx->last_result = result;
         ctx->successful_transactions++;
-
+#if FEATURE_PRINT_RANGING_SUCCESS_AND_DISTANCE
+        uint32_t elapsed_us = stopwatch_elapsed_us(0);
         error_handler_log(ERROR_SEVERITY_INFO, "tag", "Ranging success: %.2f m, %lu us",
                           result.distance_m, (unsigned long)elapsed_us);
+#endif
     }
     else
     {
