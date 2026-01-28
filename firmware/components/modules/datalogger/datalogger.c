@@ -33,13 +33,16 @@ const module_S datalogger_module = {
  *---------------------------------------------------------------------------*/
 STATIC void datalogger_monitor_rtos_usage(void);
 STATIC void datalogger_monitor_uart_health(void);
+STATIC void datalogger_monitor_heap_usage(void);
 
 /*---------------------------------------------------------------------------
  * Private variables
  *---------------------------------------------------------------------------*/
 STATIC float32_t cpu_usage[MAX_NUM_TASKS] = {0};
 STATIC TaskStatus_t task_status_array[MAX_NUM_TASKS];
-STATIC UBaseType_t num_tracked_tasks = 0;
+STATIC UBaseType_t num_tracked_tasks   = 0;
+STATIC uint32_t current_free_heap      = 0U;
+STATIC uint32_t minimum_ever_free_heap = 0U;
 
 /*---------------------------------------------------------------------------
  * Private function implementations
@@ -112,13 +115,45 @@ STATIC void datalogger_monitor_rtos_usage(void)
     prev_total_runtime = total_runtime;
 }
 
-/*---------------------------------------------------------------------------
- * Module Implementation
- *---------------------------------------------------------------------------*/
 STATIC void datalogger_process_1Hz(void)
 {
     datalogger_monitor_rtos_usage();
     datalogger_monitor_uart_health();
+    datalogger_monitor_heap_usage();
+}
+
+STATIC void datalogger_monitor_heap_usage(void)
+{
+    current_free_heap      = xPortGetFreeHeapSize();
+    minimum_ever_free_heap = xPortGetMinimumEverFreeHeapSize();
+
+    // Log warning if free heap is getting low (less than 1KB)
+    if (current_free_heap < 1024U)
+    {
+        error_handler_log(ERROR_SEVERITY_WARNING, "datalogger",
+                          "[HEAP] Low memory: %u bytes free\n", (unsigned int)current_free_heap);
+    }
+}
+
+STATIC void datalogger_monitor_uart_health(void)
+{
+    uint32_t queue_count         = uart_manager_get_queue_count();
+    STATIC uint32_t prev_dropped = 0U;
+    uint32_t dropped             = uart_manager_get_dropped_count();
+
+    if (dropped > prev_dropped)
+    {
+        uint32_t new_drops = dropped - prev_dropped;
+        error_handler_log(ERROR_SEVERITY_ERROR, "datalogger", "[UART] %u messages dropped!\n",
+                          (unsigned int)new_drops);
+        prev_dropped = dropped;
+    }
+
+    if (queue_count > 24U)
+    {
+        error_handler_log(ERROR_SEVERITY_WARNING, "datalogger", "[UART] Queue high: %u/32\n",
+                          (unsigned int)queue_count);
+    }
 }
 
 /*---------------------------------------------------------------------------
@@ -142,23 +177,25 @@ uint32_t datalogger_get_task_usage(task_cpu_info_t* tasks, uint32_t max_tasks)
     return count;
 }
 
-STATIC void datalogger_monitor_uart_health(void)
+void datalogger_get_system_stats(system_stats_t* stats, task_cpu_info_t* task_buffer,
+                                 uint32_t max_tasks)
 {
-    uint32_t queue_count         = uart_manager_get_queue_count();
-    STATIC uint32_t prev_dropped = 0U;
-    uint32_t dropped             = uart_manager_get_dropped_count();
-
-    if (dropped > prev_dropped)
+    if (stats == NULL)
     {
-        uint32_t new_drops = dropped - prev_dropped;
-        error_handler_log(ERROR_SEVERITY_ERROR, "datalogger", "[UART] %u messages dropped!\n",
-                          (unsigned int)new_drops);
-        prev_dropped = dropped;
+        return;
     }
 
-    if (queue_count > 24U)
+    stats->current_free_heap      = current_free_heap;
+    stats->minimum_ever_free_heap = minimum_ever_free_heap;
+    stats->total_heap_size        = configTOTAL_HEAP_SIZE;
+    stats->task_info              = task_buffer;
+
+    if (task_buffer != NULL && max_tasks > 0)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "datalogger", "[UART] Queue high: %u/32\n",
-                          (unsigned int)queue_count);
+        stats->num_tasks = datalogger_get_task_usage(task_buffer, max_tasks);
+    }
+    else
+    {
+        stats->num_tasks = 0;
     }
 }

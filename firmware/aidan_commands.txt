@@ -41,3 +41,7 @@ STOP WATCH STUFF:
 stopwatch.get.0
 stopwatch.get.1
 stopwatch.get.all
+
+DATALOGGER STUFF:
+
+datalogger.get.stats

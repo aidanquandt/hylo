@@ -389,6 +389,33 @@ STATIC void uart_cmd_router_handle_datalogger(const char* action, const char* ta
                 uart_manager_print("%-20s %5.2f%%\r\n", tasks[i].task_name, tasks[i].cpu_percent);
             }
         }
+        else if (strcmp(target, "stats") == 0)
+        {
+            uart_manager_print("\r\nSystem Statistics:\r\n");
+
+            system_stats_t stats;
+            task_cpu_info_t task_buffer[20];
+            datalogger_get_system_stats(&stats, task_buffer, 20);
+
+            uart_manager_print("Memory:\r\n");
+            uart_manager_print("  Current Free:     %u bytes\r\n",
+                               (unsigned int)stats.current_free_heap);
+            uart_manager_print("  Minimum Ever:     %u bytes\r\n",
+                               (unsigned int)stats.minimum_ever_free_heap);
+            uart_manager_print("  Total Heap:       %u bytes\r\n",
+                               (unsigned int)stats.total_heap_size);
+            uart_manager_print(
+                "  Used:             %u bytes (%.1f%%)\r\n",
+                (unsigned int)(stats.total_heap_size - stats.current_free_heap),
+                100.0f * (stats.total_heap_size - stats.current_free_heap) / stats.total_heap_size);
+
+            uart_manager_print("\r\nTask CPU Usage:\r\n");
+            for (uint32_t i = 0; i < stats.num_tasks; i++)
+            {
+                uart_manager_print("  %-18s %5.2f%%\r\n", stats.task_info[i].task_name,
+                                   stats.task_info[i].cpu_percent);
+            }
+        }
         else
         {
             uart_manager_print("ERR: Unknown target '%s'\r\n", target);
