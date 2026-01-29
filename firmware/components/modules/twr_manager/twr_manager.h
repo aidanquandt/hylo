@@ -3,7 +3,7 @@
 /*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
-#include "../scheduler/twr_scheduler.h"
+#include "twr_scheduler/twr_scheduler.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -14,7 +14,7 @@
 /**
  * @brief Start the TWR manager and begin ranging operations
  * @return true if started successfully, false otherwise
- * @note Ensure anchors are configured via twr_scheduler API before starting
+ * @note Ensure targets are configured via twr_scheduler API before starting
  */
 bool twr_manager_start(void);
 
@@ -47,41 +47,41 @@ uint32_t twr_manager_get_failure_count(void);
  *---------------------------------------------------------------------------*/
 
 /**
- * @brief Add an anchor to the ranging schedule
- * @param address Anchor address to add
+ * @brief Add a target to the ranging schedule
+ * @param address Target address to add
  * @return true if added successfully
  */
-static inline bool twr_manager_add_anchor(uint16_t address)
+static inline bool twr_manager_add_target(uint16_t address)
 {
-    return twr_scheduler_add_anchor(address);
+    return twr_scheduler_add_target(address);
 }
 
 /**
- * @brief Remove an anchor from the ranging schedule
- * @param address Anchor address to remove
+ * @brief Remove a target from the ranging schedule
+ * @param address Target address to remove
  * @return true if removed successfully
  */
-static inline bool twr_manager_remove_anchor(uint16_t address)
+static inline bool twr_manager_remove_target(uint16_t address)
 {
-    return twr_scheduler_remove_anchor(address);
+    return twr_scheduler_remove_target(address);
 }
 
 /**
- * @brief Set all anchors at once (replaces existing list)
- * @param addresses Array of anchor addresses
- * @param count Number of anchors
+ * @brief Set all targets at once (replaces existing list)
+ * @param addresses Array of target addresses
+ * @param count Number of targets
  * @return true if set successfully
  */
-static inline bool twr_manager_set_anchors(const uint16_t* addresses, uint8_t count)
+static inline bool twr_manager_set_targets(const uint16_t* addresses, uint8_t count)
 {
-    return twr_scheduler_set_anchors(addresses, count);
+    return twr_scheduler_set_targets(addresses, count);
 }
 
 /**
- * @brief Get the number of configured anchors
- * @return Anchor count
+ * @brief Get the number of configured targets
+ * @return Target count
  */
-static inline uint8_t twr_manager_get_anchor_count(void)
+static inline uint8_t twr_manager_get_target_count(void)
 {
-    return twr_scheduler_get_anchor_count();
+    return twr_scheduler_get_target_count();
 }

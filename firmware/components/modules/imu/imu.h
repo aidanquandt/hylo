@@ -19,13 +19,6 @@ typedef enum
 
 typedef struct
 {
-    float x;
-    float y;
-    float z;
-} imu_vector3_t;
-
-typedef struct
-{
     imu_state_e state;
     uint8_t chip_id;
     uint32_t fault_code;
@@ -33,8 +26,8 @@ typedef struct
 
 typedef struct
 {
-    imu_vector3_t accel;
-    imu_vector3_t gyro;
+    vec3_t accel;
+    vec3_t gyro;
     float temperature;
 } imu_data_t;
 
@@ -43,7 +36,7 @@ typedef struct
  *---------------------------------------------------------------------------*/
 void imu_get_status(imu_status_t* status);
 bool imu_get_data(imu_data_t* data);
-bool imu_get_accel(imu_vector3_t* accel);
-bool imu_get_gyro(imu_vector3_t* gyro);
+bool imu_get_accel(vec3_t* accel);
+bool imu_get_gyro(vec3_t* gyro);
 bool imu_get_temp(float* temp);
 bool imu_soft_reset(void);

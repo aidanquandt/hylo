@@ -136,7 +136,7 @@ float imu_port_read_temperature(imu_dev_t* dev)
     return ((int16_t)sensor_data.sens_data.temp.temp_data / 512.0f) + 23.0f;
 }
 
-imu_port_status_t imu_port_read_accel(imu_dev_t* dev, imu_sensor_data_t* accel)
+imu_port_status_t imu_port_read_accel(imu_dev_t* dev, vec3_t* accel)
 {
     if (dev == NULL || accel == NULL)
     {
@@ -159,7 +159,7 @@ imu_port_status_t imu_port_read_accel(imu_dev_t* dev, imu_sensor_data_t* accel)
     return IMU_PORT_SUCCESS;
 }
 
-imu_port_status_t imu_port_read_gyro(imu_dev_t* dev, imu_sensor_data_t* gyro)
+imu_port_status_t imu_port_read_gyro(imu_dev_t* dev, vec3_t* gyro)
 {
     if (dev == NULL || gyro == NULL)
     {
@@ -182,8 +182,7 @@ imu_port_status_t imu_port_read_gyro(imu_dev_t* dev, imu_sensor_data_t* gyro)
     return IMU_PORT_SUCCESS;
 }
 
-imu_port_status_t imu_port_read_accel_and_gyro(imu_dev_t* dev, imu_sensor_data_t* accel,
-                                               imu_sensor_data_t* gyro)
+imu_port_status_t imu_port_read_accel_and_gyro(imu_dev_t* dev, vec3_t* accel, vec3_t* gyro)
 {
     if (dev == NULL)
     {

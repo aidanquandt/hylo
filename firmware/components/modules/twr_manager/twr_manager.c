@@ -2,10 +2,9 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "twr_manager.h"
-#include "../core/twr_mode.h"  // Simple mode management
-#include "../core/twr_types.h" // For twr_result_t
-#include "../roles/tag/tag.h"  // Direct tag interface
-#include "../scheduler/twr_scheduler.h"
+#include "../twr/twr_engine/twr_types.h"            // For twr_result_t
+#include "../twr/twr_roles/initiator/initiator.h" // Direct initiator interface
+#include "twr_scheduler/twr_scheduler.h"
 #include "backoff.h"
 #include "error_handler.h"
 #include "module.h"
@@ -196,28 +195,28 @@ STATIC void twr_manager_state_ranging_on_entry(uint16_t prev_state)
 STATIC void twr_manager_state_ranging_process(void)
 {
     // Check if ranging completed
-    bool is_ranging = tag_is_ranging();
+    bool is_ranging = initiator_is_ranging();
     if (ctx.ranging_in_progress && !is_ranging)
     {
         // Ranging just completed - process result ONCE
         ctx.ranging_in_progress = false;
 
         twr_result_t result;
-        bool ranging_succeeded = tag_get_last_result(&result);
+        bool ranging_succeeded = initiator_get_last_result(&result);
 
-        // Get the anchor we just ranged with
-        uint16_t ranged_anchor = twr_scheduler_get_current_target();
+        // Get the target we just ranged with
+        uint16_t ranged_target = twr_scheduler_get_current_target();
 
         if (ranging_succeeded)
         {
-            // Success - reset backoff and advance to next anchor
+            // Success - reset backoff and advance to next target
             ctx.success_count++;
             ctx.consecutive_failures = 0;
             ctx.backoff_delay_ms     = 0;
             sm_inputs.needs_backoff  = false;
 
             // Report success to scheduler and advance
-            twr_scheduler_report_result(ranged_anchor, true);
+            twr_scheduler_report_result(ranged_target, true);
             twr_scheduler_get_next_target(); // Advance to next
         }
         else
@@ -231,7 +230,7 @@ STATIC void twr_manager_state_ranging_process(void)
             sm_inputs.needs_backoff = true; // Signal transition to BACKING_OFF
 
             // Report failure to scheduler and advance
-            twr_scheduler_report_result(ranged_anchor, false);
+            twr_scheduler_report_result(ranged_target, false);
             twr_scheduler_get_next_target(); // Advance to next
 
             error_handler_log(ERROR_SEVERITY_WARNING, "twr_mgr",
@@ -249,8 +248,8 @@ STATIC void twr_manager_state_ranging_process(void)
         // Only start new ranging if not already in progress
         if (!is_ranging && !ctx.ranging_in_progress)
         {
-            uint16_t target_anchor = twr_scheduler_get_current_target();
-            if (target_anchor != 0x0000 && tag_start_ranging(target_anchor))
+            uint16_t target_peer = twr_scheduler_get_current_target();
+            if (target_peer != 0x0000 && initiator_start_ranging(target_peer))
             {
                 ctx.ranging_in_progress = true;
             }
@@ -289,20 +288,20 @@ STATIC void twr_manager_state_faulted_process(void)
 
 bool twr_manager_start(void)
 {
-    // Validate that anchors are configured
-    if (twr_scheduler_get_anchor_count() == 0)
+    // Validate that targets are configured
+    if (twr_scheduler_get_target_count() == 0)
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "twr_mgr",
-                          "Cannot start: No anchors configured. Use twrmgr.add.anchor or "
-                          "twrmgr.set.anchors first");
+        error_handler_log(ERROR_SEVERITY_ERROR, "twrmgr",
+                          "Cannot start: No targets configured. Use twrmgr.add.target or "
+                          "twrmgr.set.targets first");
         return false;
     }
 
-    // Initialize and start tag mode
-    tag_init();
-    if (!tag_start())
+    // Initialize and start initiator mode
+    initiator_init();
+    if (!initiator_start())
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "twr_mgr", "Failed to start tag");
+        error_handler_log(ERROR_SEVERITY_ERROR, "twr_mgr", "Failed to start initiator");
         state_machine_force_transition(&twr_manager_state_machine, STATE_FAULTED);
         return false;
     }
@@ -322,12 +321,12 @@ bool twr_manager_start(void)
 
 void twr_manager_stop(void)
 {
-    // Cancel any ongoing ranging and stop tag
+    // Cancel any ongoing ranging and stop initiator
     if (ctx.ranging_in_progress)
     {
-        tag_cancel_ranging();
+        initiator_cancel_ranging();
     }
-    tag_stop();
+    initiator_stop();
 
     // Transition to IDLE
     state_machine_force_transition(&twr_manager_state_machine, STATE_IDLE);

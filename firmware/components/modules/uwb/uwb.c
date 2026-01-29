@@ -607,6 +607,11 @@ uint16_t uwb_get_address(void)
     return addressing.my_address;
 }
 
+uint16_t uwb_get_pan_id(void)
+{
+    return addressing.my_pan_id;
+}
+
 bool uwb_soft_reset(void)
 {
     if (uwb_state_machine.curr_state != STATE_ACTIVE)

@@ -84,6 +84,7 @@ typedef struct
 {
     protocol_header_t header; // protocol_type = PROTOCOL_TYPE_TWR, msg_type = TWR_MSG_RESPONSE
     uint8_t poll_rx_ts[5];    // When anchor received poll (40-bit timestamp)
+    vec3_t anchor_position;   // Anchor position in meters (zeros if unknown)
     // Note: resp_tx_ts is sent later in FINAL_ACK after actual transmission
 } __attribute__((packed)) protocol_twr_response_msg_t;
 
@@ -107,6 +108,7 @@ typedef struct
     protocol_header_t header; // protocol_type = PROTOCOL_TYPE_TWR, msg_type = TWR_MSG_FINAL_ACK
     uint8_t resp_tx_ts[5];    // When anchor actually transmitted response (40-bit timestamp)
     uint8_t final_rx_ts[5];   // When anchor received final message (40-bit timestamp)
+    vec3_t anchor_position;   // Anchor position in meters (zeros if unknown)
 } __attribute__((packed)) protocol_twr_final_ack_msg_t;
 
 /**

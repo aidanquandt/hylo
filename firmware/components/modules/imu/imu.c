@@ -46,8 +46,8 @@ typedef struct
 
 typedef struct
 {
-    imu_sensor_data_t accel;
-    imu_sensor_data_t gyro;
+    vec3_t accel;
+    vec3_t gyro;
     float temperature;
     uint8_t chip_id;
 } imu_measurements_t;
@@ -335,7 +335,7 @@ bool imu_get_data(imu_data_t* data)
     return true;
 }
 
-bool imu_get_accel(imu_vector3_t* accel)
+bool imu_get_accel(vec3_t* accel)
 {
     if (accel == NULL || imu_state_machine.curr_state != STATE_ACTIVE)
     {
@@ -348,7 +348,7 @@ bool imu_get_accel(imu_vector3_t* accel)
     return true;
 }
 
-bool imu_get_gyro(imu_vector3_t* gyro)
+bool imu_get_gyro(vec3_t* gyro)
 {
     if (gyro == NULL || imu_state_machine.curr_state != STATE_ACTIVE)
     {

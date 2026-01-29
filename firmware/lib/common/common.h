@@ -46,6 +46,21 @@
 #define ABS(x) (((x) < 0) ? -(x) : (x))
 #define CLAMP(x, min, max) (MIN(MAX((x), (min)), (max)))
 
+/*---------------------------------------------------------------------------
+ * Common Types
+ *---------------------------------------------------------------------------*/
+
+/**
+ * @brief Generic 3D vector/position type
+ * @note Used for positions, velocities, accelerations, etc.
+ */
+typedef struct
+{
+    float x;
+    float y;
+    float z;
+} vec3_t;
+
 // todo - add tcm integration
 // #define TCM_FUNCTION __attribute__((section(".itcm")))
 // #define TCM_VARIABLE __attribute__((section(".dtcm")))

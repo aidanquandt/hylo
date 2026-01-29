@@ -1,16 +1,18 @@
 /*---------------------------------------------------------------------------
- * Includes
+ * @file    initiator.c
+ * @brief   TWR Initiator implementation
+ * @details Initiates ranging transactions using unified TWR state machine
  *---------------------------------------------------------------------------*/
-#include "tag.h"
-#include "../../core/twr_protocol.h"
+
+#include "initiator.h"
+#include "../twr.h"
+#include "../twr_engine/twr_algorithm.h"
+#include "../twr_engine/twr_state_machine.h"
 #include "FreeRTOS.h"
 #include "common/feature_config.h"
 #include "error_handler.h"
 #include "stopwatch.h"
 #include "task.h"
-#include "../../core/twr_mode.h"
-#include "../../core/twr_algorithm.h"
-#include "../../core/twr_state_machine.h"
 #include "uwb.h"
 #include "uwb_protocol_messages.h"
 #include <string.h>
@@ -23,31 +25,32 @@
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
-STATIC bool tag_send_message_impl(twr_msg_type_e msg_type, twr_context_t* ctx);
-STATIC void tag_handle_message_impl(const twr_event_t* event, twr_context_t* ctx);
-STATIC void tag_handle_tx_complete_impl(const twr_event_t* event, twr_context_t* ctx);
-STATIC void tag_handle_timeout_impl(const twr_event_t* event, twr_context_t* ctx);
-STATIC void tag_handle_fault_impl(const twr_event_t* event, twr_context_t* ctx);
-STATIC void tag_process_result_impl(twr_context_t* ctx);
+STATIC bool initiator_send_message_impl(twr_msg_type_e msg_type, twr_context_t* ctx);
+STATIC void initiator_handle_message_impl(const twr_event_t* event, twr_context_t* ctx);
+STATIC void initiator_handle_tx_complete_impl(const twr_event_t* event, twr_context_t* ctx);
+STATIC void initiator_handle_timeout_impl(const twr_event_t* event, twr_context_t* ctx);
+STATIC void initiator_handle_fault_impl(const twr_event_t* event, twr_context_t* ctx);
+STATIC void initiator_process_result_impl(twr_context_t* ctx);
 
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-twr_context_t tag_twr_ctx; // Made non-static for external access
-STATIC tag_status_t tag_status = {0};
+twr_context_t initiator_twr_ctx; // Made non-static for external access
+STATIC initiator_status_t initiator_status = {0};
 
-STATIC const twr_callbacks_t tag_callbacks = {.send_message       = tag_send_message_impl,
-                                              .handle_message     = tag_handle_message_impl,
-                                              .handle_tx_complete = tag_handle_tx_complete_impl,
-                                              .handle_timeout     = tag_handle_timeout_impl,
-                                              .handle_fault       = tag_handle_fault_impl,
-                                              .process_result     = tag_process_result_impl};
+STATIC const twr_callbacks_t initiator_callbacks = {
+    .send_message       = initiator_send_message_impl,
+    .handle_message     = initiator_handle_message_impl,
+    .handle_tx_complete = initiator_handle_tx_complete_impl,
+    .handle_timeout     = initiator_handle_timeout_impl,
+    .handle_fault       = initiator_handle_fault_impl,
+    .process_result     = initiator_process_result_impl};
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
 
-STATIC bool tag_send_message_impl(twr_msg_type_e msg_type, twr_context_t* ctx)
+STATIC bool initiator_send_message_impl(twr_msg_type_e msg_type, twr_context_t* ctx)
 {
     uwb_send_result_t result;
 
@@ -89,12 +92,13 @@ STATIC bool tag_send_message_impl(twr_msg_type_e msg_type, twr_context_t* ctx)
     }
     else
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "tag", "Failed to send message type %d", msg_type);
+        error_handler_log(ERROR_SEVERITY_ERROR, "initiator", "Failed to send message type %d",
+                          msg_type);
         return false;
     }
 }
 
-STATIC void tag_handle_message_impl(const twr_event_t* event, twr_context_t* ctx)
+STATIC void initiator_handle_message_impl(const twr_event_t* event, twr_context_t* ctx)
 {
     const protocol_header_t* header = (const protocol_header_t*)event->rx.data;
     twr_msg_type_e msg_type         = (twr_msg_type_e)header->msg_type;
@@ -105,7 +109,7 @@ STATIC void tag_handle_message_impl(const twr_event_t* event, twr_context_t* ctx
         {
             if (event->rx.length < sizeof(protocol_twr_response_msg_t))
             {
-                error_handler_log(ERROR_SEVERITY_WARNING, "tag", "Response too short");
+                error_handler_log(ERROR_SEVERITY_WARNING, "initiator", "Response too short");
                 return;
             }
 
@@ -116,8 +120,15 @@ STATIC void tag_handle_message_impl(const twr_event_t* event, twr_context_t* ctx
             ctx->timestamps[1].timestamp_dtu = event->rx.rx_timestamp;
             ctx->timestamps[1].local_time_ms = xTaskGetTickCount();
 
-            // Store anchor's poll RX timestamp
+            // Store responder's poll RX timestamp
             ctx->remote_timestamps[0] = twr_timestamp_to_u64(resp->poll_rx_ts);
+
+            // Extract anchor position
+            ctx->remote_anchor_position = resp->anchor_position;
+            // Position is valid if any coordinate is non-zero
+            ctx->remote_anchor_position_valid =
+                (resp->anchor_position.x != 0.0f || resp->anchor_position.y != 0.0f ||
+                 resp->anchor_position.z != 0.0f);
 
             // Prepare for final
             ctx->expected_msg = TWR_MSG_FINAL_ACK;
@@ -142,16 +153,26 @@ STATIC void tag_handle_message_impl(const twr_event_t* event, twr_context_t* ctx
         {
             if (event->rx.length < sizeof(protocol_twr_final_ack_msg_t))
             {
-                error_handler_log(ERROR_SEVERITY_WARNING, "tag", "Final ACK too short");
+                error_handler_log(ERROR_SEVERITY_WARNING, "initiator", "Final ACK too short");
                 return;
             }
 
             const protocol_twr_final_ack_msg_t* ack =
                 (const protocol_twr_final_ack_msg_t*)event->rx.data;
 
-            // Store anchor's timestamps
+            // Store responder's timestamps
             ctx->remote_timestamps[1] = twr_timestamp_to_u64(ack->resp_tx_ts);  // Response TX
             ctx->remote_timestamps[2] = twr_timestamp_to_u64(ack->final_rx_ts); // Final RX
+
+            // Extract anchor position (redundant, but provides fallback)
+            // Only update if we didn't get valid position from RESPONSE
+            if (!ctx->remote_anchor_position_valid)
+            {
+                ctx->remote_anchor_position = ack->anchor_position;
+                ctx->remote_anchor_position_valid =
+                    (ack->anchor_position.x != 0.0f || ack->anchor_position.y != 0.0f ||
+                     ack->anchor_position.z != 0.0f);
+            }
 
             // Process the result
             twr_state_machine_transition_to(ctx, TWR_STATE_PROCESSING);
@@ -159,13 +180,13 @@ STATIC void tag_handle_message_impl(const twr_event_t* event, twr_context_t* ctx
         }
 
         default:
-            error_handler_log(ERROR_SEVERITY_WARNING, "tag", "Unexpected message type %d",
+            error_handler_log(ERROR_SEVERITY_WARNING, "initiator", "Unexpected message type %d",
                               msg_type);
             break;
     }
 }
 
-STATIC void tag_handle_tx_complete_impl(const twr_event_t* event, twr_context_t* ctx)
+STATIC void initiator_handle_tx_complete_impl(const twr_event_t* event, twr_context_t* ctx)
 {
     twr_msg_type_e msg_type = ctx->pending_tx_msg; // Use tracked message type
 
@@ -192,16 +213,17 @@ STATIC void tag_handle_tx_complete_impl(const twr_event_t* event, twr_context_t*
     ctx->pending_tx_id = 0; // Clear pending ID
 }
 
-STATIC void tag_handle_timeout_impl(const twr_event_t* event, twr_context_t* ctx)
+STATIC void initiator_handle_timeout_impl(const twr_event_t* event, twr_context_t* ctx)
 {
-    error_handler_log(ERROR_SEVERITY_ERROR, "tag", "Timeout waiting for message %d",
+    error_handler_log(ERROR_SEVERITY_ERROR, "initiator", "Timeout waiting for message %d",
                       event->timeout.expected_msg);
 
     // Retry logic
     if (ctx->retry_count < TWR_MAX_RETRIES)
     {
         ctx->retry_count++;
-        error_handler_log(ERROR_SEVERITY_INFO, "tag", "Retrying (attempt %u)", ctx->retry_count);
+        error_handler_log(ERROR_SEVERITY_INFO, "initiator", "Retrying (attempt %u)",
+                          ctx->retry_count);
 
         // Restart with POLL
         ctx->expected_msg = TWR_MSG_RESPONSE;
@@ -217,16 +239,16 @@ STATIC void tag_handle_timeout_impl(const twr_event_t* event, twr_context_t* ctx
     }
     else
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "tag", "Max retries exceeded");
+        error_handler_log(ERROR_SEVERITY_WARNING, "initiator", "Max retries exceeded");
         ctx->failed_transactions++;
         ctx->last_result.valid = false; // Invalidate cached result on failure
         twr_state_machine_transition_to(ctx, TWR_STATE_IDLE);
     }
 }
 
-STATIC void tag_handle_fault_impl(const twr_event_t* event, twr_context_t* ctx)
+STATIC void initiator_handle_fault_impl(const twr_event_t* event, twr_context_t* ctx)
 {
-    error_handler_log(ERROR_SEVERITY_ERROR, "tag", "Fault: %d - %s", event->fault.fault_code,
+    error_handler_log(ERROR_SEVERITY_ERROR, "initiator", "Fault: %d - %s", event->fault.fault_code,
                       event->fault.description);
 
     ctx->fault_code = event->fault.fault_code;
@@ -235,18 +257,18 @@ STATIC void tag_handle_fault_impl(const twr_event_t* event, twr_context_t* ctx)
     twr_state_machine_transition_to(ctx, TWR_STATE_IDLE);
 }
 
-STATIC void tag_process_result_impl(twr_context_t* ctx)
+STATIC void initiator_process_result_impl(twr_context_t* ctx)
 {
     twr_result_t result = {0};
 
     // Calculate distance using DS-TWR with 6 timestamps
     twr_status_e status =
-        twr_calculate_ds_twr(ctx->timestamps[0].timestamp_dtu, // Poll TX (tag)
-                             ctx->remote_timestamps[0],        // Poll RX (anchor)
-                             ctx->remote_timestamps[1],        // Response TX (anchor)
-                             ctx->timestamps[1].timestamp_dtu, // Response RX (tag)
-                             ctx->timestamps[2].timestamp_dtu, // Final TX (tag)
-                             ctx->remote_timestamps[2],        // Final RX (anchor)
+        twr_calculate_ds_twr(ctx->timestamps[0].timestamp_dtu, // Poll TX (initiator)
+                             ctx->remote_timestamps[0],        // Poll RX (responder)
+                             ctx->remote_timestamps[1],        // Response TX (responder)
+                             ctx->timestamps[1].timestamp_dtu, // Response RX (initiator)
+                             ctx->timestamps[2].timestamp_dtu, // Final TX (initiator)
+                             ctx->remote_timestamps[2],        // Final RX (responder)
                              &result);
 
     if (status == TWR_SUCCESS && result.valid)
@@ -256,17 +278,34 @@ STATIC void tag_process_result_impl(twr_context_t* ctx)
         result.remote_addr  = ctx->peer_address;
         result.timestamp_ms = xTaskGetTickCount();
 
+        // Include anchor position from responder
+        result.anchor_position       = ctx->remote_anchor_position;
+        result.anchor_position_valid = ctx->remote_anchor_position_valid;
+
         ctx->last_result = result;
         ctx->successful_transactions++;
 #if FEATURE_PRINT_RANGING_SUCCESS_AND_DISTANCE
         uint32_t elapsed_us = stopwatch_elapsed_us(0);
-        error_handler_log(ERROR_SEVERITY_INFO, "tag", "Ranging success: %.2f m, %lu us",
-                          result.distance_m, (unsigned long)elapsed_us);
+        if (result.anchor_position_valid)
+        {
+            error_handler_log(ERROR_SEVERITY_INFO, "initiator",
+                              "Ranging success: %.2f m to 0x%04X at (%.2f, %.2f, %.2f), %lu us",
+                              result.distance_m, result.remote_addr, result.anchor_position.x,
+                              result.anchor_position.y, result.anchor_position.z,
+                              (unsigned long)elapsed_us);
+        }
+        else
+        {
+            error_handler_log(ERROR_SEVERITY_INFO, "initiator",
+                              "Ranging success: %.2f m to 0x%04X (position unknown), %lu us",
+                              result.distance_m, result.remote_addr, (unsigned long)elapsed_us);
+        }
 #endif
     }
     else
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "tag", "Distance calculation failed: %d", status);
+        error_handler_log(ERROR_SEVERITY_ERROR, "initiator", "Distance calculation failed: %d",
+                          status);
         ctx->failed_transactions++;
     }
 }
@@ -275,84 +314,78 @@ STATIC void tag_process_result_impl(twr_context_t* ctx)
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
 
-void tag_init(void)
+void initiator_init(void)
 {
-    twr_state_machine_init(&tag_twr_ctx, TWR_ROLE_TAG, &tag_callbacks, &tag_status);
-    memset(&tag_status, 0, sizeof(tag_status));
+    twr_state_machine_init(&initiator_twr_ctx, TWR_ROLE_INITIATOR, &initiator_callbacks,
+                           &initiator_status);
+    memset(&initiator_status, 0, sizeof(initiator_status));
 }
 
-bool tag_start(void)
+bool initiator_start(void)
 {
     if (!uwb_is_ready())
     {
         return false;
     }
 
-    // Only start if we're in tag mode
-    if (twr_mode_get_current() != TWR_MODE_TAG)
-    {
-        error_handler_log(ERROR_SEVERITY_WARNING, "tag", "Not in tag mode");
-        return false;
-    }
-
-    // No registration needed - ranging.c dispatches based on mode
+    // No registration needed - protocol handler dispatches based on mode
     return true;
 }
 
-void tag_stop(void)
+void initiator_stop(void)
 {
-    twr_state_machine_stop(&tag_twr_ctx);
+    twr_state_machine_stop(&initiator_twr_ctx);
 }
 
-bool tag_start_ranging(uint16_t anchor_addr)
+bool initiator_start_ranging(uint16_t responder_addr)
 {
     if (!uwb_is_ready())
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "tag", "UWB not ready");
+        error_handler_log(ERROR_SEVERITY_WARNING, "initiator", "UWB not ready");
         return false;
     }
 
     stopwatch_start(0);
 
-    if (twr_state_machine_start(&tag_twr_ctx, anchor_addr))
+    if (twr_state_machine_start(&initiator_twr_ctx, responder_addr))
     {
-        tag_status.target_address = anchor_addr;
+        initiator_status.target_address = responder_addr;
         return true;
     }
 
     return false;
 }
 
-bool tag_is_ranging(void)
+bool initiator_is_ranging(void)
 {
-    return twr_is_active(&tag_twr_ctx);
+    return twr_is_active(&initiator_twr_ctx);
 }
 
-bool tag_get_last_result(twr_result_t* result)
+bool initiator_get_last_result(twr_result_t* result)
 {
-    if (result == NULL || !tag_twr_ctx.last_result.valid)
+    if (result == NULL || !initiator_twr_ctx.last_result.valid)
     {
         return false;
     }
 
-    *result = tag_twr_ctx.last_result;
+    *result = initiator_twr_ctx.last_result;
     return true;
 }
 
-void tag_get_status(tag_status_t* status)
+void initiator_get_status(initiator_status_t* status)
 {
     if (status != NULL)
     {
-        *status                   = tag_status;
-        status->state             = (tag_state_e)twr_state_machine_get_state(&tag_twr_ctx);
-        status->successful_ranges = tag_twr_ctx.successful_transactions;
-        status->failed_ranges     = tag_twr_ctx.failed_transactions;
-        status->timeout_count     = tag_twr_ctx.timeout_count;
-        status->last_result       = tag_twr_ctx.last_result;
+        *status       = initiator_status;
+        status->state = (initiator_state_e)twr_state_machine_get_state(&initiator_twr_ctx);
+        status->successful_ranges = initiator_twr_ctx.successful_transactions;
+        status->failed_ranges     = initiator_twr_ctx.failed_transactions;
+        status->timeout_count     = initiator_twr_ctx.timeout_count;
+        status->last_result       = initiator_twr_ctx.last_result;
     }
 }
 
-void tag_cancel_ranging(void)
+void initiator_cancel_ranging(void)
 {
-    twr_cancel(&tag_twr_ctx);
+    twr_cancel(&initiator_twr_ctx);
 }
