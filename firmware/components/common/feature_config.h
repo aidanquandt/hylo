@@ -12,7 +12,7 @@
  *
  * Set to 1 to enable, 0 to disable.
  */
-#define FEATURE_PRINT_RANGING_SUCCESS_AND_DISTANCE (1U)
+#define FEATURE_PRINT_RANGING_SUCCESS_AND_DISTANCE (0U)
 
 /**
  * @brief Enable UART logging output

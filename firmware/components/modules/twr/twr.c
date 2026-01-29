@@ -66,11 +66,11 @@ STATIC void twr_process_1kHz(void)
     if (!auto_start_completed && uwb_is_ready())
     {
         // Start responder listening
-        if (responder_start())
+        if (!responder_start())
         {
-            error_handler_log(ERROR_SEVERITY_INFO, "twr", "Responder auto-started");
-            auto_start_completed = true;
+            error_handler_log(ERROR_SEVERITY_ERROR, "twr", "Responder auto-start failed");
         }
+        auto_start_completed = true;
     }
 
     // Always process both state machines - nodes can do both roles

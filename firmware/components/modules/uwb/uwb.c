@@ -22,7 +22,8 @@
  *---------------------------------------------------------------------------*/
 #define UWB_EXPECTED_DEV_ID (0xDECA0302UL)
 #define MAX_MESSAGE_LENGTH (MAC_MAX_FRAME_SIZE)
-#define DEFAULT_NODE_ADDRESS (0x0001)
+#define DEFAULT_NODE_ADDRESS (0x0000U)
+#define DEFAULT_PAN_ID MAC_DEFAULT_PAN_ID
 #define MAX_PROTOCOL_HANDLERS (8U)
 #define UWB_RX_QUEUE_LENGTH (10U)
 #define UWB_RX_TASK_PRIORITY (6U)
@@ -165,7 +166,7 @@ STATIC uwb_measurements_t measurements      = {0};
 STATIC uwb_fault_code_e fault_code          = FAULT_NONE;
 STATIC uwb_state_machine_inputs_t sm_inputs = {0};
 STATIC uwb_addressing_t addressing          = {
-             .my_pan_id   = MAC_DEFAULT_PAN_ID,
+             .my_pan_id   = DEFAULT_PAN_ID,
              .my_address  = DEFAULT_NODE_ADDRESS,
              .tx_sequence = 0,
 };
