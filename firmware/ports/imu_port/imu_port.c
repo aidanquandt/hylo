@@ -13,6 +13,7 @@
 #include "platform_timer.h"
 #include "bmi323.h"
 #include "gpio.h"
+#include "uart_manager.h"
 #include <string.h>
 
 /*---------------------------------------------------------------------------
@@ -92,6 +93,7 @@ imu_port_status_t imu_port_probe_and_init(imu_dev_t *dev)
     int8_t rslt = bmi323_init(&dev->bmi_dev);
 
     if (rslt != BMI3_OK) {
+        uart_manager_print("IMU init failed: %d\r\n", rslt);
         return IMU_PORT_ERROR_INIT_FAIL;
     }
     
@@ -382,22 +384,34 @@ STATIC int8_t imu_spi_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len, vo
     //
     // We need to return [junk, byte0, byte1] so driver gets [byte0, byte1]
     
-    platform_spi_cs_low(IMU_PORT_CS_PIN);
+    // BMI323 QUIRK: First SPI read after CS goes high returns zeros
+    // Workaround: Do two consecutive reads, use the second result
+    // This is the "double-read" workaround mentioned in some BMI323 implementations
     
-    // SPI transaction for BMI323:
-    // - Send: 1 address byte + len dummy bytes (to clock out response)
-    // - Receive: 1 junk byte (during addr) + 1 BMI323 dummy + (len-1) data bytes
-    // - Total: len+1 bytes transmitted and received
     uint8_t tx_buf[len + 1];
     uint8_t rx_buf[len + 1];
     
     memset(tx_buf, 0, len + 1);
     tx_buf[0] = reg_addr;
     
+    // First read (will likely return zeros, discard)
+    platform_spi_cs_low(IMU_PORT_CS_PIN);
     if (platform_spi_transfer(tx_buf, rx_buf, len + 1) != PLATFORM_SPI_SUCCESS) {
         platform_spi_cs_high(IMU_PORT_CS_PIN);
         return BMI3_E_COM_FAIL;
     }
+    platform_spi_cs_high(IMU_PORT_CS_PIN);
+    
+    // Small delay between transactions
+    platform_os_delay_us_blocking(50);  // Increased from 10us
+    
+    // Second read (this should return valid data)
+    platform_spi_cs_low(IMU_PORT_CS_PIN);
+    if (platform_spi_transfer(tx_buf, rx_buf, len + 1) != PLATFORM_SPI_SUCCESS) {
+        platform_spi_cs_high(IMU_PORT_CS_PIN);
+        return BMI3_E_COM_FAIL;
+    }
+    platform_spi_cs_high(IMU_PORT_CS_PIN);
     
     // BMI323 SPI read protocol (from datasheet section 5.3):
     // TX: [addr, dummy, dummy, ...]
@@ -409,8 +423,6 @@ STATIC int8_t imu_spi_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len, vo
     for (uint32_t i = 0; i < len; i++) {
         reg_data[i] = rx_buf[i + 1];  // Skip address echo, driver will skip dummy
     }
-
-    platform_spi_cs_high(IMU_PORT_CS_PIN);
     
     return BMI3_OK;
 }
@@ -448,4 +460,3 @@ STATIC void imu_delay_us(uint32_t period_us, void *intf_ptr)
     (void)intf_ptr;  // Unused
     platform_os_delay_us_blocking(period_us);
 }
-

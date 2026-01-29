@@ -30,7 +30,6 @@ extern "C" {
 #include "stm32h7xx_hal.h"
 
 #include "stm32h7xx_nucleo.h"
-#include <stdio.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -60,8 +59,8 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define SPI5_CSn_Pin GPIO_PIN_3
-#define SPI5_CSn_GPIO_Port GPIOE
+#define SPI5_CSn_Pin GPIO_PIN_1
+#define SPI5_CSn_GPIO_Port GPIOG
 #define SPI1_CSn_Pin GPIO_PIN_14
 #define SPI1_CSn_GPIO_Port GPIOD
 #define SWDIO_Pin GPIO_PIN_13

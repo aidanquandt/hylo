@@ -17,7 +17,6 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "platform_uart.h"
-
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
@@ -26,10 +25,18 @@
 #define UART_RX_TIMEOUT_MS  100U    // HAL receive timeout
 
 // UART peripheral handles
-extern UART_HandleTypeDef huart4;  // Printing (USB to UART bridge)
+extern UART_HandleTypeDef huart4;  // UART4 on PD0/PD1
+extern UART_HandleTypeDef huart3;  // UART3 on PD8/PD9
 
-#define PLATFORM_UART_PRINT (&huart4)
-#define PLATFORM_UART_RX    (&huart4)  // Same UART for RX
+#define PLATFORM_UART_ESP (&huart4)  // UART for ESP8266
+
+// Note: USART3 VCP (PD8/PD9) via BSP hcom_uart[COM1] causes memory faults --> disable VCOM in CubeMX under BSP and enable USART3 manually just like USART4
+
+// #define PLATFORM_UART_PRINT (&huart4)  // UART
+// #define PLATFORM_UART_RX    (&huart4)  // Same for RX
+#define PLATFORM_UART_PRINT (&huart3)  // Reliable UART
+#define PLATFORM_UART_RX    (&huart3)  // Same for RX
+
 
 /*---------------------------------------------------------------------------*/
 /* Public Function Implementations                                           */

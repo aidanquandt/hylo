@@ -279,6 +279,12 @@ STATIC void imu_state_active_process(void)
 {
     // Read sensors in active state
     read_sensors();
+    
+    // Print accelerometer data at 1Hz (every 100 ticks at 100Hz)
+    // if ((imu_state_machine.timer % 100) == 0) {
+    //     uart_manager_print("Accel: X=%.3f Y=%.3f Z=%.3f g\r\n",
+    //                      measurements.accel.x, measurements.accel.y, measurements.accel.z);
+    // }
 }
 
 STATIC void imu_state_faulted_on_entry(uint16_t prevState)
