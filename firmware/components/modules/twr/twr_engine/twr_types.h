@@ -36,6 +36,9 @@ typedef struct
     uint16_t remote_addr;
     uint32_t timestamp_ms;
     bool valid;
+    // Anchor position (from anchor's response)
+    vec3_t anchor_position;
+    bool anchor_position_valid;
 } twr_result_t;
 
 typedef struct
@@ -95,7 +98,7 @@ STATIC inline float twr_dtu_to_meters(int64_t time_dtu)
 /*---------------------------------------------------------------------------
  * Typedefs
  *---------------------------------------------------------------------------*/
-// Generic TWR states that work for both tag and anchor
+// Generic TWR states that work for both initiator and responder
 typedef enum
 {
     TWR_STATE_IDLE,      // Ready for next transaction
@@ -104,11 +107,11 @@ typedef enum
     TWR_STATE_PROCESSING // Processing results/preparing next action
 } twr_state_e;
 
-// TWR roles
+// TWR roles (protocol-level)
 typedef enum
 {
-    TWR_ROLE_TAG,   // Initiator of ranging
-    TWR_ROLE_ANCHOR // Responder to ranging requests
+    TWR_ROLE_INITIATOR, // Initiates ranging transaction
+    TWR_ROLE_RESPONDER  // Responds to ranging requests
 } twr_role_e;
 
 // TWR fault codes
@@ -188,13 +191,17 @@ typedef struct twr_context_s
     twr_msg_type_e expected_msg;   // What we're waiting for
     twr_msg_type_e pending_tx_msg; // What we're currently sending
     uint16_t sequence;
-    uint16_t peer_address; // Tag: anchor addr, Anchor: current tag addr
+    uint16_t peer_address; // Initiator: responder addr, Responder: current initiator addr
     uint32_t pending_tx_id;
     uint8_t retry_count;
 
     // Timestamps
     twr_timestamp_t timestamps[4]; // poll_tx, resp_rx, final_tx, (unused for now)
     uint64_t remote_timestamps[4]; // poll_rx, resp_tx, final_rx, (unused)
+
+    // Anchor position (received from responder messages)
+    vec3_t remote_anchor_position;
+    bool remote_anchor_position_valid;
 
     // Statistics
     uint32_t successful_transactions;

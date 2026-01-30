@@ -10,13 +10,13 @@
 #include "datalogger.h"
 #include "error_handler.h"
 #include "imu.h"
+#include "node/node.h"
 #include "stopwatch.h"
-#include "twr/core/twr_mode.h" // Simple mode management
-#include "twr/core/twr_types.h"
-#include "twr/manager/twr_manager.h"
-#include "twr/roles/anchor/anchor.h"
-#include "twr/roles/tag/tag.h"
-#include "twr/scheduler/twr_scheduler.h"
+#include "twr/twr_engine/twr_types.h"
+#include "twr/twr_roles/initiator/initiator.h"
+#include "twr/twr_roles/responder/responder.h"
+#include "twr_manager/twr_manager.h"
+#include "twr_manager/twr_scheduler/twr_scheduler.h"
 #include "uart_manager.h"
 #include "uwb.h"
 #include "uwb_protocol_messages.h"
@@ -37,6 +37,7 @@ STATIC void uart_cmd_router_handle_help(void);
 STATIC void uart_cmd_router_handle_list(void);
 STATIC void uart_cmd_router_handle_beacon(const char* action, const char* target, const char* args);
 STATIC void uart_cmd_router_handle_imu(const char* action, const char* target, const char* args);
+STATIC void uart_cmd_router_handle_node(const char* action, const char* target, const char* args);
 STATIC void uart_cmd_router_handle_uwb(const char* action, const char* target, const char* args);
 STATIC void uart_cmd_router_handle_error(const char* action, const char* target, const char* args);
 STATIC void uart_cmd_router_handle_datalogger(const char* action, const char* target,
@@ -81,6 +82,7 @@ STATIC void uart_cmd_router_handle_list(void)
     uart_manager_print("\r\nAvailable Modules:\r\n");
     uart_manager_print("  data       - Data communications module\r\n");
     uart_manager_print("  imu        - IMU sensor module\r\n");
+    uart_manager_print("  node       - Node identity and configuration\r\n");
     uart_manager_print("  uwb        - UWB radio transceiver\r\n");
     uart_manager_print("  twr        - Two-Way Ranging service\r\n");
     uart_manager_print("  twrmgr - Two-Way Ranging manager\r\n");
@@ -174,7 +176,7 @@ STATIC void uart_cmd_router_handle_imu(const char* action, const char* target, c
         }
         else if (strcmp(target, "accel") == 0)
         {
-            imu_vector3_t accel;
+            vec3_t accel;
             if (imu_get_accel(&accel))
             {
                 uart_manager_print("Accel: X=%.3f Y=%.3f Z=%.3f m/s^2\r\n", accel.x, accel.y,
@@ -187,7 +189,7 @@ STATIC void uart_cmd_router_handle_imu(const char* action, const char* target, c
         }
         else if (strcmp(target, "gyro") == 0)
         {
-            imu_vector3_t gyro;
+            vec3_t gyro;
             if (imu_get_gyro(&gyro))
             {
                 uart_manager_print("Gyro: X=%.3f Y=%.3f Z=%.3f deg/s\r\n", gyro.x, gyro.y, gyro.z);
@@ -207,6 +209,159 @@ STATIC void uart_cmd_router_handle_imu(const char* action, const char* target, c
             else
             {
                 uart_manager_print("IMU not active\r\n");
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else
+    {
+        uart_manager_print("ERR: Unknown action '%s'\r\n", action);
+    }
+}
+
+STATIC void uart_cmd_router_handle_node(const char* action, const char* target, const char* args)
+{
+    if (strcmp(action, "set") == 0)
+    {
+        if (strcmp(target, "type") == 0)
+        {
+            if (args == NULL || *args == '\0')
+            {
+                uart_manager_print("ERR: Node type required (tag, anchor, or hybrid)\r\n");
+                return;
+            }
+
+            node_type_e type;
+            if (strcmp(args, "tag") == 0)
+            {
+                type = NODE_TYPE_TAG;
+            }
+            else if (strcmp(args, "anchor") == 0)
+            {
+                type = NODE_TYPE_ANCHOR;
+            }
+            else if (strcmp(args, "hybrid") == 0)
+            {
+                type = NODE_TYPE_HYBRID;
+            }
+            else
+            {
+                uart_manager_print("ERR: Invalid node type. Use: tag, anchor, or hybrid\r\n");
+                return;
+            }
+
+            node_set_type(type);
+            const char* type_str = (type == NODE_TYPE_TAG)      ? "TAG"
+                                   : (type == NODE_TYPE_ANCHOR) ? "ANCHOR"
+                                                                : "HYBRID";
+            uart_manager_print("Node type set to: %s\r\n", type_str);
+        }
+        else if (strcmp(target, "position") == 0)
+        {
+            if (args == NULL || *args == '\0')
+            {
+                uart_manager_print("ERR: Position required (x y z in meters)\r\n");
+                return;
+            }
+
+            // Parse three floats: x, y, z using strtof
+            char* end_ptr;
+            float x = strtof(args, &end_ptr);
+            if (end_ptr == args)
+            {
+                uart_manager_print("ERR: Invalid X coordinate\r\n");
+                return;
+            }
+
+            args    = skip_whitespace(end_ptr);
+            float y = strtof(args, &end_ptr);
+            if (end_ptr == args)
+            {
+                uart_manager_print("ERR: Invalid Y coordinate\r\n");
+                return;
+            }
+
+            args    = skip_whitespace(end_ptr);
+            float z = strtof(args, &end_ptr);
+            if (end_ptr == args)
+            {
+                uart_manager_print("ERR: Invalid Z coordinate\r\n");
+                return;
+            }
+
+            vec3_t pos = {.x = x, .y = y, .z = z};
+            node_set_position(&pos);
+            uart_manager_print("Node position set to: X=%.2f Y=%.2f Z=%.2f m\r\n", x, y, z);
+        }
+        else if (strcmp(target, "address") == 0)
+        {
+            if (args == NULL || *args == '\0')
+            {
+                uart_manager_print("ERR: Address required (hex: 0xABCD)\r\n");
+                return;
+            }
+
+            uint16_t address = (uint16_t)strtoul(args, NULL, 0);
+            uwb_set_address(address, uwb_get_pan_id());
+            uart_manager_print("Node address set to: 0x%04X\r\n", address);
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else if (strcmp(action, "get") == 0)
+    {
+        if (strcmp(target, "type") == 0)
+        {
+            node_type_e type     = node_get_type();
+            const char* type_str = (type == NODE_TYPE_TAG)      ? "TAG"
+                                   : (type == NODE_TYPE_ANCHOR) ? "ANCHOR"
+                                   : (type == NODE_TYPE_HYBRID) ? "HYBRID"
+                                                                : "UNKNOWN";
+            uart_manager_print("Node type: %s\r\n", type_str);
+        }
+        else if (strcmp(target, "position") == 0)
+        {
+            vec3_t pos;
+            if (node_get_position(&pos))
+            {
+                uart_manager_print("Node position: X=%.2f Y=%.2f Z=%.2f m\r\n", pos.x, pos.y,
+                                   pos.z);
+            }
+            else
+            {
+                uart_manager_print("Position not set\r\n");
+            }
+        }
+        else if (strcmp(target, "address") == 0)
+        {
+            uint16_t address = uwb_get_address();
+            uart_manager_print("Node address: 0x%04X\r\n", address);
+        }
+        else if (strcmp(target, "status") == 0)
+        {
+            node_type_e type     = node_get_type();
+            const char* type_str = (type == NODE_TYPE_TAG)      ? "TAG"
+                                   : (type == NODE_TYPE_ANCHOR) ? "ANCHOR"
+                                   : (type == NODE_TYPE_HYBRID) ? "HYBRID"
+                                                                : "UNKNOWN";
+
+            vec3_t pos;
+            bool has_position = node_get_position(&pos);
+
+            uart_manager_print("Node Status:\r\n");
+            uart_manager_print("  Type: %s\r\n", type_str);
+            if (has_position)
+            {
+                uart_manager_print("  Position: X=%.2f Y=%.2f Z=%.2f m\r\n", pos.x, pos.y, pos.z);
+            }
+            else
+            {
+                uart_manager_print("  Position: Not set\r\n");
             }
         }
         else
@@ -475,7 +630,7 @@ STATIC void uart_cmd_router_handle_twr_manager(const char* action, const char* t
             uart_manager_print("  Success: %u\r\n", (unsigned int)success);
             uart_manager_print("  Failure: %u\r\n", (unsigned int)failure);
             uart_manager_print("  Success Rate: %.1f%%\r\n", success_rate);
-            uart_manager_print("  Anchors Configured: %d\r\n", sched_status.anchor_count);
+            uart_manager_print("  Targets Configured: %d\r\n", sched_status.target_count);
             uart_manager_print("  Current Target: 0x%04X\r\n", sched_status.current_target);
         }
         else
@@ -485,76 +640,79 @@ STATIC void uart_cmd_router_handle_twr_manager(const char* action, const char* t
     }
     else if (strcmp(action, "add") == 0)
     {
-        if (strcmp(target, "anchor") == 0)
+        // Accept both 'anchor' (backward compat) and 'target' (new)
+        if (strcmp(target, "anchor") == 0 || strcmp(target, "target") == 0)
         {
             if (args == NULL || args[0] == '\0')
             {
-                uart_manager_print("ERR: Missing anchor address (e.g., 0x0001)\r\n");
+                uart_manager_print("ERR: Missing target address (e.g., 0x0001)\r\n");
                 return;
             }
 
             // Parse address
             uint16_t address = (uint16_t)strtoul(args, NULL, 0);
 
-            if (twr_scheduler_add_anchor(address))
+            if (twr_scheduler_add_target(address))
             {
-                uart_manager_print("Added anchor 0x%04X (total: %d)\r\n", address,
-                                   twr_scheduler_get_anchor_count());
+                uart_manager_print("Added target 0x%04X (total: %d)\r\n", address,
+                                   twr_scheduler_get_target_count());
             }
             else
             {
-                uart_manager_print("ERR: Failed to add anchor 0x%04X\r\n", address);
+                uart_manager_print("ERR: Failed to add target 0x%04X\r\n", address);
             }
         }
         else
         {
-            uart_manager_print("ERR: Unknown add target. Use: anchor\r\n");
+            uart_manager_print("ERR: Unknown add target. Use: target or anchor\r\n");
         }
     }
     else if (strcmp(action, "remove") == 0)
     {
-        if (strcmp(target, "anchor") == 0)
+        // Accept both 'anchor' (backward compat) and 'target' (new)
+        if (strcmp(target, "anchor") == 0 || strcmp(target, "target") == 0)
         {
             if (args == NULL || args[0] == '\0')
             {
-                uart_manager_print("ERR: Missing anchor address (e.g., 0x0001)\r\n");
+                uart_manager_print("ERR: Missing target address (e.g., 0x0001)\r\n");
                 return;
             }
 
             uint16_t address = (uint16_t)strtoul(args, NULL, 0);
 
-            if (twr_scheduler_remove_anchor(address))
+            if (twr_scheduler_remove_target(address))
             {
-                uart_manager_print("Removed anchor 0x%04X (remaining: %d)\r\n", address,
-                                   twr_scheduler_get_anchor_count());
+                uart_manager_print("Removed target 0x%04X (remaining: %d)\r\n", address,
+                                   twr_scheduler_get_target_count());
             }
             else
             {
-                uart_manager_print("ERR: Anchor 0x%04X not found\r\n", address);
+                uart_manager_print("ERR: Target 0x%04X not found\r\n", address);
             }
         }
         else
         {
-            uart_manager_print("ERR: Unknown remove target. Use: anchor\r\n");
+            uart_manager_print("ERR: Unknown remove target. Use: target or anchor\r\n");
         }
     }
     else if (strcmp(action, "set") == 0)
     {
-        if (strcmp(target, "anchors") == 0)
+        // Accept both 'anchors' (backward compat) and 'targets' (new)
+        if (strcmp(target, "anchors") == 0 || strcmp(target, "targets") == 0)
         {
             if (args == NULL || args[0] == '\0')
             {
                 uart_manager_print(
-                    "ERR: Missing anchor addresses (e.g., 0x0001 0x0002 0x0003)\r\n");
+                    "ERR: Missing target addresses (e.g., 0x0001 0x0002 0x0003)\r\n");
                 return;
             }
 
             // Parse multiple addresses
-            uint16_t addresses[TWR_SCHEDULER_MAX_ANCHORS];
+            uint16_t addresses[TWR_SCHEDULER_MAX_TARGETS];
             uint8_t count   = 0;
             const char* ptr = args;
 
-            while (*ptr != '\0' && count < TWR_SCHEDULER_MAX_ANCHORS)
+            while (*ptr != '\0' && count < TWR_SCHEDULER_MAX_TARGETS)
             {
                 ptr = skip_whitespace(ptr);
                 if (*ptr == '\0')
@@ -570,9 +728,9 @@ STATIC void uart_cmd_router_handle_twr_manager(const char* action, const char* t
                 return;
             }
 
-            if (twr_scheduler_set_anchors(addresses, count))
+            if (twr_scheduler_set_targets(addresses, count))
             {
-                uart_manager_print("Set %d anchors: ", count);
+                uart_manager_print("Set %d targets: ", count);
                 for (uint8_t i = 0; i < count; i++)
                 {
                     uart_manager_print("0x%04X ", addresses[i]);
@@ -581,24 +739,25 @@ STATIC void uart_cmd_router_handle_twr_manager(const char* action, const char* t
             }
             else
             {
-                uart_manager_print("ERR: Failed to set anchors\r\n");
+                uart_manager_print("ERR: Failed to set targets\r\n");
             }
         }
         else
         {
-            uart_manager_print("ERR: Unknown set target. Use: anchors\r\n");
+            uart_manager_print("ERR: Unknown set target. Use: targets or anchors\r\n");
         }
     }
     else if (strcmp(action, "clear") == 0)
     {
-        if (strcmp(target, "anchors") == 0)
+        // Accept both 'anchors' (backward compat) and 'targets' (new)
+        if (strcmp(target, "anchors") == 0 || strcmp(target, "targets") == 0)
         {
             twr_scheduler_clear_all();
-            uart_manager_print("Cleared all anchors\r\n");
+            uart_manager_print("Cleared all targets\r\n");
         }
         else
         {
-            uart_manager_print("ERR: Unknown clear target. Use: anchors\r\n");
+            uart_manager_print("ERR: Unknown clear target. Use: targets or anchors\r\n");
         }
     }
     else
@@ -671,46 +830,7 @@ STATIC void uart_cmd_router_handle_twr(const char* action, const char* target, c
 {
     if (strcmp(action, "set") == 0)
     {
-        if (strcmp(target, "mode") == 0)
-        {
-            if (args == NULL)
-            {
-                uart_manager_print("ERR: Mode argument required (tag/anchor/disabled)\r\n");
-                return;
-            }
-
-            twr_mode_e mode;
-            if (strcmp(args, "tag") == 0)
-            {
-                mode = TWR_MODE_TAG;
-            }
-            else if (strcmp(args, "anchor") == 0)
-            {
-                mode = TWR_MODE_ANCHOR;
-            }
-            else if (strcmp(args, "disabled") == 0)
-            {
-                mode = TWR_MODE_DISABLED;
-            }
-            else
-            {
-                uart_manager_print("ERR: Invalid mode. Use: tag, anchor, or disabled\r\n");
-                return;
-            }
-
-            if (twr_mode_request(mode, "uart_cmd"))
-            {
-                const char* mode_str = (mode == TWR_MODE_TAG)      ? "TAG"
-                                       : (mode == TWR_MODE_ANCHOR) ? "ANCHOR"
-                                                                   : "DISABLED";
-                uart_manager_print("TWR mode set to: %s\r\n", mode_str);
-            }
-            else
-            {
-                uart_manager_print("ERR: Failed to set TWR mode\r\n");
-            }
-        }
-        else if (strcmp(target, "address") == 0)
+        if (strcmp(target, "address") == 0)
         {
             if (args == NULL)
             {
@@ -720,9 +840,8 @@ STATIC void uart_cmd_router_handle_twr(const char* action, const char* target, c
 
             uint16_t address = (uint16_t)strtoul(args, NULL, 0);
 
-            // Set at UWB level for both modes
-            uwb_set_address(address, 0xDECA);
-            anchor_set_address(address); // Also set anchor address
+            // Set address directly in UWB module (single source of truth)
+            uwb_set_address(address, uwb_get_pan_id());
 
             uart_manager_print("Address set to: 0x%04X\r\n", address);
         }
@@ -735,44 +854,36 @@ STATIC void uart_cmd_router_handle_twr(const char* action, const char* target, c
     {
         if (strcmp(target, "status") == 0)
         {
-            twr_mode_e current_mode = twr_mode_get_current();
-            const char* mode_str    = (current_mode == TWR_MODE_TAG)      ? "TAG"
-                                      : (current_mode == TWR_MODE_ANCHOR) ? "ANCHOR"
-                                                                          : "DISABLED";
-
+            uint16_t addr = uwb_get_address();
             uart_manager_print("Ranging Status:\r\n");
-            uart_manager_print("  Mode: %s\r\n", mode_str);
-            uart_manager_print("  Transitioning: %s\r\n",
-                               twr_mode_is_transitioning() ? "Yes" : "No");
+            uart_manager_print("  Address: 0x%04X\r\n", addr);
+            uart_manager_print("\r\n");
 
-            if (current_mode == TWR_MODE_TAG)
-            {
-                tag_status_t tag_status;
-                tag_get_status(&tag_status);
-                uart_manager_print("  State: %d\r\n", tag_status.state);
-                uart_manager_print("  Successful: %lu\r\n",
-                                   (unsigned long)tag_status.successful_ranges);
-                uart_manager_print("  Failed: %lu\r\n", (unsigned long)tag_status.failed_ranges);
+            // Show initiator status
+            initiator_status_t initiator_status;
+            initiator_get_status(&initiator_status);
+            uart_manager_print("  Initiator:\r\n");
+            uart_manager_print("    State: %d\r\n", initiator_status.state);
+            uart_manager_print("    Successful: %lu\r\n",
+                               (unsigned long)initiator_status.successful_ranges);
+            uart_manager_print("    Failed: %lu\r\n",
+                               (unsigned long)initiator_status.failed_ranges);
+            uart_manager_print("\r\n");
 
-                uint16_t addr = uwb_get_address();
-                uart_manager_print("  Tag Address: 0x%04X\r\n", addr);
-            }
-            else if (current_mode == TWR_MODE_ANCHOR)
-            {
-                anchor_status_t anchor_status;
-                anchor_get_status(&anchor_status);
-                uart_manager_print("  State: %d\r\n", anchor_status.state);
-                uart_manager_print("  Polls Received: %lu\r\n",
-                                   (unsigned long)anchor_status.polls_received);
-                uart_manager_print("  Responses Sent: %lu\r\n",
-                                   (unsigned long)anchor_status.responses_sent);
-                uart_manager_print("  Anchor Address: 0x%04X\r\n", anchor_get_address());
-            }
+            // Show responder status
+            responder_status_t responder_status;
+            responder_get_status(&responder_status);
+            uart_manager_print("  Responder:\r\n");
+            uart_manager_print("    State: %d\r\n", responder_status.state);
+            uart_manager_print("    Polls Received: %lu\r\n",
+                               (unsigned long)responder_status.polls_received);
+            uart_manager_print("    Responses Sent: %lu\r\n",
+                               (unsigned long)responder_status.responses_sent);
         }
         else if (strcmp(target, "result") == 0)
         {
             twr_result_t result;
-            if (tag_get_last_result(&result))
+            if (initiator_get_last_result(&result))
             {
                 uart_manager_print("Last Range: %.2f m, RSSI: %.1f dBm\r\n", result.distance_m,
                                    result.rssi_dbm);
@@ -797,15 +908,15 @@ STATIC void uart_cmd_router_handle_twr(const char* action, const char* target, c
                 return;
             }
 
-            uint16_t anchor_addr = (uint16_t)strtoul(args, NULL, 0);
+            uint16_t target_addr = (uint16_t)strtoul(args, NULL, 0);
 
-            if (!tag_start_ranging(anchor_addr))
+            if (!initiator_start_ranging(target_addr))
             {
                 uart_manager_print("ERR: Failed to start ranging (check mode and UWB status)\r\n");
             }
             else
             {
-                uart_manager_print("Ranging started to anchor 0x%04X\r\n", anchor_addr);
+                uart_manager_print("Ranging started to target 0x%04X\r\n", target_addr);
             }
         }
         else
@@ -900,6 +1011,10 @@ void uart_cmd_router_dispatch(const char* cmd_string)
     else if (strcmp(module, "imu") == 0)
     {
         uart_cmd_router_handle_imu(action, target, args);
+    }
+    else if (strcmp(module, "node") == 0)
+    {
+        uart_cmd_router_handle_node(action, target, args);
     }
     else if (strcmp(module, "uwb") == 0)
     {

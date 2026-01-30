@@ -69,12 +69,6 @@ typedef enum
 /*---------------------------------------------------------------------------
  * Public Types
  *---------------------------------------------------------------------------*/
-typedef struct
-{
-    float x;
-    float y;
-    float z;
-} imu_sensor_data_t;
 
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
@@ -84,10 +78,9 @@ imu_port_status_t imu_port_probe_and_init(imu_dev_t* dev);
 imu_port_status_t imu_port_check_device_id(imu_dev_t* dev);
 uint8_t imu_port_read_chip_id(imu_dev_t* dev);
 float imu_port_read_temperature(imu_dev_t* dev);
-imu_port_status_t imu_port_read_accel(imu_dev_t* dev, imu_sensor_data_t* accel);
-imu_port_status_t imu_port_read_gyro(imu_dev_t* dev, imu_sensor_data_t* gyro);
-imu_port_status_t imu_port_read_accel_and_gyro(imu_dev_t* dev, imu_sensor_data_t* accel,
-                                               imu_sensor_data_t* gyro);
+imu_port_status_t imu_port_read_accel(imu_dev_t* dev, vec3_t* accel);
+imu_port_status_t imu_port_read_gyro(imu_dev_t* dev, vec3_t* gyro);
+imu_port_status_t imu_port_read_accel_and_gyro(imu_dev_t* dev, vec3_t* accel, vec3_t* gyro);
 imu_port_status_t imu_port_configure_accel(imu_dev_t* dev, imu_accel_range_t range, imu_odr_t odr);
 imu_port_status_t imu_port_configure_gyro(imu_dev_t* dev, imu_gyro_range_t range, imu_odr_t odr);
 imu_port_status_t imu_port_soft_reset(imu_dev_t* dev);

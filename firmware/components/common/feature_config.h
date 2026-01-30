@@ -24,17 +24,3 @@
  * Set to 1 to enable, 0 to disable.
  */
 #define FEATURE_UART_LOGGING (1U)
-
-/**
- * @brief Auto-start device in anchor mode with default address
- *
- * When enabled, the device will automatically start in anchor mode
- * with address 0x0001 after initialization. This is useful for
- * production devices that should always operate as anchors.
- *
- * When disabled, the device starts in an idle state and requires
- * manual configuration via UART commands.
- *
- * Set to 1 to enable, 0 to disable.
- */
-#define FEATURE_AUTO_START_ANCHOR_MODE (1U)

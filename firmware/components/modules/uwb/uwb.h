@@ -56,6 +56,7 @@ void uwb_start(void);
 void uwb_stop(void);
 void uwb_set_address(uint16_t address, uint16_t pan_id);
 uint16_t uwb_get_address(void);
+uint16_t uwb_get_pan_id(void);
 bool uwb_soft_reset(void);
 uwb_send_result_t uwb_send_message(const uint8_t* data, uint16_t length, uint16_t dest_addr);
 uwb_send_result_t uwb_send_message_delayed(const uint8_t* data, uint16_t length, uint16_t dest_addr,

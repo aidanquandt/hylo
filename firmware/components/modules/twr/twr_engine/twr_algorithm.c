@@ -95,10 +95,10 @@ twr_status_e twr_calculate_ds_twr(uint64_t poll_tx_ts, uint64_t poll_rx_ts, uint
     // ToF = (Da × Db - Ra × Rb) / (Ra + Rb + Da + Db)
     //
     // Where:
-    //   Ra = reply time at anchor (resp_tx - poll_rx)
-    //   Rb = reply time at tag (final_tx - resp_rx)
-    //   Da = round trip at anchor (final_rx - resp_tx) = Rb + 2×ToF
-    //   Db = round trip at tag (resp_rx - poll_tx) = Ra + 2×ToF
+    //   Ra = reply time at responder (resp_tx - poll_rx)
+    //   Rb = reply time at initiator (final_tx - resp_rx)
+    //   Da = round trip at responder (final_rx - resp_tx) = Rb + 2×ToF
+    //   Db = round trip at initiator (resp_rx - poll_tx) = Ra + 2×ToF
 
     int64_t Ra = twr_timestamp_diff(poll_rx_ts, resp_tx_ts);
     int64_t Rb = twr_timestamp_diff(resp_rx_ts, final_tx_ts);

@@ -62,7 +62,7 @@ STATIC bool twr_validate_message(const twr_event_t* event, twr_context_t* ctx)
         return false;
     }
 
-    if (!(ctx->role == TWR_ROLE_ANCHOR && rx_msg_type == TWR_MSG_POLL))
+    if (!(ctx->role == TWR_ROLE_RESPONDER && rx_msg_type == TWR_MSG_POLL))
     {
         if (header->sequence != ctx->sequence)
         {
@@ -75,7 +75,7 @@ STATIC bool twr_validate_message(const twr_event_t* event, twr_context_t* ctx)
         return false;
     }
 
-    if (ctx->role == TWR_ROLE_ANCHOR && rx_msg_type == TWR_MSG_POLL)
+    if (ctx->role == TWR_ROLE_RESPONDER && rx_msg_type == TWR_MSG_POLL)
     {
         ctx->peer_address = event->rx.src_addr;
         ctx->sequence     = header->sequence;
@@ -122,7 +122,7 @@ bool twr_state_machine_start(twr_context_t* ctx, uint16_t peer_addr)
     memset(ctx->timestamps, 0, sizeof(ctx->timestamps));
     memset(ctx->remote_timestamps, 0, sizeof(ctx->remote_timestamps));
 
-    if (ctx->role == TWR_ROLE_TAG)
+    if (ctx->role == TWR_ROLE_INITIATOR)
     {
         ctx->expected_msg = TWR_MSG_RESPONSE;
 
@@ -179,10 +179,10 @@ void twr_state_machine_process(twr_context_t* ctx)
             ctx->timeout_count++;
             ctx->failed_transactions++;
 
-            if (ctx->role == TWR_ROLE_ANCHOR)
+            if (ctx->role == TWR_ROLE_RESPONDER)
             {
                 ctx->expected_msg = TWR_MSG_POLL;
-                ctx->peer_address = 0; // Ready to accept POLL from any tag
+                ctx->peer_address = 0; // Ready to accept POLL from any initiator
                 twr_state_machine_transition_to(ctx, TWR_STATE_WAITING);
             }
             else
