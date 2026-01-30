@@ -76,9 +76,9 @@ typedef enum
 /*---------------------------------------------------------------------------
  * Common MAC Constants
  *---------------------------------------------------------------------------*/
-#define MAC_DEFAULT_PAN_ID (0xDECA) // Default PAN ID
-#define MAC_BROADCAST_ADDR (0xFFFF) // Broadcast address
-#define MAC_MAX_FRAME_SIZE (127U)   // Maximum 802.15.4 frame size
+#define MAC_DEFAULT_PAN_ID (0xDECAU) // Default PAN ID
+#define MAC_BROADCAST_ADDR (0xFFFF)  // Broadcast address
+#define MAC_MAX_FRAME_SIZE (127U)    // Maximum 802.15.4 frame size
 
 /*---------------------------------------------------------------------------
  * 802.15.4 MAC Frame Structures

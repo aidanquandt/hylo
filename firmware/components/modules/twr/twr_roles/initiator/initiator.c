@@ -284,23 +284,6 @@ STATIC void initiator_process_result_impl(twr_context_t* ctx)
 
         ctx->last_result = result;
         ctx->successful_transactions++;
-#if FEATURE_PRINT_RANGING_SUCCESS_AND_DISTANCE
-        uint32_t elapsed_us = stopwatch_elapsed_us(0);
-        if (result.anchor_position_valid)
-        {
-            error_handler_log(ERROR_SEVERITY_INFO, "initiator",
-                              "Ranging success: %.2f m to 0x%04X at (%.2f, %.2f, %.2f), %lu us",
-                              result.distance_m, result.remote_addr, result.anchor_position.x,
-                              result.anchor_position.y, result.anchor_position.z,
-                              (unsigned long)elapsed_us);
-        }
-        else
-        {
-            error_handler_log(ERROR_SEVERITY_INFO, "initiator",
-                              "Ranging success: %.2f m to 0x%04X (position unknown), %lu us",
-                              result.distance_m, result.remote_addr, (unsigned long)elapsed_us);
-        }
-#endif
     }
     else
     {
