@@ -8,6 +8,7 @@
 #include "platform_gpio.h"
 #include "state_machine.h"
 #include <string.h>
+#include "uart_manager.h"
 
 /*---------------------------------------------------------------------------
  * Defines
