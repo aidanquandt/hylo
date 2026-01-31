@@ -6,6 +6,7 @@
 #include "../twr/twr_roles/initiator/initiator.h" // Direct initiator interface
 #include "backoff.h"
 #include "error_handler.h"
+#include "feature_config.h"
 #include "module.h"
 #include "sensor_fusion.h"
 #include "state_machine.h"
