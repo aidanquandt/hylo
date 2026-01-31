@@ -8,6 +8,7 @@
 #include "platform_gpio.h"
 #include "state_machine.h"
 #include <string.h>
+#include "uart_manager.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -141,6 +142,7 @@ STATIC void read_sensors(void)
 
 STATIC void imu_init(void)
 {
+    uart_manager_print("Hello from IMU module\r\n");
 }
 
 STATIC void imu_process_10Hz(void)
