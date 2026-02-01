@@ -10,3 +10,6 @@
 
 /* UART selection: 0 = UART4, 1 = USART3 */
 #define FEATURE_USE_USART3 (1U)
+
+/* Watchdog: Set to 0 to disable IWDG for debugging */
+#define FEATURE_WATCHDOG_ENABLE_IWDG (1U)

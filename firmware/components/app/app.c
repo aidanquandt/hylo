@@ -6,6 +6,7 @@
 #include "common.h"
 #include "datalogger.h"
 #include "error_handler.h"
+#include "feature_config.h"
 #include "main.h"
 #include "module.h"
 #include "platform_gpio.h"
