@@ -6,6 +6,7 @@
 #include "error_handler.h"
 #include "imu.h"
 #include "node.h"
+#include "ota_config/ota_config.h"
 #include "sensor_fusion.h"
 #include "twr/twr.h"
 #include "twr_manager/twr_manager.h"
@@ -24,6 +25,7 @@ extern const module_S watchdog_module;
 extern const module_S uwb_module;
 extern const module_S imu_module;
 extern const module_S node_module;
+extern const module_S ota_config_module;
 extern const module_S twr_module;
 extern const module_S twr_manager_module;
 
@@ -35,6 +37,7 @@ const module_S* const modules[NUM_MODULES] = {
     [UWB_MODULE]           = &uwb_module,
     [IMU_MODULE]           = &imu_module,
     [NODE_MODULE]          = &node_module,
+    [OTA_CONFIG_MODULE]    = &ota_config_module,
     [TWR_MODULE]           = &twr_module,
     [TWR_MANAGER_MODULE]   = &twr_manager_module,
     [WATCHDOG_MODULE]      = &watchdog_module, // Last - monitors all others

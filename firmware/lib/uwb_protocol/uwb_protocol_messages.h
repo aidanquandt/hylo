@@ -16,9 +16,10 @@
  *---------------------------------------------------------------------------*/
 typedef enum
 {
-    PROTOCOL_TYPE_TWR  = 0x01, // Two-Way Ranging protocol
-    PROTOCOL_TYPE_DATA = 0x02  // Data exchange protocol
-    // Reserve 0x03-0x0F for future protocols
+    PROTOCOL_TYPE_TWR        = 0x01, // Two-Way Ranging protocol
+    PROTOCOL_TYPE_DATA       = 0x02, // Data exchange protocol
+    PROTOCOL_TYPE_OTA_CONFIG = 0x03  // OTA Configuration/management protocol
+    // Reserve 0x04-0x0F for future protocols
 } protocol_type_e;
 
 /*---------------------------------------------------------------------------
@@ -42,6 +43,19 @@ typedef enum
     DATA_MSG_COMMAND   = 0x03  // Command/control
     // Reserve 0x04-0xFF for future data types
 } data_msg_type_e;
+
+/*---------------------------------------------------------------------------
+ * OTA_CONFIG Sub-Message Types
+ *---------------------------------------------------------------------------*/
+typedef enum
+{
+    OTA_CONFIG_MSG_SET_ADDRESS   = 0x01, // Set node UWB address
+    OTA_CONFIG_MSG_SET_POSITION  = 0x02, // Set node position (x, y, z)
+    OTA_CONFIG_MSG_SET_NODE_TYPE = 0x03, // Set node type (tag/anchor)
+    OTA_CONFIG_MSG_RESPONSE      = 0x04, // Configuration response (success/failure)
+    OTA_CONFIG_MSG_SET_GPIO      = 0x05  // Set GPIO pin state (LED control)
+    // Reserve 0x06-0xFF for future config types
+} ota_config_msg_type_e;
 
 /*---------------------------------------------------------------------------
  * Common Message Header
@@ -122,6 +136,87 @@ typedef struct
 } __attribute__((packed)) protocol_data_beacon_msg_t;
 
 /*---------------------------------------------------------------------------
+ * Config Protocol Message Structures
+ *---------------------------------------------------------------------------*/
+
+/**
+ * @brief OTA Config message: Set Address
+ * @note Programs a node's UWB address and PAN ID over-the-air
+ */
+typedef struct
+{
+    protocol_header_t
+        header; // protocol_type = PROTOCOL_TYPE_OTA_CONFIG, msg_type = OTA_CONFIG_MSG_SET_ADDRESS
+    uint32_t auth_token;  // Authentication token (simple password)
+    uint16_t new_address; // New UWB short address
+    uint16_t new_pan_id;  // New PAN ID (0xFFFF = keep current)
+} __attribute__((packed)) protocol_ota_config_set_address_msg_t;
+
+/**
+ * @brief OTA Config message: Set Position
+ * @note Programs a node's physical position coordinates over-the-air
+ */
+typedef struct
+{
+    protocol_header_t
+        header; // protocol_type = PROTOCOL_TYPE_OTA_CONFIG, msg_type = OTA_CONFIG_MSG_SET_POSITION
+    uint32_t auth_token; // Authentication token (simple password)
+    vec3_t position;     // Position in meters (x, y, z)
+} __attribute__((packed)) protocol_ota_config_set_position_msg_t;
+
+/**
+ * @brief OTA Config message: Set Node Type
+ * @note Programs a node's type (tag/anchor/hybrid) over-the-air
+ */
+typedef struct
+{
+    protocol_header_t
+        header; // protocol_type = PROTOCOL_TYPE_OTA_CONFIG, msg_type = OTA_CONFIG_MSG_SET_NODE_TYPE
+    uint32_t auth_token; // Authentication token (simple password)
+    uint8_t node_type;   // Node type (0=TAG, 1=ANCHOR, 2=HYBRID)
+} __attribute__((packed)) protocol_ota_config_set_node_type_msg_t;
+
+/**
+ * @brief OTA Config message: Set GPIO
+ * @note Controls GPIO pins (e.g., LED) on remote node over-the-air
+ */
+typedef struct
+{
+    protocol_header_t
+        header; // protocol_type = PROTOCOL_TYPE_OTA_CONFIG, msg_type = OTA_CONFIG_MSG_SET_GPIO
+    uint32_t auth_token; // Authentication token (simple password)
+    uint8_t pin;         // GPIO pin identifier (0=LED_GREEN)
+    uint8_t state;       // GPIO state (0=LOW/OFF, 1=HIGH/ON)
+} __attribute__((packed)) protocol_ota_config_set_gpio_msg_t;
+
+/**
+ * @brief OTA Config response message
+ * @note Sent by target node to confirm configuration changes
+ */
+typedef struct
+{
+    protocol_header_t
+        header;     // protocol_type = PROTOCOL_TYPE_OTA_CONFIG, msg_type = OTA_CONFIG_MSG_RESPONSE
+    uint8_t status; // Status code (0=success, non-zero=error)
+    uint16_t current_address; // Current address (after change)
+    uint16_t current_pan_id;  // Current PAN ID (after change)
+    uint8_t node_type;        // Current node type
+    vec3_t position;          // Current position
+    bool position_known;      // Whether position is set
+} __attribute__((packed)) protocol_ota_config_response_msg_t;
+
+/**
+ * @brief OTA Config response status codes
+ */
+typedef enum
+{
+    OTA_CONFIG_STATUS_SUCCESS          = 0x00,
+    OTA_CONFIG_STATUS_AUTH_FAILED      = 0x01,
+    OTA_CONFIG_STATUS_INVALID_PARAM    = 0x02,
+    OTA_CONFIG_STATUS_OPERATION_FAILED = 0x03
+} ota_config_status_e;
+
+/*---------------------------------------------------------------------------
  * Message Size Constraints
  *---------------------------------------------------------------------------*/
 
@@ -140,7 +235,8 @@ typedef struct
  */
 static inline bool uwb_protocol_is_valid_type(uint8_t protocol_type)
 {
-    return (protocol_type == PROTOCOL_TYPE_TWR || protocol_type == PROTOCOL_TYPE_DATA);
+    return (protocol_type == PROTOCOL_TYPE_TWR || protocol_type == PROTOCOL_TYPE_DATA ||
+            protocol_type == PROTOCOL_TYPE_OTA_CONFIG);
 }
 
 /**
