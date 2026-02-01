@@ -16,6 +16,8 @@
  * Defines
  *---------------------------------------------------------------------------*/
 #define MAX_NUM_TASKS 20U
+#define DEADLINE_MISS_STARTUP_GRACE_PERIOD_S 5U
+#define HEAP_LOW_MEMORY_THRESHOLD_BYTES 1024U
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -23,6 +25,7 @@
 STATIC void datalogger_monitor_rtos_usage(void);
 STATIC void datalogger_monitor_uart_health(void);
 STATIC void datalogger_monitor_heap_usage(void);
+STATIC void datalogger_monitor_deadline_misses(void);
 STATIC void datalogger_process_1Hz(void);
 
 /*---------------------------------------------------------------------------
@@ -114,11 +117,46 @@ STATIC void datalogger_monitor_rtos_usage(void)
     prev_total_runtime = total_runtime;
 }
 
+STATIC void datalogger_monitor_deadline_misses(void)
+{
+    STATIC uint32_t prev_miss_count[NUM_MODULES] = {0};
+    STATIC uint32_t startup_counter              = 0;
+
+    // Skip reporting for first 5 seconds to allow modules to initialize
+    if (startup_counter < DEADLINE_MISS_STARTUP_GRACE_PERIOD_S)
+    {
+        startup_counter++;
+        // Initialize baseline after grace period
+        if (startup_counter == DEADLINE_MISS_STARTUP_GRACE_PERIOD_S)
+        {
+            for (modules_E module = (modules_E)0U; module < NUM_MODULES; module++)
+            {
+                prev_miss_count[module] = app_get_deadline_miss_count(module);
+            }
+        }
+        return;
+    }
+
+    for (modules_E module = (modules_E)0U; module < NUM_MODULES; module++)
+    {
+        uint32_t miss_count = app_get_deadline_miss_count(module);
+
+        if (miss_count > prev_miss_count[module])
+        {
+            uint32_t new_misses = miss_count - prev_miss_count[module];
+            error_handler_log(ERROR_SEVERITY_WARNING, "timing", "%s: %u deadline miss(es)\n",
+                              modules[module]->module_name, (unsigned int)new_misses);
+            prev_miss_count[module] = miss_count;
+        }
+    }
+}
+
 STATIC void datalogger_process_1Hz(void)
 {
     datalogger_monitor_rtos_usage();
     datalogger_monitor_uart_health();
     datalogger_monitor_heap_usage();
+    datalogger_monitor_deadline_misses();
 }
 
 STATIC void datalogger_monitor_heap_usage(void)
@@ -127,7 +165,7 @@ STATIC void datalogger_monitor_heap_usage(void)
     minimum_ever_free_heap = xPortGetMinimumEverFreeHeapSize();
 
     // Log warning if free heap is getting low (less than 1KB)
-    if (current_free_heap < 1024U)
+    if (current_free_heap < HEAP_LOW_MEMORY_THRESHOLD_BYTES)
     {
         error_handler_log(ERROR_SEVERITY_WARNING, "datalogger",
                           "[HEAP] Low memory: %u bytes free\n", (unsigned int)current_free_heap);
