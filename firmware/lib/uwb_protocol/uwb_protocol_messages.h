@@ -49,11 +49,11 @@ typedef enum
  *---------------------------------------------------------------------------*/
 typedef enum
 {
-    OTA_CONFIG_MSG_SET_ADDRESS   = 0x01, // Set node UWB address
-    OTA_CONFIG_MSG_SET_POSITION  = 0x02, // Set node position (x, y, z)
-    OTA_CONFIG_MSG_SET_NODE_TYPE = 0x03, // Set node type (tag/anchor)
-    OTA_CONFIG_MSG_RESPONSE      = 0x04, // Configuration response (success/failure)
-    OTA_CONFIG_MSG_SET_GPIO      = 0x05  // Set GPIO pin state (LED control)
+    OTA_CONFIG_MSG_SET_ADDRESS       = 0x01, // Set node UWB address
+    OTA_CONFIG_MSG_SET_POSITION      = 0x02, // Set node position (x, y, z)
+    OTA_CONFIG_MSG_SET_UWB_NODE_TYPE = 0x03, // Set UWB node type (tag/anchor)
+    OTA_CONFIG_MSG_RESPONSE          = 0x04, // Configuration response (success/failure)
+    OTA_CONFIG_MSG_SET_GPIO          = 0x05  // Set GPIO pin state (LED control)
     // Reserve 0x06-0xFF for future config types
 } ota_config_msg_type_e;
 
@@ -170,10 +170,10 @@ typedef struct
  */
 typedef struct
 {
-    protocol_header_t
-        header; // protocol_type = PROTOCOL_TYPE_OTA_CONFIG, msg_type = OTA_CONFIG_MSG_SET_NODE_TYPE
-    uint32_t auth_token; // Authentication token (simple password)
-    uint8_t node_type;   // Node type (0=TAG, 1=ANCHOR, 2=HYBRID)
+    protocol_header_t header; // protocol_type = PROTOCOL_TYPE_OTA_CONFIG, msg_type =
+                              // OTA_CONFIG_MSG_SET_UWB_NODE_TYPE
+    uint32_t auth_token;      // Authentication token (simple password)
+    uint8_t uwb_node_type;    // UWB Node type (0=TAG, 1=ANCHOR, 2=HYBRID)
 } __attribute__((packed)) protocol_ota_config_set_node_type_msg_t;
 
 /**
@@ -200,7 +200,7 @@ typedef struct
     uint8_t status; // Status code (0=success, non-zero=error)
     uint16_t current_address; // Current address (after change)
     uint16_t current_pan_id;  // Current PAN ID (after change)
-    uint8_t node_type;        // Current node type
+    uint8_t uwb_node_type;    // Current UWB node type
     vec3_t position;          // Current position
     bool position_known;      // Whether position is set
 } __attribute__((packed)) protocol_ota_config_response_msg_t;

@@ -18,12 +18,12 @@
 Set up a basic anchor and tag for ranging. Use these commands frequently for quick testing:
 
 ```bash
-node.set.type anchor
-node.set.address 0x0001
-node.set.position 0.0 0.0 2.5
+uwb_node.set.type anchor
+uwb_node.set.address 0x0001
+uwb_node.set.position 0.0 0.0 2.5
 
-node.set.type tag
-node.set.address 0x0002
+uwb_node.set.type tag
+uwb_node.set.address 0x0002
 twrmgr.add.target 0x0001
 twrmgr.req.start
 
@@ -38,21 +38,21 @@ twrmgr.req.stop
 ### Setup Responder (Fixed/Anchor Device)
 Both roles always active:
 ```bash
-node.set.type anchor
-node.set.address 0x0001
-node.set.position 0.0 0.0 2.5
+uwb_node.set.type anchor
+uwb_node.set.address 0x0001
+uwb_node.set.position 0.0 0.0 2.5
 ```
 
 **Note:** 
-- `node.set.address` updates the DW3000 address (UWB module is single source of truth)
+- `uwb_node.set.address` updates the DW3000 address (UWB module is single source of truth)
 - Responder automatically restarted when address changes
 - Responder automatically listens for incoming POLL messages
 
 ### Setup Initiator (Mobile/Tag Device)
 Both roles always active:
 ```bash
-node.set.type tag
-node.set.address 0x0002
+uwb_node.set.type tag
+uwb_node.set.address 0x0002
 ```
 
 **Note:** Can now both initiate ranging AND respond to incoming POLLs
@@ -70,15 +70,15 @@ twr.get.status  # Shows both initiator and responder state
 
 ### Setup Responder Side (Fixed Infrastructure)
 ```bash
-node.set.type anchor
-node.set.address 0x0001
-node.set.position 0.0 0.0 2.5
+uwb_node.set.type anchor
+uwb_node.set.address 0x0001
+uwb_node.set.position 0.0 0.0 2.5
 ```
 
 ### Setup Initiator Side (Mobile Device)
 ```bash
-node.set.type tag
-node.set.address 0x0002
+uwb_node.set.type tag
+uwb_node.set.address 0x0002
 ```
 
 ### ⚠️ Configure Targets
@@ -111,8 +111,8 @@ twrmgr.remove.target 0x0002
 
 ### Aidan Default Setup
 ```bash
-node.set.type tag
-node.set.address 0x0002
+uwb_node.set.type tag
+uwb_node.set.address 0x0002
 twrmgr.add.target 0x0001
 twrmgr.req.start
 ```
@@ -129,7 +129,7 @@ twrmgr.get.status
 UWB module is the single source of truth for addressing. Node provides convenient API:
 
 ```bash
-node.set.address 0x0001
+uwb_node.set.address 0x0001
 twrmgr.req.start
 ```
 
@@ -261,19 +261,19 @@ uwb.get.stats
 
 ### Setup Node 1 and Ping Node 2
 ```bash
-node.set.address 0x0001
+uwb_node.set.address 0x0001
 beacon.req.ping 0x0002
 ```
 
 ### Setup Node 2 and Ping Node 1
 ```bash
-node.set.address 0x0002
+uwb_node.set.address 0x0002
 beacon.req.ping 0x0001
 ```
 
 ### Delayed Ping
 ```bash
-node.set.address 0x0002
+uwb_node.set.address 0x0002
 beacon.req.ping.delayed 0x0001
 ```
 

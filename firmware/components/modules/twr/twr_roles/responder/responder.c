@@ -8,10 +8,10 @@
 #include "../twr_engine/twr_state_machine.h"
 #include "FreeRTOS.h"
 #include "error_handler.h"
-#include "node.h"
 #include "stopwatch.h"
 #include "task.h"
 #include "uwb.h"
+#include "uwb_node.h"
 #include "uwb_protocol_messages.h"
 #include <string.h>
 
@@ -108,7 +108,7 @@ STATIC bool responder_send_message_impl(twr_msg_type_e msg_type, twr_context_t* 
 
             // Include anchor position (from node module)
             vec3_t position = {0};
-            if (node_get_position(&position))
+            if (uwb_node_get_position(&position))
             {
                 response.anchor_position = position;
             }
@@ -136,7 +136,7 @@ STATIC bool responder_send_message_impl(twr_msg_type_e msg_type, twr_context_t* 
 
             // Include anchor position (from node module)
             vec3_t position = {0};
-            if (node_get_position(&position))
+            if (uwb_node_get_position(&position))
             {
                 ack.anchor_position = position;
             }

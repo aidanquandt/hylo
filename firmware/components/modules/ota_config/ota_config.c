@@ -6,9 +6,9 @@
 #include "ota_config.h"
 #include "error_handler.h"
 #include "module.h"
-#include "node.h"
 #include "platform_gpio.h"
 #include "uwb.h"
+#include "uwb_node.h"
 #include "uwb_protocol_messages.h"
 #include <string.h>
 
@@ -91,7 +91,7 @@ STATIC void ota_config_protocol_handler(const uint8_t* data, uint16_t length, ui
             ota_config_handle_set_position(data, length, src_addr);
             break;
 
-        case OTA_CONFIG_MSG_SET_NODE_TYPE:
+        case OTA_CONFIG_MSG_SET_UWB_NODE_TYPE:
             ota_config_handle_set_node_type(data, length, src_addr);
             break;
 
@@ -176,7 +176,7 @@ STATIC void ota_config_handle_set_position(const uint8_t* data, uint16_t length,
 
     // Apply new position (copy to avoid unaligned pointer)
     vec3_t position = msg->position;
-    node_set_position(&position);
+    uwb_node_set_position(&position);
 
     error_handler_log(ERROR_SEVERITY_INFO, "ota_config", "Position set: (%.2f, %.2f, %.2f)",
                       msg->position.x, msg->position.y, msg->position.z);
@@ -206,18 +206,18 @@ STATIC void ota_config_handle_set_node_type(const uint8_t* data, uint16_t length
     }
 
     // Validate node type
-    if (msg->node_type > NODE_TYPE_HYBRID)
+    if (msg->uwb_node_type > UWB_NODE_TYPE_HYBRID)
     {
         error_handler_log(ERROR_SEVERITY_WARNING, "ota_config", "Invalid node type: %d",
-                          msg->node_type);
+                          msg->uwb_node_type);
         ota_config_send_response(src_addr, OTA_CONFIG_STATUS_INVALID_PARAM, msg->header.sequence);
         return;
     }
 
     // Apply new node type
-    node_set_type((node_type_e)msg->node_type);
+    uwb_node_set_type((uwb_node_type_e)msg->uwb_node_type);
 
-    error_handler_log(ERROR_SEVERITY_INFO, "ota_config", "Node type set: %d", msg->node_type);
+    error_handler_log(ERROR_SEVERITY_INFO, "ota_config", "Node type set: %d", msg->uwb_node_type);
 
     ota_config_send_response(src_addr, OTA_CONFIG_STATUS_SUCCESS, msg->header.sequence);
 }
@@ -281,7 +281,7 @@ STATIC void ota_config_handle_response(const uint8_t* data, uint16_t length, uin
 
     error_handler_log(ERROR_SEVERITY_INFO, "ota_config",
                       "Response from 0x%04X: status=%d, addr=0x%04X, type=%d", src_addr,
-                      msg->status, msg->current_address, msg->node_type);
+                      msg->status, msg->current_address, msg->uwb_node_type);
 
     // Notify callback if registered
     if (response_callback != NULL)
@@ -306,10 +306,10 @@ STATIC void ota_config_send_response(uint16_t dest_addr, uint8_t status, uint16_
     response.status          = status;
     response.current_address = uwb_get_address();
     response.current_pan_id  = uwb_get_pan_id();
-    response.node_type       = (uint8_t)node_get_type();
+    response.uwb_node_type   = (uint8_t)uwb_node_get_type();
 
     vec3_t position;
-    response.position_known = node_get_position(&position);
+    response.position_known = uwb_node_get_position(&position);
     if (response.position_known)
     {
         response.position = position;
@@ -392,9 +392,9 @@ bool ota_config_send_set_position(uint16_t target_address, const vec3_t* positio
     return result.success;
 }
 
-bool ota_config_send_set_node_type(uint16_t target_address, node_type_e node_type)
+bool ota_config_send_set_node_type(uint16_t target_address, uwb_node_type_e node_type)
 {
-    if (!module_initialized || node_type > NODE_TYPE_HYBRID)
+    if (!module_initialized || node_type > UWB_NODE_TYPE_HYBRID)
     {
         return false;
     }
@@ -402,10 +402,10 @@ bool ota_config_send_set_node_type(uint16_t target_address, node_type_e node_typ
     protocol_ota_config_set_node_type_msg_t msg = {0};
 
     msg.header.protocol_type = PROTOCOL_TYPE_OTA_CONFIG;
-    msg.header.msg_type      = OTA_CONFIG_MSG_SET_NODE_TYPE;
+    msg.header.msg_type      = OTA_CONFIG_MSG_SET_UWB_NODE_TYPE;
     msg.header.sequence      = (uint16_t)(ota_config_stats.requests_sent & 0xFFFF);
     msg.auth_token           = auth_token;
-    msg.node_type            = (uint8_t)node_type;
+    msg.uwb_node_type        = (uint8_t)node_type;
 
     uwb_send_result_t result = uwb_send_message((const uint8_t*)&msg, sizeof(msg), target_address);
 

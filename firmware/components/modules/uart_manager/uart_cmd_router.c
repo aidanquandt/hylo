@@ -10,7 +10,6 @@
 #include "datalogger.h"
 #include "error_handler.h"
 #include "imu.h"
-#include "node/node.h"
 #include "ota_config/ota_config.h"
 #include "stopwatch.h"
 #include "twr/twr_engine/twr_types.h"
@@ -20,6 +19,7 @@
 #include "twr_manager/twr_scheduler/twr_scheduler.h"
 #include "uart_manager.h"
 #include "uwb.h"
+#include "uwb_node/uwb_node.h"
 #include "uwb_protocol_messages.h"
 #include <ctype.h>
 #include <stdlib.h>
@@ -85,7 +85,7 @@ STATIC void uart_cmd_router_handle_list(void)
     uart_manager_print("\r\nAvailable Modules:\r\n");
     uart_manager_print("  data       - Data communications module\r\n");
     uart_manager_print("  imu        - IMU sensor module\r\n");
-    uart_manager_print("  node       - Node identity and configuration\r\n");
+    uart_manager_print("  uwb_node   - UWB node identity and configuration\r\n");
     uart_manager_print("  uwb        - UWB radio transceiver\r\n");
     uart_manager_print("  twr        - Two-Way Ranging service\r\n");
     uart_manager_print("  twrmgr - Two-Way Ranging manager\r\n");
@@ -238,18 +238,18 @@ STATIC void uart_cmd_router_handle_node(const char* action, const char* target, 
                 return;
             }
 
-            node_type_e type;
+            uwb_node_type_e type;
             if (strcmp(args, "tag") == 0)
             {
-                type = NODE_TYPE_TAG;
+                type = UWB_NODE_TYPE_TAG;
             }
             else if (strcmp(args, "anchor") == 0)
             {
-                type = NODE_TYPE_ANCHOR;
+                type = UWB_NODE_TYPE_ANCHOR;
             }
             else if (strcmp(args, "hybrid") == 0)
             {
-                type = NODE_TYPE_HYBRID;
+                type = UWB_NODE_TYPE_HYBRID;
             }
             else
             {
@@ -257,10 +257,10 @@ STATIC void uart_cmd_router_handle_node(const char* action, const char* target, 
                 return;
             }
 
-            node_set_type(type);
-            const char* type_str = (type == NODE_TYPE_TAG)      ? "TAG"
-                                   : (type == NODE_TYPE_ANCHOR) ? "ANCHOR"
-                                                                : "HYBRID";
+            uwb_node_set_type(type);
+            const char* type_str = (type == UWB_NODE_TYPE_TAG)      ? "TAG"
+                                   : (type == UWB_NODE_TYPE_ANCHOR) ? "ANCHOR"
+                                                                    : "HYBRID";
             uart_manager_print("Node type set to: %s\r\n", type_str);
         }
         else if (strcmp(target, "position") == 0)
@@ -297,7 +297,7 @@ STATIC void uart_cmd_router_handle_node(const char* action, const char* target, 
             }
 
             vec3_t pos = {.x = x, .y = y, .z = z};
-            node_set_position(&pos);
+            uwb_node_set_position(&pos);
             uart_manager_print("Node position set to: X=%.2f Y=%.2f Z=%.2f m\r\n", x, y, z);
         }
         else if (strcmp(target, "address") == 0)
@@ -321,17 +321,17 @@ STATIC void uart_cmd_router_handle_node(const char* action, const char* target, 
     {
         if (strcmp(target, "type") == 0)
         {
-            node_type_e type     = node_get_type();
-            const char* type_str = (type == NODE_TYPE_TAG)      ? "TAG"
-                                   : (type == NODE_TYPE_ANCHOR) ? "ANCHOR"
-                                   : (type == NODE_TYPE_HYBRID) ? "HYBRID"
-                                                                : "UNKNOWN";
+            uwb_node_type_e type = uwb_node_get_type();
+            const char* type_str = (type == UWB_NODE_TYPE_TAG)      ? "TAG"
+                                   : (type == UWB_NODE_TYPE_ANCHOR) ? "ANCHOR"
+                                   : (type == UWB_NODE_TYPE_HYBRID) ? "HYBRID"
+                                                                    : "UNKNOWN";
             uart_manager_print("Node type: %s\r\n", type_str);
         }
         else if (strcmp(target, "position") == 0)
         {
             vec3_t pos;
-            if (node_get_position(&pos))
+            if (uwb_node_get_position(&pos))
             {
                 uart_manager_print("Node position: X=%.2f Y=%.2f Z=%.2f m\r\n", pos.x, pos.y,
                                    pos.z);
@@ -348,14 +348,14 @@ STATIC void uart_cmd_router_handle_node(const char* action, const char* target, 
         }
         else if (strcmp(target, "status") == 0)
         {
-            node_type_e type     = node_get_type();
-            const char* type_str = (type == NODE_TYPE_TAG)      ? "TAG"
-                                   : (type == NODE_TYPE_ANCHOR) ? "ANCHOR"
-                                   : (type == NODE_TYPE_HYBRID) ? "HYBRID"
-                                                                : "UNKNOWN";
+            uwb_node_type_e type = uwb_node_get_type();
+            const char* type_str = (type == UWB_NODE_TYPE_TAG)      ? "TAG"
+                                   : (type == UWB_NODE_TYPE_ANCHOR) ? "ANCHOR"
+                                   : (type == UWB_NODE_TYPE_HYBRID) ? "HYBRID"
+                                                                    : "UNKNOWN";
 
             vec3_t pos;
-            bool has_position = node_get_position(&pos);
+            bool has_position = uwb_node_get_position(&pos);
 
             uart_manager_print("Node Status:\r\n");
             uart_manager_print("  Type: %s\r\n", type_str);
@@ -934,18 +934,18 @@ STATIC void uart_cmd_router_handle_ota_config(const char* action, const char* ta
             const char* type_str = skip_whitespace(end_ptr);
             uint8_t type         = (uint8_t)strtoul(type_str, NULL, 0);
 
-            if (type > NODE_TYPE_HYBRID)
+            if (type > UWB_NODE_TYPE_HYBRID)
             {
                 uart_manager_print("ERR: Invalid type (0=TAG, 1=ANCHOR, 2=HYBRID)\r\n");
                 return;
             }
 
-            bool success = ota_config_send_set_node_type(target_addr, (node_type_e)type);
+            bool success = ota_config_send_set_node_type(target_addr, (uwb_node_type_e)type);
             if (success)
             {
-                const char* type_name = (type == NODE_TYPE_TAG)      ? "TAG"
-                                        : (type == NODE_TYPE_ANCHOR) ? "ANCHOR"
-                                                                     : "HYBRID";
+                const char* type_name = (type == UWB_NODE_TYPE_TAG)      ? "TAG"
+                                        : (type == UWB_NODE_TYPE_ANCHOR) ? "ANCHOR"
+                                                                         : "HYBRID";
                 uart_manager_print("Sent SET_NODE_TYPE to 0x%04X: %s\r\n", target_addr, type_name);
             }
             else
@@ -1233,7 +1233,7 @@ void uart_cmd_router_dispatch(const char* cmd_string)
     {
         uart_cmd_router_handle_imu(action, target, args);
     }
-    else if (strcmp(module, "node") == 0)
+    else if (strcmp(module, "uwb_node") == 0)
     {
         uart_cmd_router_handle_node(action, target, args);
     }
