@@ -19,6 +19,7 @@ typedef enum
     UWB_MODULE,
     IMU_MODULE,
     NODE_MODULE,
+    OTA_CONFIG_MODULE,
     TWR_MODULE,
     TWR_MANAGER_MODULE,
     WATCHDOG_MODULE, // Must be last - runs after all other modules

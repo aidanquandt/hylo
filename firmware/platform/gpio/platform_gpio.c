@@ -10,6 +10,18 @@
 /*---------------------------------------------------------------------------
  * Public function implementations
  *---------------------------------------------------------------------------*/
+void platform_gpio_set_led_green(platform_gpio_state_t state)
+{
+    if (state == PLATFORM_GPIO_HIGH)
+    {
+        BSP_LED_On(LED_GREEN);
+    }
+    else
+    {
+        BSP_LED_Off(LED_GREEN);
+    }
+}
+
 void platform_gpio_toggle_led_green(void)
 {
     BSP_LED_Toggle(LED_GREEN);

@@ -11,6 +11,7 @@
 #include "error_handler.h"
 #include "imu.h"
 #include "node/node.h"
+#include "ota_config/ota_config.h"
 #include "stopwatch.h"
 #include "twr/twr_engine/twr_types.h"
 #include "twr/twr_roles/initiator/initiator.h"
@@ -47,6 +48,8 @@ STATIC void uart_cmd_router_handle_twr_manager(const char* action, const char* t
                                                const char* args);
 STATIC void uart_cmd_router_handle_stopwatch(const char* action, const char* target,
                                              const char* args);
+STATIC void uart_cmd_router_handle_ota_config(const char* action, const char* target,
+                                              const char* args);
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -86,6 +89,7 @@ STATIC void uart_cmd_router_handle_list(void)
     uart_manager_print("  uwb        - UWB radio transceiver\r\n");
     uart_manager_print("  twr        - Two-Way Ranging service\r\n");
     uart_manager_print("  twrmgr - Two-Way Ranging manager\r\n");
+    uart_manager_print("  ota_config - OTA configuration (remote node programming)\r\n");
     uart_manager_print("  error      - Error handler module\r\n");
     uart_manager_print("  datalogger - System monitoring\r\n");
     uart_manager_print("  stopwatch  - Performance timing (0-9 instances)\r\n\r\n");
@@ -826,6 +830,223 @@ STATIC void uart_cmd_router_handle_stopwatch(const char* action, const char* tar
     }
 }
 
+STATIC void uart_cmd_router_handle_ota_config(const char* action, const char* target,
+                                              const char* args)
+{
+    if (strcmp(action, "send") == 0)
+    {
+        if (strcmp(target, "address") == 0)
+        {
+            // ota_config.send.address <target_addr> <new_addr> [pan_id]
+            if (args == NULL || *args == '\0')
+            {
+                uart_manager_print("Usage: ota_config.send.address <target_addr> <new_addr> "
+                                   "[pan_id]\r\n");
+                return;
+            }
+
+            char* end_ptr;
+            uint16_t target_addr = (uint16_t)strtoul(args, &end_ptr, 0);
+
+            if (end_ptr == args || *end_ptr == '\0')
+            {
+                uart_manager_print("ERR: Missing new_addr parameter\r\n");
+                return;
+            }
+
+            const char* new_addr_str = skip_whitespace(end_ptr);
+            uint16_t new_addr        = (uint16_t)strtoul(new_addr_str, &end_ptr, 0);
+
+            uint16_t pan_id = 0xFFFF; // Keep current by default
+            if (end_ptr && *end_ptr != '\0')
+            {
+                const char* pan_str = skip_whitespace(end_ptr);
+                if (*pan_str != '\0')
+                {
+                    pan_id = (uint16_t)strtoul(pan_str, NULL, 0);
+                }
+            }
+
+            bool success = ota_config_send_set_address(target_addr, new_addr, pan_id);
+            if (success)
+            {
+                uart_manager_print("Sent SET_ADDRESS to 0x%04X: new_addr=0x%04X, pan=0x%04X\r\n",
+                                   target_addr, new_addr, pan_id);
+            }
+            else
+            {
+                uart_manager_print("Failed to send SET_ADDRESS\r\n");
+            }
+        }
+        else if (strcmp(target, "position") == 0)
+        {
+            // ota_config.send.position <target_addr> <x> <y> <z>
+            if (args == NULL || *args == '\0')
+            {
+                uart_manager_print("Usage: ota_config.send.position <target_addr> <x> <y> <z>\r\n");
+                return;
+            }
+
+            char* end_ptr;
+            uint16_t target_addr = (uint16_t)strtoul(args, &end_ptr, 0);
+
+            if (end_ptr == args)
+            {
+                uart_manager_print("ERR: Invalid target address\r\n");
+                return;
+            }
+
+            vec3_t position;
+            position.x = strtof(skip_whitespace(end_ptr), &end_ptr);
+            position.y = strtof(skip_whitespace(end_ptr), &end_ptr);
+            position.z = strtof(skip_whitespace(end_ptr), &end_ptr);
+
+            bool success = ota_config_send_set_position(target_addr, &position);
+            if (success)
+            {
+                uart_manager_print("Sent SET_POSITION to 0x%04X: (%.2f, %.2f, %.2f)\r\n",
+                                   target_addr, position.x, position.y, position.z);
+            }
+            else
+            {
+                uart_manager_print("Failed to send SET_POSITION\r\n");
+            }
+        }
+        else if (strcmp(target, "type") == 0)
+        {
+            // ota_config.send.type <target_addr> <type>
+            if (args == NULL || *args == '\0')
+            {
+                uart_manager_print("Usage: ota_config.send.type <target_addr> <type>\r\n");
+                uart_manager_print("  type: 0=TAG, 1=ANCHOR, 2=HYBRID\r\n");
+                return;
+            }
+
+            char* end_ptr;
+            uint16_t target_addr = (uint16_t)strtoul(args, &end_ptr, 0);
+
+            if (end_ptr == args || *end_ptr == '\0')
+            {
+                uart_manager_print("ERR: Missing type parameter\r\n");
+                return;
+            }
+
+            const char* type_str = skip_whitespace(end_ptr);
+            uint8_t type         = (uint8_t)strtoul(type_str, NULL, 0);
+
+            if (type > NODE_TYPE_HYBRID)
+            {
+                uart_manager_print("ERR: Invalid type (0=TAG, 1=ANCHOR, 2=HYBRID)\r\n");
+                return;
+            }
+
+            bool success = ota_config_send_set_node_type(target_addr, (node_type_e)type);
+            if (success)
+            {
+                const char* type_name = (type == NODE_TYPE_TAG)      ? "TAG"
+                                        : (type == NODE_TYPE_ANCHOR) ? "ANCHOR"
+                                                                     : "HYBRID";
+                uart_manager_print("Sent SET_NODE_TYPE to 0x%04X: %s\r\n", target_addr, type_name);
+            }
+            else
+            {
+                uart_manager_print("Failed to send SET_NODE_TYPE\r\n");
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else if (strcmp(action, "set") == 0)
+    {
+        if (strcmp(target, "token") == 0)
+        {
+            if (args == NULL || *args == '\0')
+            {
+                uart_manager_print("Usage: ota_config.set.token <hex_token>\r\n");
+                return;
+            }
+
+            uint32_t token = (uint32_t)strtoul(args, NULL, 0);
+            ota_config_set_auth_token(token);
+            uart_manager_print("Auth token set to: 0x%08X\r\n", (unsigned int)token);
+        }
+        else if (strcmp(target, "gpio") == 0)
+        {
+            if (args == NULL || *args == '\0')
+            {
+                uart_manager_print("Usage: ota_config.set.gpio <target_addr> <pin> <state>\r\n");
+                uart_manager_print("  target_addr: Target node address (hex: 0xABCD)\r\n");
+                uart_manager_print("  pin: 0=LED_GREEN\r\n");
+                uart_manager_print("  state: 0=OFF, 1=ON\r\n");
+                uart_manager_print("Example: ota_config.set.gpio 0x0002 0 1\r\n");
+                return;
+            }
+
+            char* endptr;
+            uint16_t target_addr = (uint16_t)strtoul(args, &endptr, 0);
+
+            if (endptr == args)
+            {
+                uart_manager_print("ERR: Invalid target address\r\n");
+                return;
+            }
+
+            // Skip whitespace
+            while (*endptr == ' ' || *endptr == '\t')
+                endptr++;
+
+            uint8_t pin = (uint8_t)strtoul(endptr, &endptr, 0);
+
+            // Skip whitespace
+            while (*endptr == ' ' || *endptr == '\t')
+                endptr++;
+
+            uint8_t state = (uint8_t)strtoul(endptr, NULL, 0);
+
+            if (ota_config_send_set_gpio(target_addr, pin, state))
+            {
+                uart_manager_print("Sent SET_GPIO to 0x%04X: pin=%d, state=%d\r\n", target_addr,
+                                   pin, state);
+            }
+            else
+            {
+                uart_manager_print("Failed to send SET_GPIO\r\n");
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else if (strcmp(action, "get") == 0)
+    {
+        if (strcmp(target, "token") == 0)
+        {
+            uint32_t token = ota_config_get_auth_token();
+            uart_manager_print("Auth token: 0x%08X\r\n", (unsigned int)token);
+        }
+        else if (strcmp(target, "stats") == 0)
+        {
+            uint32_t requests_sent, responses_received, auth_failures;
+            ota_config_get_stats(&requests_sent, &responses_received, &auth_failures);
+            uart_manager_print("OTA Config Statistics:\r\n");
+            uart_manager_print("  Requests sent: %lu\r\n", (unsigned long)requests_sent);
+            uart_manager_print("  Responses received: %lu\r\n", (unsigned long)responses_received);
+            uart_manager_print("  Auth failures: %lu\r\n", (unsigned long)auth_failures);
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else
+    {
+        uart_manager_print("ERR: Unknown action '%s'\r\n", action);
+    }
+}
+
 STATIC void uart_cmd_router_handle_twr(const char* action, const char* target, const char* args)
 {
     if (strcmp(action, "set") == 0)
@@ -1039,6 +1260,10 @@ void uart_cmd_router_dispatch(const char* cmd_string)
     else if (strcmp(module, "stopwatch") == 0)
     {
         uart_cmd_router_handle_stopwatch(action, target, args);
+    }
+    else if (strcmp(module, "ota_config") == 0)
+    {
+        uart_cmd_router_handle_ota_config(action, target, args);
     }
     else
     {

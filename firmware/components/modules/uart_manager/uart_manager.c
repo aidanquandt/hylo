@@ -250,6 +250,17 @@ STATIC void uart_manager_create_task(void)
 STATIC bool uart_manager_queue_message(const uint8_t* data, uint16_t length, bool from_isr,
                                        uint32_t timeout_ms)
 {
+    // Defensive check: If TX task not created yet, silently drop the message
+    // This protects against logging during module_init phase (before module_create_task)
+    if (uart_tx_task_handle == NULL)
+    {
+        if (!from_isr && dropped_messages < UINT32_MAX)
+        {
+            dropped_messages++;
+        }
+        return false;
+    }
+
     if (uart_tx_queue == NULL || data == NULL || length == 0U || length > UART_TX_MSG_MAX_LENGTH)
     {
         return false;
