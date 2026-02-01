@@ -2,6 +2,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "platform_uart.h"
+#include "feature_config.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -10,9 +11,15 @@
 #define UART_RX_TIMEOUT_MS 100U
 
 extern UART_HandleTypeDef huart4;
+extern UART_HandleTypeDef huart3;
 
+#if FEATURE_USE_USART3
+#define PLATFORM_UART_PRINT (&huart3)
+#define PLATFORM_UART_RX (&huart3)
+#else
 #define PLATFORM_UART_PRINT (&huart4)
 #define PLATFORM_UART_RX (&huart4)
+#endif
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations
