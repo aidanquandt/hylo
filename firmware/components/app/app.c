@@ -34,6 +34,11 @@
 #define TASK_STACK_LARGE 1024
 
 /*---------------------------------------------------------------------------
+ * Private Variables
+ *---------------------------------------------------------------------------*/
+STATIC volatile uint32_t deadline_miss_count[NUM_MODULES] = {0};
+
+/*---------------------------------------------------------------------------
  * Private function prototypes
  *---------------------------------------------------------------------------*/
 STATIC void module_task_1Hz(void* argument);
@@ -54,6 +59,15 @@ STATIC void module_task_1Hz(void* argument)
     for (;;)
     {
         modules[module]->module_process_1Hz();
+
+        // Detect deadline miss (non-blocking)
+        TickType_t now          = xTaskGetTickCount();
+        TickType_t expectedWake = lastWake + TASK_RATE_1HZ;
+        if (now >= expectedWake)
+        {
+            deadline_miss_count[module]++;
+        }
+
         vTaskDelayUntil(&lastWake, TASK_RATE_1HZ);
     }
 }
@@ -65,6 +79,15 @@ STATIC void module_task_10Hz(void* argument)
     for (;;)
     {
         modules[module]->module_process_10Hz();
+
+        // Detect deadline miss (non-blocking)
+        TickType_t now          = xTaskGetTickCount();
+        TickType_t expectedWake = lastWake + TASK_RATE_10HZ;
+        if (now >= expectedWake)
+        {
+            deadline_miss_count[module]++;
+        }
+
         vTaskDelayUntil(&lastWake, TASK_RATE_10HZ);
     }
 }
@@ -76,6 +99,15 @@ STATIC void module_task_100Hz(void* argument)
     for (;;)
     {
         modules[module]->module_process_100Hz();
+
+        // Detect deadline miss (non-blocking)
+        TickType_t now          = xTaskGetTickCount();
+        TickType_t expectedWake = lastWake + TASK_RATE_100HZ;
+        if (now >= expectedWake)
+        {
+            deadline_miss_count[module]++;
+        }
+
         vTaskDelayUntil(&lastWake, TASK_RATE_100HZ);
     }
 }
@@ -87,6 +119,15 @@ STATIC void module_task_1kHz(void* argument)
     for (;;)
     {
         modules[module]->module_process_1kHz();
+
+        // Detect deadline miss (non-blocking)
+        TickType_t now          = xTaskGetTickCount();
+        TickType_t expectedWake = lastWake + TASK_RATE_1KHZ;
+        if (now >= expectedWake)
+        {
+            deadline_miss_count[module]++;
+        }
+
         vTaskDelayUntil(&lastWake, TASK_RATE_1KHZ);
     }
 }
@@ -185,4 +226,13 @@ void app_init(void)
     app_create_module_tasks();
     app_post_module_initialization();
     vTaskDelete(NULL); // Delete init task - scheduler continues with created tasks
+}
+
+uint32_t app_get_deadline_miss_count(modules_E module)
+{
+    if (module >= NUM_MODULES)
+    {
+        return 0;
+    }
+    return deadline_miss_count[module];
 }
