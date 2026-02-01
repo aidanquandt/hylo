@@ -26,25 +26,22 @@
  *---------------------------------------------------------------------------*/
 typedef enum
 {
-    STATE_IDLE = 0,    // Not actively ranging
-    STATE_RANGING,     // Normal ranging operation
-    STATE_BACKING_OFF, // Waiting after consecutive failures
-    STATE_FAULTED      // Unrecoverable error
+    STATE_IDLE = 0, // Not actively ranging
+    STATE_RANGING,  // Normal ranging operation
+    STATE_FAULTED   // Unrecoverable error
 } twr_manager_state_e;
 
 typedef struct
 {
-    uint32_t success_count;        // Total successful ranges
-    uint32_t failure_count;        // Total failed ranges
-    uint32_t consecutive_failures; // Track consecutive failures for backoff
-    uint32_t backoff_delay_ms;     // Current backoff delay
-    uint16_t rate_prescaler;       // Rate limiting counter
-    bool ranging_in_progress;      // Track if ranging attempt is active
+    uint32_t success_count;   // Total successful ranges
+    uint32_t failure_count;   // Total failed ranges
+    uint16_t rate_prescaler;  // Rate limiting counter
+    bool ranging_in_progress; // Track if ranging attempt is active
 } twr_manager_ctx_t;
 
 typedef struct
 {
-    bool needs_backoff; // Flag: fresh failure requires backoff
+    bool reserved; // Reserved for future use
 } twr_manager_sm_inputs_t;
 
 /*---------------------------------------------------------------------------
@@ -54,8 +51,6 @@ STATIC void twr_manager_state_idle_process(void);
 STATIC void twr_manager_state_idle_on_entry(uint16_t prev_state);
 STATIC void twr_manager_state_ranging_process(void);
 STATIC void twr_manager_state_ranging_on_entry(uint16_t prev_state);
-STATIC void twr_manager_state_backing_off_process(void);
-STATIC void twr_manager_state_backing_off_on_entry(uint16_t prev_state);
 STATIC void twr_manager_state_faulted_on_entry(uint16_t prev_state);
 STATIC uint16_t twr_manager_transition_logic(uint16_t current_state, uint32_t state_timer);
 STATIC void twr_manager_push_to_sensor_fusion(const twr_result_t* result);
@@ -83,20 +78,15 @@ const module_S twr_manager_module = {
 STATIC twr_manager_ctx_t ctx                     = {0};
 STATIC twr_manager_sm_inputs_t sm_inputs         = {0};
 STATIC state_machine_s twr_manager_state_machine = {0};
-STATIC const backoff_config_t backoff_config     = {
-        .min_delay_ms = 10, .max_delay_ms = 1000, .base_multiplier = 3, .use_jitter = false};
-STATIC const state_s states[] = {
-    [STATE_IDLE]        = {.process = twr_manager_state_idle_process,
-                           .onEntry = twr_manager_state_idle_on_entry,
-                           .onExit  = NULL},
-    [STATE_RANGING]     = {.process = twr_manager_state_ranging_process,
-                           .onEntry = twr_manager_state_ranging_on_entry,
-                           .onExit  = NULL},
-    [STATE_BACKING_OFF] = {.process = twr_manager_state_backing_off_process,
-                           .onEntry = twr_manager_state_backing_off_on_entry,
-                           .onExit  = NULL},
-    [STATE_FAULTED]     = {
-            .process = NULL, .onEntry = twr_manager_state_faulted_on_entry, .onExit = NULL}};
+STATIC const state_s states[]                    = {
+    [STATE_IDLE]    = {.process = twr_manager_state_idle_process,
+                                          .onEntry = twr_manager_state_idle_on_entry,
+                                          .onExit  = NULL},
+    [STATE_RANGING] = {.process = twr_manager_state_ranging_process,
+                                          .onEntry = twr_manager_state_ranging_on_entry,
+                                          .onExit  = NULL},
+    [STATE_FAULTED] = {
+                           .process = NULL, .onEntry = twr_manager_state_faulted_on_entry, .onExit = NULL}};
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -129,11 +119,8 @@ STATIC void twr_manager_push_to_sensor_fusion(const twr_result_t* result)
 
 STATIC void twr_manager_handle_ranging_success(const twr_result_t* result, uint16_t target)
 {
-    // Reset backoff and update counters
+    // Update counters
     ctx.success_count++;
-    ctx.consecutive_failures = 0;
-    ctx.backoff_delay_ms     = 0;
-    sm_inputs.needs_backoff  = false;
 
 #if FEATURE_PRINT_RANGING_SUCCESS_AND_DISTANCE
     // Log result with position if available
@@ -154,27 +141,19 @@ STATIC void twr_manager_handle_ranging_success(const twr_result_t* result, uint1
     // Push to sensor fusion for localization
     twr_manager_push_to_sensor_fusion(result);
 
-    // Report to scheduler and advance
+    // Report to scheduler (handles per-target success state)
     twr_scheduler_report_result(target, true);
     twr_scheduler_get_next_target();
 }
 
 STATIC void twr_manager_handle_ranging_failure(uint16_t target)
 {
-    // Update failure counters
+    // Update failure counter
     ctx.failure_count++;
-    ctx.consecutive_failures++;
 
-    // Calculate backoff and signal state transition
-    ctx.backoff_delay_ms    = backoff_calculate(&backoff_config, ctx.consecutive_failures);
-    sm_inputs.needs_backoff = true;
-
-    // Report to scheduler and advance
+    // Report to scheduler (handles per-target backoff)
     twr_scheduler_report_result(target, false);
     twr_scheduler_get_next_target();
-
-    error_handler_log(ERROR_SEVERITY_WARNING, "twr_mgr", "Ranging failed (consecutive: %lu)",
-                      (unsigned long)ctx.consecutive_failures);
 }
 
 STATIC void twr_manager_try_start_ranging(void)
@@ -212,14 +191,12 @@ STATIC void twr_manager_init(void)
 {
     twr_scheduler_init();
 
-    ctx.success_count        = 0;
-    ctx.failure_count        = 0;
-    ctx.consecutive_failures = 0;
-    ctx.backoff_delay_ms     = 0;
-    ctx.rate_prescaler       = 0;
-    ctx.ranging_in_progress  = false;
+    ctx.success_count       = 0;
+    ctx.failure_count       = 0;
+    ctx.rate_prescaler      = 0;
+    ctx.ranging_in_progress = false;
 
-    sm_inputs.needs_backoff = false;
+    sm_inputs.reserved = false;
 
     // Initialize state machine
     twr_manager_state_machine.curr_state      = STATE_IDLE;
@@ -237,7 +214,7 @@ STATIC void twr_manager_process_1kHz(void)
 
 STATIC uint16_t twr_manager_transition_logic(uint16_t current_state, uint32_t state_timer)
 {
-    (void)state_timer; // Unused for most states
+    (void)state_timer; // Unused
     uint16_t next_state = current_state;
 
     switch (current_state)
@@ -247,20 +224,7 @@ STATIC uint16_t twr_manager_transition_logic(uint16_t current_state, uint32_t st
             break;
 
         case STATE_RANGING:
-            // Transition to BACKING_OFF only on fresh failure
-            if (sm_inputs.needs_backoff)
-            {
-                sm_inputs.needs_backoff = false;
-                next_state              = STATE_BACKING_OFF;
-            }
-            break;
-
-        case STATE_BACKING_OFF:
-            // Transition back to RANGING after backoff timer expires
-            if (state_timer >= ctx.backoff_delay_ms)
-            {
-                next_state = STATE_RANGING;
-            }
+            // Stay in RANGING - scheduler handles per-target backoff
             break;
 
         case STATE_FAULTED:
@@ -291,14 +255,6 @@ STATIC void twr_manager_state_ranging_on_entry(uint16_t prev_state)
     error_handler_log(ERROR_SEVERITY_INFO, "twr_mgr", "Entering RANGING state (from state %d)",
                       prev_state);
 
-    // Only reset consecutive failures when starting fresh from IDLE
-    // NOT when coming back from backoff - we need to keep the count to increase delays
-    if (prev_state == STATE_IDLE)
-    {
-        ctx.consecutive_failures = 0;
-        ctx.backoff_delay_ms     = 0;
-    }
-
     ctx.rate_prescaler      = 0;
     ctx.ranging_in_progress = false;
 }
@@ -326,19 +282,6 @@ STATIC void twr_manager_state_ranging_process(void)
 
     // Periodically attempt to start new ranging
     twr_manager_try_start_ranging();
-}
-
-STATIC void twr_manager_state_backing_off_on_entry(uint16_t prev_state)
-{
-    (void)prev_state;
-    error_handler_log(ERROR_SEVERITY_WARNING, "twr_mgr",
-                      "Entering BACKOFF state - waiting %lu ms (failures: %lu)",
-                      (unsigned long)ctx.backoff_delay_ms, (unsigned long)ctx.consecutive_failures);
-}
-
-STATIC void twr_manager_state_backing_off_process(void)
-{
-    // Just wait for timer to expire - transition logic handles exit
 }
 
 STATIC void twr_manager_state_faulted_on_entry(uint16_t prev_state)
@@ -373,13 +316,11 @@ bool twr_manager_start(void)
     }
 
     // Reset counters and transition to RANGING state
-    ctx.success_count        = 0;
-    ctx.failure_count        = 0;
-    ctx.consecutive_failures = 0;
-    ctx.backoff_delay_ms     = 0;
-    ctx.rate_prescaler       = 0;
-    ctx.ranging_in_progress  = false;
-    sm_inputs.needs_backoff  = false;
+    ctx.success_count       = 0;
+    ctx.failure_count       = 0;
+    ctx.rate_prescaler      = 0;
+    ctx.ranging_in_progress = false;
+    sm_inputs.reserved      = false;
 
     state_machine_force_transition(&twr_manager_state_machine, STATE_RANGING);
     return true;
@@ -400,8 +341,7 @@ void twr_manager_stop(void)
 
 bool twr_manager_is_active(void)
 {
-    return (twr_manager_state_machine.curr_state == STATE_RANGING ||
-            twr_manager_state_machine.curr_state == STATE_BACKING_OFF);
+    return (twr_manager_state_machine.curr_state == STATE_RANGING);
 }
 
 uint32_t twr_manager_get_success_count(void)

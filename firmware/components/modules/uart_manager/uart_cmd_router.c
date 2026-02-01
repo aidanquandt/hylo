@@ -7,11 +7,13 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "uart_cmd_router.h"
+#include "FreeRTOS.h"
 #include "datalogger.h"
 #include "error_handler.h"
 #include "imu.h"
 #include "ota_config/ota_config.h"
 #include "stopwatch.h"
+#include "task.h"
 #include "twr/twr_engine/twr_types.h"
 #include "twr/twr_roles/initiator/initiator.h"
 #include "twr/twr_roles/responder/responder.h"
@@ -456,6 +458,9 @@ STATIC void uart_cmd_router_handle_uwb(const char* action, const char* target, c
             uart_manager_print("RX: %u received, %u errors, %u filtered\r\n",
                                (unsigned int)stats.received, (unsigned int)stats.rx_errors,
                                (unsigned int)stats.filtered);
+            uart_manager_print("Queue: TX overflows=%u, RX overflows=%u\r\n",
+                               (unsigned int)uwb_get_tx_queue_overflows(),
+                               (unsigned int)uwb_get_rx_queue_overflows());
             uwb_port_print_statistics();
         }
         else
@@ -866,6 +871,8 @@ STATIC void uart_cmd_router_handle_ota_config(const char* action, const char* ta
                     pan_id = (uint16_t)strtoul(pan_str, NULL, 0);
                 }
             }
+
+            vTaskDelay(pdMS_TO_TICKS(4));
 
             bool success = ota_config_send_set_address(target_addr, new_addr, pan_id);
             if (success)

@@ -9,8 +9,8 @@
  * Defines
  *---------------------------------------------------------------------------*/
 #define TWR_MAX_RETRIES 2U
-#define TWR_TIMEOUT_MS 50U
-#define TWR_TX_COMPLETION_TIMEOUT_MS 10U // Safety timeout for TX acknowledgment from hardware
+#define TWR_TIMEOUT_MS 3U
+#define TWR_TX_COMPLETION_TIMEOUT_MS 2U
 
 /*---------------------------------------------------------------------------
  * Public Function Prototypes

@@ -51,6 +51,8 @@ typedef void (*uwb_tx_done_handler_t)(uint32_t message_id, uint64_t tx_timestamp
 void uwb_get_status(uwb_status_t* status);
 void uwb_get_rx_stats(uwb_rx_stats_t* stats);
 void uwb_reset_rx_stats(void);
+uint32_t uwb_get_tx_queue_overflows(void);
+uint32_t uwb_get_rx_queue_overflows(void);
 bool uwb_is_ready(void);
 void uwb_start(void);
 void uwb_stop(void);

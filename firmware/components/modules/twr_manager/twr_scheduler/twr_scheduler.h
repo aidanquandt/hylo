@@ -28,6 +28,8 @@ typedef struct
     bool enabled;     // Can be disabled without removing from list
     uint32_t success_count;
     uint32_t failure_count;
+    uint8_t consecutive_failures; // Track consecutive failures for backoff
+    uint32_t backoff_until_ms;    // Don't retry this target until this time
 } twr_target_entry_t;
 
 typedef struct

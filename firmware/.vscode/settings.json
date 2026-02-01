@@ -8,7 +8,7 @@
     ],
     "cmake.configureOnOpen": false,
     "cmake.configureOnEdit": false,
-    "terminal.integrated.defaultProfile.windows": "PowerShell",
+    "terminal.integrated.defaultProfile.windows": "MSYS2 UCRT64",
     "stm32cube-ide-clangd.path": "cube",
     "stm32cube-ide-clangd.arguments": [
         "starm-clangd",

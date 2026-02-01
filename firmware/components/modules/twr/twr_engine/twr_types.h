@@ -14,7 +14,6 @@
 #define DW3000_CLOCK_HZ 499200000ULL
 #define DW3000_TIME_UNITS (1.0 / 499.2e6 / 128.0)
 #define SPEED_OF_LIGHT 299792458.0
-#define TWR_RESPONSE_TIMEOUT_MS 5U
 
 /*---------------------------------------------------------------------------
  * Typedefs

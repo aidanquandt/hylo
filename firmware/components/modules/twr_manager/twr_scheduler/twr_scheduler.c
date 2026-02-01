@@ -2,10 +2,19 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "twr_scheduler.h"
+#include "FreeRTOS.h"
+#include "backoff.h"
 #include "error_handler.h"
+#include "task.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+
+/*---------------------------------------------------------------------------
+ * Defines
+ *---------------------------------------------------------------------------*/
+#define TWR_TARGET_BACKOFF_MIN_MS (20U)   // Minimum backoff delay (initiator fails in ~9ms)
+#define TWR_TARGET_BACKOFF_MAX_MS (2000U) // Maximum backoff delay
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -43,15 +52,18 @@ STATIC uint16_t get_next_round_robin(void)
         return 0x0000;
     }
 
-    // Find next enabled target
+    uint32_t now = xTaskGetTickCount();
+
+    // Find next enabled target that's not in backoff
     uint8_t attempts = 0;
     while (attempts < target_count)
     {
         // Advance to next index
         current_index = (current_index + 1) % target_count;
 
-        // Check if this target is enabled
-        if (target_list[current_index].enabled)
+        // Check if this target is enabled and not in backoff
+        if (target_list[current_index].enabled &&
+            (now >= target_list[current_index].backoff_until_ms))
         {
             return target_list[current_index].address;
         }
@@ -59,7 +71,7 @@ STATIC uint16_t get_next_round_robin(void)
         attempts++;
     }
 
-    // All targets disabled - return 0x0000
+    // All targets disabled or in backoff - return 0x0000
     return 0x0000;
 }
 
@@ -117,13 +129,15 @@ uint16_t twr_scheduler_get_current_target(void)
         current_index = 0; // Reset to start
     }
 
-    // Return current target without advancing
-    if (target_list[current_index].enabled)
+    uint32_t now = xTaskGetTickCount();
+
+    // Return current target if enabled and not in backoff
+    if (target_list[current_index].enabled && (now >= target_list[current_index].backoff_until_ms))
     {
         return target_list[current_index].address;
     }
 
-    // If current is disabled, get next valid one
+    // If current is disabled or backed off, get next valid one
     return twr_scheduler_get_next_target();
 }
 
@@ -145,11 +159,13 @@ bool twr_scheduler_add_target(uint16_t address)
     }
 
     // Add new target
-    target_list[target_count].address       = address;
-    target_list[target_count].priority      = 0;
-    target_list[target_count].enabled       = true;
-    target_list[target_count].success_count = 0;
-    target_list[target_count].failure_count = 0;
+    target_list[target_count].address              = address;
+    target_list[target_count].priority             = 0;
+    target_list[target_count].enabled              = true;
+    target_list[target_count].success_count        = 0;
+    target_list[target_count].failure_count        = 0;
+    target_list[target_count].consecutive_failures = 0;
+    target_list[target_count].backoff_until_ms     = 0;
     target_count++;
 
     error_handler_log(ERROR_SEVERITY_INFO, "twr_sched", "Added target 0x%04X (total: %d)", address,
@@ -210,11 +226,13 @@ bool twr_scheduler_set_targets(const uint16_t* addresses, uint8_t count)
     // Add all targets
     for (uint8_t i = 0; i < count; i++)
     {
-        target_list[i].address       = addresses[i];
-        target_list[i].priority      = 0;
-        target_list[i].enabled       = true;
-        target_list[i].success_count = 0;
-        target_list[i].failure_count = 0;
+        target_list[i].address              = addresses[i];
+        target_list[i].priority             = 0;
+        target_list[i].enabled              = true;
+        target_list[i].success_count        = 0;
+        target_list[i].failure_count        = 0;
+        target_list[i].consecutive_failures = 0;
+        target_list[i].backoff_until_ms     = 0;
     }
 
     target_count  = count;
@@ -265,14 +283,26 @@ void twr_scheduler_report_result(uint16_t address, bool success)
     if (success)
     {
         target_list[index].success_count++;
+        target_list[index].consecutive_failures = 0;
+        target_list[index].backoff_until_ms     = 0; // Clear any backoff
     }
     else
     {
         target_list[index].failure_count++;
-    }
+        target_list[index].consecutive_failures++;
 
-    // Future: Could implement adaptive strategies here
-    // e.g., disable targets with too many consecutive failures
+        // Calculate exponential backoff for this target
+        uint32_t backoff_delay =
+            backoff_calculate_simple(target_list[index].consecutive_failures,
+                                     TWR_TARGET_BACKOFF_MIN_MS, TWR_TARGET_BACKOFF_MAX_MS, true);
+
+        uint32_t now                        = xTaskGetTickCount();
+        target_list[index].backoff_until_ms = now + backoff_delay;
+
+        error_handler_log(ERROR_SEVERITY_WARNING, "twr_sched",
+                          "Target 0x%04X backing off for %lu ms (failures=%u)", address,
+                          (unsigned long)backoff_delay, target_list[index].consecutive_failures);
+    }
 }
 
 void twr_scheduler_set_strategy(twr_scheduler_strategy_e new_strategy)
