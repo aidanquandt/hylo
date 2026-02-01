@@ -3,7 +3,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "common.h"
-#include "node.h"
+#include "uwb_node.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -34,7 +34,7 @@ uint32_t ota_config_get_auth_token(void);
 bool ota_config_send_set_address(uint16_t target_address, uint16_t new_address,
                                  uint16_t new_pan_id);
 bool ota_config_send_set_position(uint16_t target_address, const vec3_t* position);
-bool ota_config_send_set_node_type(uint16_t target_address, node_type_e node_type);
+bool ota_config_send_set_node_type(uint16_t target_address, uwb_node_type_e node_type);
 bool ota_config_send_set_gpio(uint16_t target_address, uint8_t pin, uint8_t state);
 void ota_config_register_response_callback(ota_config_response_callback_t callback);
 void ota_config_get_stats(uint32_t* requests_sent, uint32_t* responses_received,

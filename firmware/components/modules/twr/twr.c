@@ -5,11 +5,11 @@
 #include "common/feature_config.h"
 #include "error_handler.h"
 #include "module.h"
-#include "node.h"
 #include "twr_engine/twr_state_machine.h" // For twr_process
 #include "twr_roles/initiator/initiator.h"
 #include "twr_roles/responder/responder.h"
 #include "uwb.h"
+#include "uwb_node.h"
 #include "uwb_protocol_messages.h"
 #include <string.h>
 
