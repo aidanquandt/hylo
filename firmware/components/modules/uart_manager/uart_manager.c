@@ -48,15 +48,15 @@ typedef struct
  *---------------------------------------------------------------------------*/
 STATIC void uart_manager_init(void);
 STATIC void uart_manager_create_task(void);
-STATIC void uart_manager_process_10Hz(void);
+STATIC void uart_manager_process_100Hz(void);
 
 extern const module_S uart_manager_module;
 
 const module_S uart_manager_module = {
-    .module_name         = "uart_manager",
-    .module_init         = uart_manager_init,
-    .module_create_task  = uart_manager_create_task,
-    .module_process_10Hz = uart_manager_process_10Hz,
+    .module_name          = "uart_manager",
+    .module_init          = uart_manager_init,
+    .module_create_task   = uart_manager_create_task,
+    .module_process_100Hz = uart_manager_process_100Hz,
 };
 
 /*---------------------------------------------------------------------------
@@ -67,6 +67,7 @@ STATIC TaskHandle_t uart_tx_task_handle   = NULL;
 STATIC volatile uint32_t dropped_messages = 0U;
 STATIC volatile uint32_t tx_errors        = 0U;
 STATIC uint8_t rx_dma_buffer[UART_RX_BUFFER_SIZE] __attribute__((section(".dma_buffer")));
+STATIC uint8_t tx_dma_buffer[UART_TX_MSG_MAX_LENGTH] __attribute__((section(".dma_buffer")));
 STATIC uint8_t cmd_buffer[UART_CMD_MAX_LENGTH];
 STATIC uint16_t cmd_length               = 0U;
 STATIC uint16_t last_checked_pos         = 0U;
@@ -75,6 +76,9 @@ STATIC uint32_t rx_commands_received     = 0U;
 STATIC uint32_t rx_buffer_overruns       = 0U;
 STATIC volatile bool command_in_progress = false;
 STATIC bool last_was_cr                  = false;
+
+// Recursion guard: prevent error_handler from using UART if UART is calling error_handler
+STATIC volatile bool in_error_handler_call = false;
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -101,17 +105,44 @@ STATIC void uart_tx_task(void* argument)
     (void)argument;
     uart_tx_message_t msg;
 
+    // Register this task for TX complete notifications
+    platform_uart_register_tx_task(xTaskGetCurrentTaskHandle());
+
     for (;;)
     {
         if (xQueueReceive(uart_tx_queue, &msg, portMAX_DELAY) == pdPASS)
         {
             if (msg.length > 0U && msg.length <= UART_TX_MSG_MAX_LENGTH)
             {
-                platform_uart_status_E tx_status =
-                    platform_uart_transmit_blocking(msg.data, msg.length);
+                // Copy message to DMA-accessible buffer (DMA cannot access DTCM RAM)
+                memcpy(tx_dma_buffer, msg.data, msg.length);
 
-                if (tx_status != PLATFORM_UART_SUCCESS)
+                // Start DMA transmission (non-blocking)
+                platform_uart_status_E tx_status =
+                    platform_uart_transmit_dma(tx_dma_buffer, msg.length);
+
+                if (tx_status == PLATFORM_UART_SUCCESS)
                 {
+                    // Wait for DMA transmission to complete (notification from ISR)
+                    // Timeout after 100ms in case something goes wrong
+                    uint32_t notification = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
+
+                    if (notification == 0)
+                    {
+                        // Timeout - DMA didn't signal completion
+                        // This indicates a potential hardware issue
+                        tx_errors++;
+                    }
+                }
+                else if (tx_status == PLATFORM_UART_BUSY)
+                {
+                    // Previous transmission still in progress
+                    // This shouldn't happen with proper flow control
+                    tx_errors++;
+                }
+                else
+                {
+                    // Other error (invalid parameters, etc.)
                     tx_errors++;
                 }
             }
@@ -129,7 +160,9 @@ STATIC void uart_manager_init(void)
     uart_tx_queue = xQueueCreate(UART_TX_QUEUE_SIZE, sizeof(uart_tx_message_t));
     if (uart_tx_queue == NULL)
     {
+        in_error_handler_call = true;
         error_handler_fatal("uart_manager", "Failed to create TX queue");
+        in_error_handler_call = false;
     }
 
     dropped_messages = 0U;
@@ -200,7 +233,9 @@ STATIC void uart_manager_create_task(void)
                                          UART_TASK_PRIORITY, &uart_tx_task_handle);
     if (task_result != pdPASS)
     {
+        in_error_handler_call = true;
         error_handler_fatal("uart_manager", "Failed to create UART TX task");
+        in_error_handler_call = false;
     }
 }
 
@@ -435,10 +470,10 @@ STATIC void uart_manager_process_rx_buffer(void)
 }
 
 /**
- * @brief Periodic RX processing at 10Hz
- * @details Polls DMA buffer for incoming commands
+ * @brief Periodic RX processing at 100Hz
+ * @details Polls DMA buffer for incoming commands - increased from 10Hz for better responsiveness
  */
-STATIC void uart_manager_process_10Hz(void)
+STATIC void uart_manager_process_100Hz(void)
 {
     uart_manager_process_rx_buffer();
 }
@@ -465,6 +500,12 @@ bool uart_manager_transmit(const uint8_t* data, size_t length)
 bool uart_manager_print(const char* format, ...)
 {
     if (format == NULL)
+    {
+        return false;
+    }
+
+    // Prevent recursion: if error_handler calls us while we're calling error_handler, drop it
+    if (in_error_handler_call)
     {
         return false;
     }
