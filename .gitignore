@@ -52,3 +52,6 @@ rules.ninja
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# wifi config
+**/wifi_config.h

@@ -5,12 +5,17 @@
 #include "FreeRTOS.h"
 #include "feature_config.h"
 #include "task.h"
+#include "wifi.h"
+#include "uart_manager.h"
 
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
 #define UART_TX_TIMEOUT_MS 100U
 #define UART_RX_TIMEOUT_MS 100U
+
+extern UART_HandleTypeDef huart2;
+extern DMA_HandleTypeDef hdma_uart2_rx;
 
 extern UART_HandleTypeDef huart4;
 extern UART_HandleTypeDef huart3;
@@ -27,6 +32,7 @@ extern UART_HandleTypeDef huart3;
  * Private Variables
  *---------------------------------------------------------------------------*/
 STATIC TaskHandle_t tx_task_to_notify = NULL;
+STATIC TaskHandle_t esp_tx_task_to_notify = NULL;
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations
@@ -105,6 +111,12 @@ void platform_uart_register_tx_task(TaskHandle_t task_handle)
     tx_task_to_notify = task_handle;
 }
 
+void esp_uart_register_tx_task(TaskHandle_t task_handle)
+{
+    // Validate task handle (can be NULL to unregister)
+    esp_tx_task_to_notify = task_handle;
+}
+
 platform_uart_status_E platform_uart_transmit_dma(const uint8_t* data, size_t length)
 {
     if (data == NULL || length == 0U)
@@ -129,11 +141,76 @@ platform_uart_status_E platform_uart_transmit_dma(const uint8_t* data, size_t le
 }
 
 /*---------------------------------------------------------------------------
+ * ESP STUFF!!!!
+ *---------------------------------------------------------------------------*/
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
+{
+    if (huart == &huart2) {
+        ESP_RX_UARTEx_RXEventCallback(size);
+    }
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+	if (huart == &huart2) {
+		ESP_RX_UART_ErrorCallback();
+    }
+}
+
+platform_uart_status_E esp_uart_transmit_blocking(const uint8_t* data, size_t length)
+{
+    if (data == NULL || length == 0U)
+    {
+        return PLATFORM_UART_ERROR;
+    }
+
+    HAL_StatusTypeDef status =
+        HAL_UART_Transmit(&huart2, (uint8_t*)data, length, UART_TX_TIMEOUT_MS);
+
+    if (status == HAL_OK)
+    {
+        return PLATFORM_UART_SUCCESS;
+    }
+    else if (status == HAL_TIMEOUT)
+    {
+        return PLATFORM_UART_TIMEOUT;
+    }
+    else
+    {
+        return PLATFORM_UART_ERROR;
+    }
+}
+
+platform_uart_status_E esp_uart_transmit_dma(const uint8_t* data, size_t length)
+{
+    if (data == NULL || length == 0U)
+    {
+        return PLATFORM_UART_ERROR;
+    }
+
+    HAL_StatusTypeDef status = HAL_UART_Transmit_DMA(&huart2, (uint8_t*)data, length);
+
+    if (status == HAL_OK)
+    {
+        return PLATFORM_UART_SUCCESS;
+    }
+    else if (status == HAL_BUSY)
+    {
+        return PLATFORM_UART_BUSY;
+    }
+    else
+    {
+        return PLATFORM_UART_ERROR;
+    }
+}
+
+
+/*---------------------------------------------------------------------------
  * HAL Callback - Called from DMA TX Complete ISR
  *---------------------------------------------------------------------------*/
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart)
 {
-    // Only handle our UART
+    // Handle main UART (huart3/huart4)
     if (huart == PLATFORM_UART_PRINT)
     {
         // Notify the TX task that transmission is complete
@@ -141,6 +218,48 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart)
         {
             BaseType_t xHigherPriorityTaskWoken = pdFALSE;
             vTaskNotifyGiveFromISR(tx_task_to_notify, &xHigherPriorityTaskWoken);
+            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        }
+    }
+    // Handle ESP UART (huart2)
+    else if (huart == &huart2)
+    {
+        // Notify the ESP TX task that transmission is complete
+        if (esp_tx_task_to_notify != NULL)
+        {
+            BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+            vTaskNotifyGiveFromISR(esp_tx_task_to_notify, &xHigherPriorityTaskWoken);
+            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        }
+    }
+}
+
+/*---------------------------------------------------------------------------
+ * HAL Callback - Called from DMA TX Error ISR
+ *---------------------------------------------------------------------------*/
+void HAL_UART_TxErrorCallback(UART_HandleTypeDef* huart)
+{
+    // Handle main UART (huart3/huart4)
+    if (huart == PLATFORM_UART_PRINT)
+    {
+        // Notify the TX task about error
+        if (tx_task_to_notify != NULL)
+        {
+            BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+            // Send notification value of 0xFFFFFFFF to indicate error
+            xTaskNotifyFromISR(tx_task_to_notify, 0xFFFFFFFF, eSetValueWithOverwrite, &xHigherPriorityTaskWoken);
+            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        }
+    }
+    // Handle ESP UART (huart2)
+    else if (huart == &huart2)
+    {
+        // Notify the ESP TX task about error
+        if (esp_tx_task_to_notify != NULL)
+        {
+            BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+            // Send notification value of 0xFFFFFFFF to indicate error
+            xTaskNotifyFromISR(esp_tx_task_to_notify, 0xFFFFFFFF, eSetValueWithOverwrite, &xHigherPriorityTaskWoken);
             portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
         }
     }

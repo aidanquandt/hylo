@@ -28,3 +28,9 @@ platform_uart_status_E platform_uart_receive(UART_HandleTypeDef* huart, uint8_t*
                                              size_t length);
 platform_uart_status_E platform_uart_start_rx_dma(uint8_t* buffer, uint16_t size);
 uint16_t platform_uart_get_rx_dma_position(void);
+
+
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size);
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart);
+platform_uart_status_E esp_uart_transmit_blocking(const uint8_t* data, size_t length);
+platform_uart_status_E esp_uart_transmit_dma(const uint8_t* data, size_t length);
