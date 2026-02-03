@@ -32,7 +32,8 @@ typedef struct
 {
     bool in_use;                         // Slot occupied
     TaskHandle_t waiting_task;           // Task waiting for response
-    uint16_t target_addr;                // Target node address
+    uint16_t target_addr;                // Target node address (old address for SET_ADDRESS)
+    uint16_t new_addr;                   // New address (for SET_ADDRESS only, 0 otherwise)
     uint16_t sequence;                   // Message sequence number
     ota_config_status_e response_status; // Response status from target
 } ota_config_pending_request_t;
@@ -75,6 +76,9 @@ STATIC int8_t ota_config_allocate_slot(uint16_t target_addr, uint16_t sequence);
 STATIC void ota_config_free_slot(int8_t slot);
 STATIC bool ota_config_send_with_retry(uint16_t target_addr, const uint8_t* msg_data,
                                        uint16_t msg_size, uint16_t sequence, const char* msg_name);
+STATIC bool ota_config_send_with_retry_ex(uint16_t target_addr, uint16_t new_addr,
+                                          const uint8_t* msg_data, uint16_t msg_size,
+                                          uint16_t sequence, const char* msg_name);
 STATIC bool ota_config_verify_auth(uint32_t received_token, uint16_t src_addr, uint16_t sequence);
 STATIC void ota_config_init_message_header(protocol_header_t* header, uint8_t msg_type);
 
@@ -318,12 +322,20 @@ STATIC void ota_config_handle_response(const uint8_t* data, uint16_t length, uin
     {
         for (uint8_t i = 0; i < MAX_PENDING_REQUESTS; i++)
         {
-            if (pending_requests[i].in_use && pending_requests[i].target_addr == src_addr &&
-                pending_requests[i].sequence == msg->header.sequence)
+            if (pending_requests[i].in_use && pending_requests[i].sequence == msg->header.sequence)
             {
-                pending_requests[i].response_status = (ota_config_status_e)msg->status;
-                xTaskNotifyGive(pending_requests[i].waiting_task);
-                break;
+                // For SET_ADDRESS, response comes from NEW address (after change)
+                // For others, response comes from target_addr
+                bool addr_match =
+                    (pending_requests[i].target_addr == src_addr) ||
+                    (pending_requests[i].new_addr != 0 && pending_requests[i].new_addr == src_addr);
+
+                if (addr_match)
+                {
+                    pending_requests[i].response_status = (ota_config_status_e)msg->status;
+                    xTaskNotifyGive(pending_requests[i].waiting_task);
+                    break;
+                }
             }
         }
         xSemaphoreGive(pending_requests_mutex);
@@ -403,6 +415,7 @@ STATIC int8_t ota_config_allocate_slot(uint16_t target_addr, uint16_t sequence)
                 pending_requests[i].in_use          = true;
                 pending_requests[i].waiting_task    = xTaskGetCurrentTaskHandle();
                 pending_requests[i].target_addr     = target_addr;
+                pending_requests[i].new_addr        = 0; // Default: no address change
                 pending_requests[i].sequence        = sequence;
                 pending_requests[i].response_status = OTA_CONFIG_STATUS_OPERATION_FAILED;
                 slot                                = (int8_t)i;
@@ -432,6 +445,13 @@ STATIC void ota_config_free_slot(int8_t slot)
 STATIC bool ota_config_send_with_retry(uint16_t target_addr, const uint8_t* msg_data,
                                        uint16_t msg_size, uint16_t sequence, const char* msg_name)
 {
+    return ota_config_send_with_retry_ex(target_addr, 0, msg_data, msg_size, sequence, msg_name);
+}
+
+STATIC bool ota_config_send_with_retry_ex(uint16_t target_addr, uint16_t new_addr,
+                                          const uint8_t* msg_data, uint16_t msg_size,
+                                          uint16_t sequence, const char* msg_name)
+{
     for (uint8_t attempt = 0; attempt <= OTA_CONFIG_MAX_RETRIES; attempt++)
     {
         if (attempt > 0)
@@ -445,6 +465,16 @@ STATIC bool ota_config_send_with_retry(uint16_t target_addr, const uint8_t* msg_
         if (slot < 0)
         {
             continue; // No slots available, retry after backoff
+        }
+
+        // Store new_addr if this is a SET_ADDRESS command
+        if (new_addr != 0)
+        {
+            if (xSemaphoreTake(pending_requests_mutex, portMAX_DELAY) == pdTRUE)
+            {
+                pending_requests[slot].new_addr = new_addr;
+                xSemaphoreGive(pending_requests_mutex);
+            }
         }
 
         // Send message
@@ -470,8 +500,10 @@ STATIC bool ota_config_send_with_retry(uint16_t target_addr, const uint8_t* msg_
                 ota_config_stats.retries_performed += attempt;
                 ota_config_stats.retry_successes++;
             }
+            // For SET_ADDRESS, show the new address in the log
+            uint16_t response_addr = (new_addr != 0) ? new_addr : target_addr;
             error_handler_log(ERROR_SEVERITY_INFO, "ota_config", "%s ACK from 0x%04X (attempts=%u)",
-                              msg_name, target_addr, attempt + 1);
+                              msg_name, response_addr, attempt + 1);
             return true;
         }
     }
@@ -511,8 +543,8 @@ bool ota_config_send_set_address(uint16_t target_address, uint16_t new_address, 
     msg.new_address = new_address;
     msg.new_pan_id  = new_pan_id;
 
-    return ota_config_send_with_retry(target_address, (const uint8_t*)&msg, sizeof(msg),
-                                      msg.header.sequence, "SET_ADDRESS");
+    return ota_config_send_with_retry_ex(target_address, new_address, (const uint8_t*)&msg,
+                                         sizeof(msg), msg.header.sequence, "SET_ADDRESS");
 }
 
 bool ota_config_send_set_position(uint16_t target_address, const vec3_t* position)

@@ -877,8 +877,18 @@ STATIC void uart_cmd_router_handle_ota_config(const char* action, const char* ta
             bool success = ota_config_send_set_address(target_addr, new_addr, pan_id);
             if (success)
             {
-                uart_manager_print("Sent SET_ADDRESS to 0x%04X: new_addr=0x%04X, pan=0x%04X\r\n",
-                                   target_addr, new_addr, pan_id);
+                if (pan_id == 0xFFFF)
+                {
+                    uart_manager_print(
+                        "Sent SET_ADDRESS to 0x%04X: new_addr=0x%04X (PAN unchanged)\r\n",
+                        target_addr, new_addr);
+                }
+                else
+                {
+                    uart_manager_print(
+                        "Sent SET_ADDRESS to 0x%04X: new_addr=0x%04X, pan=0x%04X\r\n", target_addr,
+                        new_addr, pan_id);
+                }
             }
             else
             {

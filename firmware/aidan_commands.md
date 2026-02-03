@@ -18,12 +18,9 @@
 Set up a basic anchor and tag for ranging. Use these commands frequently for quick testing:
 
 ```bash
-uwb_node.set.type anchor
-uwb_node.set.address 0x0001
-uwb_node.set.position 0.0 0.0 2.5
-
 uwb_node.set.type tag
 uwb_node.set.address 0x0002
+ota_config.send.address 0x0000 0x0001
 twrmgr.add.target 0x0001
 twrmgr.req.start
 
