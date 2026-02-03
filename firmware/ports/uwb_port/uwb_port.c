@@ -17,16 +17,16 @@
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define ENABLE_TXFRS_INT 1U  // TX Done
-#define ENABLE_RXFCG_INT 1U  // RX Good
-#define ENABLE_RXFCE_INT 1U  // RX Error (CRC)
-#define ENABLE_RXPTO_INT 1U  // Preamble Timeout
-#define ENABLE_RXPHE_INT 1U  // PHY Header Error
-#define ENABLE_RXFSL_INT 1U  // Sync Loss
-#define ENABLE_RXOVRR_INT 1U // RX Overrun
-#define ENABLE_ARFE_INT 1U   // Address Filter
-#define ENABLE_RXFTO_INT 1U  // Frame Wait Timeout
-#define ENABLE_RXSTO_INT 1U  // SFD Timeout
+#define ENABLE_TXFRS_INT 1U  // TX Done - required
+#define ENABLE_RXFCG_INT 1U  // RX Good - required
+#define ENABLE_RXFCE_INT 0U  // CRC Error - auto-recovers
+#define ENABLE_RXPTO_INT 0U  // Preamble Timeout - auto-recovers
+#define ENABLE_RXPHE_INT 0U  // PHY Header Error - auto-recovers
+#define ENABLE_RXFSL_INT 0U  // Sync Loss - auto-recovers
+#define ENABLE_RXOVRR_INT 0U // RX Overrun - needs manual handling
+#define ENABLE_ARFE_INT 0U   // Address Filter - auto-recovers
+#define ENABLE_RXFTO_INT 0U  // Frame Wait Timeout - only for delayed RX
+#define ENABLE_RXSTO_INT 0U  // SFD Timeout - auto-recovers
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -240,15 +240,12 @@ STATIC void uwb_port_rx_timeout_callback(const dwt_cb_data_t* cb_data)
 
 STATIC void uwb_port_rx_error_callback(const dwt_cb_data_t* cb_data)
 {
-#if ENABLE_ARFE_INT
     if (cb_data->status & DWT_INT_ARFE_BIT_MASK)
     {
         uwb_port_stats.rx_error_arfe_count++;
         error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "RX Filtered: Address Mismatch (ARFE)");
     }
-    else
-#endif
-        if (cb_data->status & DWT_INT_RXOVRR_BIT_MASK)
+    else if (cb_data->status & DWT_INT_RXOVRR_BIT_MASK)
     {
         uwb_port_stats.rx_error_overrun_count++;
         error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX Error: Buffer Overrun (RXOVRR)");
