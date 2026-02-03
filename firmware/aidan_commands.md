@@ -27,7 +27,13 @@ uwb_node.set.address 0x0002
 twrmgr.add.target 0x0001
 twrmgr.req.start
 
+ota_config.send.position 0x0001 6.0 0.0 2.5
+
 twrmgr.req.stop
+
+
+
+beacon.req.ping 0x0002
 ```
 
 ---
