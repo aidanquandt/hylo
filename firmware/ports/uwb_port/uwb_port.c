@@ -252,7 +252,7 @@ STATIC void uwb_port_rx_error_callback(const dwt_cb_data_t* cb_data)
     {
         uwb_port_stats.rx_error_overrun_count++;
         error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX Error: Buffer Overrun (RXOVRR)");
-        dwt_forcetrxoff();
+        // dwt_forcetrxoff();
     }
     else if (cb_data->status & DWT_INT_RXFCE_BIT_MASK)
     {
@@ -477,6 +477,8 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev)
 
     dwt_txconfig_t txconfig = {.PGdly = 0x34, .power = 0xfdfdfdfdUL};
     dwt_configuretxrf(&txconfig);
+
+    dwt_setdblrxbuffmode(DBL_BUF_STATE_DIS, DBL_BUF_MODE_AUTO);
 
     if (dwt_rxenable(DWT_START_RX_IMMEDIATE) != DWT_SUCCESS)
     {

@@ -29,7 +29,7 @@ ota_config.send.position 0x0001 6.0 0.0 2.5
 twrmgr.req.stop
 
 
-
+beacon.req.ping 0x0001
 beacon.req.ping 0x0002
 beacon.req.ping 0x0003
 ```
