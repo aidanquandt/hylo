@@ -15,6 +15,20 @@
 #include "uart_manager.h"
 
 /*---------------------------------------------------------------------------
+ * Defines
+ *---------------------------------------------------------------------------*/
+#define ENABLE_TXFRS_INT 1U  // TX Done
+#define ENABLE_RXFCG_INT 1U  // RX Good
+#define ENABLE_RXFCE_INT 1U  // RX Error (CRC)
+#define ENABLE_RXPTO_INT 1U  // Preamble Timeout
+#define ENABLE_RXPHE_INT 1U  // PHY Header Error
+#define ENABLE_RXFSL_INT 1U  // Sync Loss
+#define ENABLE_RXOVRR_INT 1U // RX Overrun
+#define ENABLE_ARFE_INT 1U   // Address Filter
+#define ENABLE_RXFTO_INT 1U  // Frame Wait Timeout
+#define ENABLE_RXSTO_INT 1U  // SFD Timeout
+
+/*---------------------------------------------------------------------------
  * Typedefs
  *---------------------------------------------------------------------------*/
 struct uwb_dev_s
@@ -226,12 +240,15 @@ STATIC void uwb_port_rx_timeout_callback(const dwt_cb_data_t* cb_data)
 
 STATIC void uwb_port_rx_error_callback(const dwt_cb_data_t* cb_data)
 {
+#if ENABLE_ARFE_INT
     if (cb_data->status & DWT_INT_ARFE_BIT_MASK)
     {
         uwb_port_stats.rx_error_arfe_count++;
         error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "RX Filtered: Address Mismatch (ARFE)");
     }
-    else if (cb_data->status & DWT_INT_RXOVRR_BIT_MASK)
+    else
+#endif
+        if (cb_data->status & DWT_INT_RXOVRR_BIT_MASK)
     {
         uwb_port_stats.rx_error_overrun_count++;
         error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX Error: Buffer Overrun (RXOVRR)");
@@ -548,17 +565,39 @@ void uwb_port_enable_rx_interrupt(void)
     dwt_writesysstatuslo(DWT_INT_ALL_LO);
     dwt_writesysstatushi(DWT_INT_ALL_HI);
 
-    dwt_setinterrupt(DWT_INT_TXFRS_BIT_MASK |      // TX Done
-                         DWT_INT_RXFCG_BIT_MASK |  // RX Good
-                         DWT_INT_RXFCE_BIT_MASK |  // RX Error (CRC)
-                         DWT_INT_RXPTO_BIT_MASK |  // Preamble Timeout
-                         DWT_INT_RXPHE_BIT_MASK |  // PHY Header Error
-                         DWT_INT_RXFSL_BIT_MASK |  // Sync Loss
-                         DWT_INT_RXOVRR_BIT_MASK | // RX Overrun
-                         DWT_INT_ARFE_BIT_MASK |   // Address Filter
-                         DWT_INT_RXFTO_BIT_MASK |  // Frame Wait Timeout
-                         DWT_INT_RXSTO_BIT_MASK,   // SFD Timeout
-                     0, DWT_ENABLE_INT_ONLY);
+    dwt_setinterrupt(
+#if ENABLE_TXFRS_INT
+        DWT_INT_TXFRS_BIT_MASK | // TX Done
+#endif
+#if ENABLE_RXFCG_INT
+            DWT_INT_RXFCG_BIT_MASK | // RX Good
+#endif
+#if ENABLE_RXFCE_INT
+            DWT_INT_RXFCE_BIT_MASK | // RX Error (CRC)
+#endif
+#if ENABLE_RXPTO_INT
+            DWT_INT_RXPTO_BIT_MASK | // Preamble Timeout
+#endif
+#if ENABLE_RXPHE_INT
+            DWT_INT_RXPHE_BIT_MASK | // PHY Header Error
+#endif
+#if ENABLE_RXFSL_INT
+            DWT_INT_RXFSL_BIT_MASK | // Sync Loss
+#endif
+#if ENABLE_RXOVRR_INT
+            DWT_INT_RXOVRR_BIT_MASK | // RX Overrun
+#endif
+#if ENABLE_ARFE_INT
+            DWT_INT_ARFE_BIT_MASK | // Address Filter
+#endif
+#if ENABLE_RXFTO_INT
+            DWT_INT_RXFTO_BIT_MASK | // Frame Wait Timeout
+#endif
+#if ENABLE_RXSTO_INT
+            DWT_INT_RXSTO_BIT_MASK | // SFD Timeout
+#endif
+            0, // Terminator
+        0, DWT_ENABLE_INT_ONLY);
 }
 
 void uwb_port_handle_irq(void)

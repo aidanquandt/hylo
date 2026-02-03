@@ -31,6 +31,7 @@ twrmgr.req.stop
 
 
 beacon.req.ping 0x0002
+beacon.req.ping 0x0003
 ```
 
 ---
