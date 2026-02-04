@@ -6,8 +6,6 @@
  * @details Defines common message header and protocol types for all
  *          application-layer messages over UWB radio
  *---------------------------------------------------------------------------*/
-
-#include "common.h"
 #include <stdbool.h>
 #include <stdint.h>
 

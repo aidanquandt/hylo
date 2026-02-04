@@ -13,7 +13,7 @@
 #include "uwb.h"
 #include "uwb_node.h"
 #include "uwb_protocol_messages.h"
-#include <string.h>
+#include "common.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -430,7 +430,7 @@ STATIC int8_t ota_config_allocate_slot(uint16_t target_addr, uint16_t sequence)
 
 STATIC void ota_config_free_slot(int8_t slot)
 {
-    if (slot < 0 || slot >= MAX_PENDING_REQUESTS)
+    if (slot < 0 || slot >= (int8_t)MAX_PENDING_REQUESTS)
     {
         return;
     }

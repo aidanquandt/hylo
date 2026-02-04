@@ -9,13 +9,13 @@
 #include "../twr_engine/twr_algorithm.h"
 #include "../twr_engine/twr_state_machine.h"
 #include "FreeRTOS.h"
-#include "common/feature_config.h"
+#include "feature_config.h"
 #include "error_handler.h"
 #include "stopwatch.h"
 #include "task.h"
 #include "uwb.h"
 #include "uwb_protocol_messages.h"
-#include <string.h>
+#include "common.h"
 
 /*---------------------------------------------------------------------------
  * Defines

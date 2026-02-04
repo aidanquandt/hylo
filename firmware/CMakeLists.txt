@@ -1,8 +1,27 @@
 cmake_minimum_required(VERSION 3.22)
-project(firmware C ASM)
+project(firmware
+    VERSION 1.0.0
+    DESCRIPTION "Hylo UWB Firmware"
+    LANGUAGES C ASM
+)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+# Create INTERFACE library for global common includes
+# This is better than include_directories() as it's explicit and trackable
+add_library(common INTERFACE)
+target_include_directories(common INTERFACE ${CMAKE_SOURCE_DIR}/common)
+
+# Compiler warnings and optimizations
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(
+        -Wall
+        -Wextra
+        -Werror=implicit-function-declaration
+        -Wno-unused-parameter
+    )
+endif()
 
 set(DWT_DW3000 ON  CACHE BOOL "Build DW3000 driver")
 set(DWT_DW3720 OFF CACHE BOOL "Build DW3720 driver")

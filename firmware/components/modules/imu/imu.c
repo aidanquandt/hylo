@@ -2,12 +2,12 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "imu.h"
+#include "common.h"
 #include "error_handler.h"
 #include "imu_port.h"
 #include "module.h"
 #include "platform_gpio.h"
 #include "state_machine.h"
-#include <string.h>
 
 /*---------------------------------------------------------------------------
  * Defines

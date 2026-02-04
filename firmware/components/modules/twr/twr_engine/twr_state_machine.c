@@ -4,7 +4,7 @@
 #include "twr_state_machine.h"
 #include "error_handler.h"
 #include "uwb_protocol_messages.h"
-#include <string.h>
+#include "common.h"
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes

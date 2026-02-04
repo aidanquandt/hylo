@@ -5,8 +5,6 @@
  *---------------------------------------------------------------------------*/
 #include "common.h"
 #include "twr_state_machine.h"
-#include <stdbool.h>
-#include <stdint.h>
 
 /*---------------------------------------------------------------------------
  * Public Function Prototypes

@@ -8,8 +8,6 @@
 
 #include "../twr_engine/twr_state_machine.h"
 #include "common.h"
-#include <stdbool.h>
-#include <stdint.h>
 
 /*---------------------------------------------------------------------------
  * Typedefs

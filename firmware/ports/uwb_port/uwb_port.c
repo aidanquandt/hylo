@@ -5,14 +5,12 @@
 #include "FreeRTOS.h"
 #include "deca_device_api.h"
 #include "deca_interface.h"
-#include "error_handler.h"
 #include "platform_gpio.h"
 #include "platform_os.h"
 #include "platform_spi.h"
 #include "platform_timer.h"
 #include "stopwatch.h"
 #include "task.h"
-#include "uart_manager.h"
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -24,22 +22,7 @@ struct uwb_dev_s
     uint64_t last_rx_ts;
 };
 
-typedef struct
-{
-    uint32_t rx_ok_count;
-    uint32_t rx_timeout_count;
-    uint32_t rx_error_arfe_count;
-    uint32_t rx_error_overrun_count;
-    uint32_t rx_error_crc_count;
-    uint32_t rx_error_preamble_timeout_count;
-    uint32_t rx_error_phy_header_count;
-    uint32_t rx_error_sync_loss_count;
-    uint32_t rx_error_frame_timeout_count;
-    uint32_t rx_error_sfd_timeout_count;
-    uint32_t rx_error_other_count;
-    uint32_t tx_done_count;
-    uint32_t send_message_count;
-} uwb_port_statistics_t;
+
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -220,7 +203,6 @@ STATIC void uwb_port_rx_timeout_callback(const dwt_cb_data_t* cb_data)
 {
     uwb_port_stats.rx_timeout_count++;
     (void)cb_data;
-    error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX timeout");
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
 }
 
@@ -229,50 +211,39 @@ STATIC void uwb_port_rx_error_callback(const dwt_cb_data_t* cb_data)
     if (cb_data->status & DWT_INT_ARFE_BIT_MASK)
     {
         uwb_port_stats.rx_error_arfe_count++;
-        error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "RX Filtered: Address Mismatch (ARFE)");
     }
     else if (cb_data->status & DWT_INT_RXOVRR_BIT_MASK)
     {
         uwb_port_stats.rx_error_overrun_count++;
-        error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX Error: Buffer Overrun (RXOVRR)");
         dwt_forcetrxoff();
     }
     else if (cb_data->status & DWT_INT_RXFCE_BIT_MASK)
     {
         uwb_port_stats.rx_error_crc_count++;
-        error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX Error: CRC Error (RXFCE)");
     }
     else if (cb_data->status & DWT_INT_RXPTO_BIT_MASK)
     {
         uwb_port_stats.rx_error_preamble_timeout_count++;
-        error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "RX Error: Preamble Timeout (RXPTO)");
     }
     else if (cb_data->status & DWT_INT_RXPHE_BIT_MASK)
     {
         uwb_port_stats.rx_error_phy_header_count++;
-        error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX Error: PHY Header Error (RXPHE)");
     }
     else if (cb_data->status & DWT_INT_RXFSL_BIT_MASK)
     {
         uwb_port_stats.rx_error_sync_loss_count++;
-        error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port", "RX Error: Sync Loss (RXFSL)");
     }
     else if (cb_data->status & DWT_INT_RXFTO_BIT_MASK)
     {
         uwb_port_stats.rx_error_frame_timeout_count++;
-        error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "RX Error: Frame Wait Timeout (RXFTO)");
     }
     else if (cb_data->status & DWT_INT_RXSTO_BIT_MASK)
     {
         uwb_port_stats.rx_error_sfd_timeout_count++;
-        error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "RX Error: SFD Timeout (RXSTO)");
     }
     else
     {
         uwb_port_stats.rx_error_other_count++;
-        error_handler_log(ERROR_SEVERITY_WARNING, "uwb_port",
-                          "RX Error: Unknown (Status Lo: 0x%08lX, Hi: 0x%08lX)",
-                          (unsigned long)cb_data->status, (unsigned long)cb_data->status_hi);
     }
 
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
@@ -566,6 +537,12 @@ void uwb_port_handle_irq(void)
     dwt_isr();
 }
 
+// Override the weak callback from platform layer
+void platform_gpio_uwb_irq_callback(void)
+{
+    uwb_port_handle_irq();
+}
+
 void uwb_port_register_isr_callbacks(uwb_dev_t* dev)
 {
     current_device = dev;
@@ -596,45 +573,15 @@ void uwb_port_set_tx_done_callback(uwb_port_tx_done_callback_t callback)
     tx_done_callback = callback;
 }
 
-void uwb_port_print_statistics(void)
+uwb_port_statistics_t uwb_port_get_statistics(void)
 {
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_ok_count: %lu",
-                      (unsigned long)uwb_port_stats.rx_ok_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_timeout_count: %lu",
-                      (unsigned long)uwb_port_stats.rx_timeout_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_arfe_count: %lu",
-                      (unsigned long)uwb_port_stats.rx_error_arfe_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_overrun_count: %lu",
-                      (unsigned long)uwb_port_stats.rx_error_overrun_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_crc_count: %lu",
-                      (unsigned long)uwb_port_stats.rx_error_crc_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_preamble_timeout_count: %lu",
-                      (unsigned long)uwb_port_stats.rx_error_preamble_timeout_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_phy_header_count: %lu",
-                      (unsigned long)uwb_port_stats.rx_error_phy_header_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_sync_loss_count: %lu",
-                      (unsigned long)uwb_port_stats.rx_error_sync_loss_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_frame_timeout_count: %lu",
-                      (unsigned long)uwb_port_stats.rx_error_frame_timeout_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_sfd_timeout_count: %lu",
-                      (unsigned long)uwb_port_stats.rx_error_sfd_timeout_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "rx_error_other_count: %lu",
-                      (unsigned long)uwb_port_stats.rx_error_other_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "tx_done_count: %lu",
-                      (unsigned long)uwb_port_stats.tx_done_count);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "send_message_count: %lu",
-                      (unsigned long)uwb_port_stats.send_message_count);
-
-    uint32_t irq_status = uwb_port_read_irq_status();
-    uint32_t status_lo  = uwb_port_read_status_register_low();
-    uint32_t status_hi  = uwb_port_read_status_register_high();
-
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "irq_status: 0x%08lX",
-                      (unsigned long)irq_status);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "status_lo: 0x%08lX",
-                      (unsigned long)status_lo);
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_port", "status_hi: 0x%08lX",
-                      (unsigned long)status_hi);
+    uwb_port_statistics_t stats = uwb_port_stats;
+    
+    stats.irq_status = uwb_port_read_irq_status();
+    stats.status_lo  = uwb_port_read_status_register_low();
+    stats.status_hi  = uwb_port_read_status_register_high();
+    
+    return stats;
 }
 
 uint32_t uwb_port_read_irq_status(void)

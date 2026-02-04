@@ -2,6 +2,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "twr_manager.h"
+#include "common.h"
 #include "../twr/twr_engine/twr_types.h"          // For twr_result_t
 #include "../twr/twr_roles/initiator/initiator.h" // Direct initiator interface
 #include "backoff.h"
@@ -11,8 +12,6 @@
 #include "sensor_fusion.h"
 #include "state_machine.h"
 #include "twr_scheduler/twr_scheduler.h"
-#include <stdbool.h>
-#include <stdint.h>
 
 /*---------------------------------------------------------------------------
  * Defines

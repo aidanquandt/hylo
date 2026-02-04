@@ -3,8 +3,7 @@
  *---------------------------------------------------------------------------*/
 #include "twr_algorithm.h"
 #include "uwb_port.h"
-#include <math.h>
-#include <string.h>
+#include "common.h"
 
 /*---------------------------------------------------------------------------
  * Private Definitions
@@ -51,7 +50,7 @@ twr_status_e twr_calculate_ss_twr(uint64_t poll_tx_ts, uint64_t poll_rx_ts, uint
     // Calculate time of flight: ToF = (round_trip - reply_time) / 2
     int64_t tof_dtu = (round_trip - reply_time) / 2;
 
-    if (tof_dtu < TWR_MIN_TIMESTAMP_DIFF_DTU)
+    if (tof_dtu < (int64_t)TWR_MIN_TIMESTAMP_DIFF_DTU)
     {
         // Too small, likely measurement error
         return TWR_ERROR_CALCULATION_FAILED;
@@ -124,7 +123,7 @@ twr_status_e twr_calculate_ds_twr(uint64_t poll_tx_ts, uint64_t poll_rx_ts, uint
     double numerator   = Da_d * Db_d - Ra_d * Rb_d;
     double denominator = Ra_d + Rb_d + Da_d + Db_d;
 
-    if (denominator < TWR_MIN_TIMESTAMP_DIFF_DTU)
+    if (denominator < (double)TWR_MIN_TIMESTAMP_DIFF_DTU)
     {
         return TWR_ERROR_CALCULATION_FAILED;
     }
