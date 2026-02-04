@@ -22,7 +22,7 @@
  *---------------------------------------------------------------------------*/
 #define UWB_EXPECTED_DEV_ID (0xDECA0302UL)
 #define MAX_MESSAGE_LENGTH (MAC_MAX_FRAME_SIZE)
-#define DEFAULT_NODE_ADDRESS (0x0000U)
+#define DEFAULT_NODE_ADDRESS (0x0001U) // Changed from 0x0000 (reserved/coordinator address)
 #define DEFAULT_PAN_ID MAC_DEFAULT_PAN_ID
 #define MAX_PROTOCOL_HANDLERS (8U)
 #define UWB_RX_QUEUE_LENGTH (10U)

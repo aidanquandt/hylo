@@ -1,36 +1,54 @@
 # Aidan Commands Reference
 
-## Table of Contents
-- [Quick Start: Anchor and Tag](#quick-start-anchor-and-tag)
-- [TWR (Two-Way Ranging)](#twr-two-way-ranging)
-- [TWR Auto-Ranging with Multi-Target Scheduler](#twr-auto-ranging-with-multi-target-scheduler)
-- [Quick Setup](#quick-setup)
-- [Remote Configuration (OTA Programming)](#remote-configuration-ota-programming)
-- [UWB Port Stats](#uwb-port-stats)
-- [Beacon Send](#beacon-send)
-- [Stopwatch](#stopwatch)
-- [Datalogger](#datalogger)
+## Quick Start: Setup 4 Anchors
 
----
+**Run these commands from the tag node (mobile unit).** Power on anchors one at a time.
 
-## Quick Start: Anchor and Tag
-
-Set up a basic anchor and tag for ranging. Use these commands frequently for quick testing:
-
+### Step 1: Configure Tag Node
 ```bash
 uwb_node.set.type tag
 uwb_node.set.address 0x0002
-ota_config.send.address 0x0000 0x0001
-twrmgr.add.target 0x0001
+```
+
+### Step 2: Configure Each Anchor (Power On One at a Time)
+```bash
+# Power on first anchor, then run:
+ota_config.send.address 0x0001 0x0003
+ota_config.send.type 0x0003 1
+ota_config.send.position 0x0003 0.0 0.0 2.5    # Bottom-left
+
+# Power on second anchor, then run:
+ota_config.send.address 0x0001 0x0004
+ota_config.send.type 0x0004 1
+ota_config.send.position 0x0004 6.0 0.0 2.5    # Bottom-right
+
+# Power on third anchor, then run:
+ota_config.send.address 0x0001 0x0005
+ota_config.send.type 0x0005 1
+ota_config.send.position 0x0005 6.0 4.0 2.5    # Top-right
+
+# Power on fourth anchor, then run:
+ota_config.send.address 0x0001 0x0006
+ota_config.send.type 0x0006 1
+ota_config.send.position 0x0006 0.0 4.0 2.5    # Top-left
+```
+
+### Step 3: Start Ranging
+```bash
+twrmgr.add.target 0x0003
+twrmgr.add.target 0x0004
+twrmgr.add.target 0x0005
+twrmgr.add.target 0x0006
 twrmgr.req.start
+```
 
-ota_config.send.position 0x0001 6.0 0.0 2.5
+### Optional: Test LED Control
+```bash
+# Turn LED ON on node 0x0003
+ota_config.set.gpio 0x0003 0 1
 
-twrmgr.req.stop
-
-
-
-beacon.req.ping 0x0002
+# Turn LED OFF on node 0x0003
+ota_config.set.gpio 0x0003 0 0
 ```
 
 ---
@@ -127,17 +145,6 @@ twrmgr.get.status
 
 ---
 
-## Quick Setup
-
-UWB module is the single source of truth for addressing. Node provides convenient API:
-
-```bash
-uwb_node.set.address 0x0001
-twrmgr.req.start
-```
-
----
-
 ## Remote Configuration (OTA Programming)
 
 Program node addresses, positions, and types over UWB without needing UART access to each device.
@@ -160,8 +167,6 @@ ota_config.send.address 0x0001 0x0002
 # Change address and PAN ID
 ota_config.send.address 0x0001 0x0002 0xABCD
 ```
-
-**⚠️ Note:** After address change, node only responds to NEW address!
 
 ### Program Remote Node Position
 
@@ -206,9 +211,9 @@ ota_config.set.gpio 0x0002 0 0
 - Signal node status or mode
 - Debug/testing aid
 
-### Complete Example: Setup 4 Anchors
+### Complete Example: Setup 4 Anchors (Alternative Layout)
 
-Program anchors at room corners without UART access:
+Program anchors in a larger room layout (10m x 8m):
 ```bash
 # Set auth token on master node
 ota_config.set.token 0xDECABEEF
@@ -235,7 +240,6 @@ ota_config.send.position 0x0013 0.0 8.0 2.5
 ```
 
 ### View Statistics
-
 Check configuration operations:
 ```bash
 ota_config.get.stats
@@ -293,7 +297,6 @@ stopwatch.get.all
 ---
 
 ## Datalogger
-
 ```bash
 datalogger.get.stats
 ```

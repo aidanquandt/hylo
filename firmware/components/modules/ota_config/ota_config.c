@@ -18,8 +18,8 @@
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define OTA_CONFIG_MAX_RETRIES (5U)           // Max retry attempts
-#define OTA_CONFIG_RESPONSE_TIMEOUT_MS (200U) // Wait 200ms for response
+#define OTA_CONFIG_MAX_RETRIES (2U)           // Max retry attempts
+#define OTA_CONFIG_RESPONSE_TIMEOUT_MS (100U) // Wait 100ms for response
 #define MAX_PENDING_REQUESTS (4U)             // Concurrent request slots
 #define PAN_ID_KEEP_CURRENT (0xFFFFU)         // Keep existing PAN ID
 #define INVALID_ADDRESS_MIN (0x0000U)         // Reserved address
@@ -189,11 +189,12 @@ STATIC void ota_config_handle_set_address(const uint8_t* data, uint16_t length, 
     }
 
     // Apply new address
+    uint16_t old_address = uwb_get_address(); // Save current address before change
     uint16_t pan_id = (msg->new_pan_id == PAN_ID_KEEP_CURRENT) ? uwb_get_pan_id() : msg->new_pan_id;
     uwb_set_address(msg->new_address, pan_id);
 
     error_handler_log(ERROR_SEVERITY_INFO, "ota_config",
-                      "Address changed: 0x%04X -> 0x%04X, PAN: 0x%04X", src_addr, msg->new_address,
+                      "Address changed: 0x%04X -> 0x%04X, PAN: 0x%04X", old_address, msg->new_address,
                       pan_id);
 
     ota_config_send_response(src_addr, OTA_CONFIG_STATUS_SUCCESS, msg->header.sequence);
@@ -438,6 +439,7 @@ STATIC void ota_config_free_slot(int8_t slot)
     if (xSemaphoreTake(pending_requests_mutex, portMAX_DELAY) == pdTRUE)
     {
         pending_requests[slot].in_use = false;
+        pending_requests[slot].new_addr = 0; // Clear stale new_addr to prevent incorrect matching
         xSemaphoreGive(pending_requests_mutex);
     }
 }
