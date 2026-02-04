@@ -66,6 +66,29 @@ typedef void (*uwb_port_rx_callback_t)(const uint8_t* data, uint16_t length, uin
 typedef void (*uwb_port_tx_done_callback_t)(uint64_t tx_timestamp);
 
 /*---------------------------------------------------------------------------
+ * Statistics Structure
+ *---------------------------------------------------------------------------*/
+typedef struct
+{
+    uint32_t rx_ok_count;
+    uint32_t rx_timeout_count;
+    uint32_t rx_error_arfe_count;
+    uint32_t rx_error_overrun_count;
+    uint32_t rx_error_crc_count;
+    uint32_t rx_error_preamble_timeout_count;
+    uint32_t rx_error_phy_header_count;
+    uint32_t rx_error_sync_loss_count;
+    uint32_t rx_error_frame_timeout_count;
+    uint32_t rx_error_sfd_timeout_count;
+    uint32_t rx_error_other_count;
+    uint32_t tx_done_count;
+    uint32_t send_message_count;
+    uint32_t irq_status;
+    uint32_t status_lo;
+    uint32_t status_hi;
+} uwb_port_statistics_t;
+
+/*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
 uwb_dev_t* uwb_port_init(void);
@@ -91,7 +114,7 @@ uint32_t uwb_port_read_status_register_high(void);
 void uwb_port_register_isr_callbacks(uwb_dev_t* dev);
 void uwb_port_set_rx_callback(uwb_port_rx_callback_t callback);
 void uwb_port_set_tx_done_callback(uwb_port_tx_done_callback_t callback);
-void uwb_port_print_statistics(void);
+uwb_port_statistics_t uwb_port_get_statistics(void);
 
 /*---------------------------------------------------------------------------
  * Platform Compatibility Functions (required by Qorvo DW3000 driver)

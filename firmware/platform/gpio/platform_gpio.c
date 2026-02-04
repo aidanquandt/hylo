@@ -5,7 +5,14 @@
 #include "main.h"
 #include "stm32h7xx_hal.h"
 #include "stm32h7xx_nucleo.h"
-#include "uwb_port.h"
+
+/*---------------------------------------------------------------------------
+ * External weak callback - can be overridden by higher layers
+ *---------------------------------------------------------------------------*/
+__attribute__((weak)) void platform_gpio_uwb_irq_callback(void)
+{
+    // Default empty implementation - override in uwb_port or app layer
+}
 
 /*---------------------------------------------------------------------------
  * Public function implementations
@@ -50,6 +57,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == UWB_IRQ_Pin)
     {
-        uwb_port_handle_irq();
+        platform_gpio_uwb_irq_callback();
     }
 }

@@ -7,7 +7,7 @@
 #include "error_handler.h"
 #include "module.h"
 #include "uwb.h"
-#include <string.h>
+#include "common.h"
 
 /*---------------------------------------------------------------------------
  * Private Variables

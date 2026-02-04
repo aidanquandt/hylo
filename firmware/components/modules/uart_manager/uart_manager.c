@@ -13,8 +13,7 @@
 #include "task.h"
 #include "uart_cmd_router.h"
 #include "uwb.h"
-#include <stdio.h>
-#include <string.h>
+#include "common.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -97,7 +96,7 @@ STATIC void uart_manager_default_cmd_handler(const char* cmd, uint16_t length);
  *---------------------------------------------------------------------------*/
 STATIC bool is_in_isr_context(void)
 {
-    return platform_os_is_in_isr();
+    return (xPortIsInsideInterrupt() == pdTRUE);
 }
 
 STATIC void uart_tx_task(void* argument)
@@ -537,9 +536,9 @@ bool uart_manager_print(const char* format, ...)
     }
 
     // Truncate if buffer was too small
-    if (length >= UART_PRINT_BUFFER_SIZE)
+    if (length >= (int)UART_PRINT_BUFFER_SIZE)
     {
-        length = UART_PRINT_BUFFER_SIZE - 1;
+        length = (int)UART_PRINT_BUFFER_SIZE - 1;
     }
 
     // Queue for asynchronous transmission

@@ -6,9 +6,7 @@
 #include "backoff.h"
 #include "error_handler.h"
 #include "task.h"
-#include <stdbool.h>
-#include <stdint.h>
-#include <string.h>
+#include "common.h"
 
 /*---------------------------------------------------------------------------
  * Defines

@@ -5,22 +5,36 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "type": "stlinkgdbtarget",
+            "type": "cortex-debug",
             "request": "launch",
-            "name": "STM32Cube: STM32 Launch ST-Link GDB Server",
-            "origin": "snippet",
+            "name": "Debug (OpenOCD)",
             "cwd": "${workspaceFolder}",
-            "preBuild": "${command:st-stm32-ide-debug-launch.build}",
-            "stopOnEntry": false,
-            "liveWatch": {
-                "enabled": true,
-                "samplesPerSecond": "4"
-            },
-            "imagesAndSymbols": [
-                {
-                    "imageFileName": "${command:st-stm32-ide-debug-launch.get-projects-binary-from-context1}"
-                }
-            ]
+            "executable": "${workspaceFolder}/build/arm-gcc-debug/cubemx/cubemx.elf",
+            "servertype": "openocd",
+            "device": "STM32H723XG",
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32h7x.cfg"
+            ],
+            "runToEntryPoint": "main",
+            "svdFile": "${workspaceFolder}/STM32H723.svd",
+            "preLaunchTask": "build",
+            "gdbPath": "gdb-multiarch"
+        },
+        {
+            "type": "cortex-debug",
+            "request": "attach",
+            "name": "Attach (OpenOCD)",
+            "cwd": "${workspaceFolder}",
+            "executable": "${workspaceFolder}/build/arm-gcc-debug/cubemx/cubemx.elf",
+            "servertype": "openocd",
+            "device": "STM32H723XG",
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32h7x.cfg"
+            ],
+            "svdFile": "${workspaceFolder}/STM32H723.svd",
+            "gdbPath": "gdb-multiarch"
         }
     ]
 }

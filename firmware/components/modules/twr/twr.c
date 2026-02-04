@@ -2,7 +2,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "twr.h"
-#include "common/feature_config.h"
+#include "feature_config.h"
 #include "error_handler.h"
 #include "module.h"
 #include "twr_engine/twr_state_machine.h" // For twr_process
@@ -11,8 +11,7 @@
 #include "uwb.h"
 #include "uwb_node.h"
 #include "uwb_protocol_messages.h"
-#include <string.h>
-
+#include "common.h"
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/

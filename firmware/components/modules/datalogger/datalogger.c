@@ -10,7 +10,6 @@
 #include "module.h"
 #include "task.h"
 #include "uart_manager.h"
-#include <string.h>
 
 /*---------------------------------------------------------------------------
  * Defines

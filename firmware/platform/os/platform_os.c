@@ -22,12 +22,6 @@ void platform_os_init(void)
     DWT->CYCCNT = 0;
 }
 
-bool platform_os_is_in_isr(void)
-{
-    // Use FreeRTOS native API - more portable and efficient than SCB register access
-    return (xPortIsInsideInterrupt() == pdTRUE);
-}
-
 void platform_os_delay_us_blocking(uint32_t delay_us)
 {
     if (delay_us == 0)
@@ -36,7 +30,7 @@ void platform_os_delay_us_blocking(uint32_t delay_us)
     }
 
     // Check if we're in an ISR context
-    bool from_isr = platform_os_is_in_isr();
+    bool from_isr = (xPortIsInsideInterrupt() == pdTRUE);
 
     // If in ISR or delay is very short, just busy-wait without scheduler suspension
     if (from_isr || delay_us <= 100)

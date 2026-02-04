@@ -2,8 +2,9 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "error_handler.h"
+#include "common.h"
 #include "FreeRTOS.h"
-#include "common/feature_config.h"
+#include "feature_config.h"
 #include "feature_config.h"
 #include "module.h"
 #include "platform_gpio.h"
@@ -11,9 +12,6 @@
 #include "semphr.h"
 #include "task.h"
 #include "uart_manager.h"
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -158,7 +156,7 @@ void error_handler_log(error_severity_e severity, const char* module, const char
     }
 
     // Check if we're in an ISR context
-    bool from_isr = platform_os_is_in_isr();
+    bool from_isr = (xPortIsInsideInterrupt() == pdTRUE);
 
     // If in ISR, skip mutex and history to avoid FreeRTOS API violations
     if (from_isr)

@@ -2,48 +2,35 @@
 
 add_library(ports INTERFACE)
 
-function(add_port NAME)
-    set(ROOT "${CMAKE_CURRENT_SOURCE_DIR}/${NAME}")
-    if(NOT EXISTS "${ROOT}")
-        return()
-    endif()
+# Ports expose their own headers
+target_include_directories(ports INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/imu_port
+    ${CMAKE_CURRENT_SOURCE_DIR}/uwb_port
+)
 
-    # Add include directories
-    set(INCS "${ROOT}")
-    file(GLOB_RECURSE _dirs LIST_DIRECTORIES TRUE "${ROOT}/*")
-    foreach(d ${_dirs})
-        if(IS_DIRECTORY "${d}")
-            list(APPEND INCS "${d}")
-        endif()
-    endforeach()
-    list(REMOVE_DUPLICATES INCS)
+# IMU Port - links platform, vendor driver, and common
+add_library(imu_port STATIC
+    imu_port/imu_port.c
+)
+target_link_libraries(imu_port PUBLIC 
+    platform      # Platform HAL
+    bmi323_api    # BMI323 vendor driver
+    common        # Global types/macros
+)
+set_target_properties(imu_port PROPERTIES FOLDER "ports")
+target_link_libraries(ports INTERFACE imu_port)
 
-    target_include_directories(ports INTERFACE ${INCS})
-
-    # Add source files
-    file(GLOB_RECURSE SRCS CONFIGURE_DEPENDS
-        "${ROOT}/*.c" "${ROOT}/*.cpp" "${ROOT}/*.cxx"
-    )
-    if(SRCS)
-        add_library(${NAME}_port STATIC ${SRCS})
-        # Link to platform and appropriate vendor driver interface
-        if(NAME STREQUAL "uwb_port")
-            target_link_libraries(${NAME}_port PUBLIC platform uwb_driver_itf)
-        elseif(NAME STREQUAL "imu_port")
-            target_link_libraries(${NAME}_port PUBLIC platform bmi323_api)
-        else()
-            target_link_libraries(${NAME}_port PUBLIC platform)
-        endif()
-        set_target_properties(${NAME}_port PROPERTIES FOLDER "ports")
-        target_link_libraries(ports INTERFACE ${NAME}_port)
-    endif()
-endfunction()
-
-# Add each port
-file(GLOB children RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "*")
-foreach(child ${children})
-    if(IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/${child}")
-        add_port(${child})
-    endif()
-endforeach()
+# UWB Port - links platform, vendor driver, and common
+add_library(uwb_port STATIC
+    uwb_port/uwb_port.c
+)
+target_link_libraries(uwb_port PUBLIC 
+    platform       # Platform HAL
+    uwb_driver_itf # UWB vendor driver interface
+    common         # Global types/macros
+    lib            # For stopwatch utility
+)
+set_target_properties(uwb_port PROPERTIES FOLDER "ports")
+target_link_libraries(ports INTERFACE uwb_port)
 

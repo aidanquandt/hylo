@@ -8,7 +8,7 @@
 #include "module.h"
 #include "queue.h"
 #include "sensor_fusion_types.h"
-#include <string.h>
+#include "common.h"
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes

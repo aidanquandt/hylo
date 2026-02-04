@@ -13,7 +13,7 @@
 #include "uwb.h"
 #include "uwb_node.h"
 #include "uwb_protocol_messages.h"
-#include <string.h>
+#include "common.h"
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes

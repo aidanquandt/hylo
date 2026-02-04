@@ -23,9 +23,7 @@
 #include "uwb.h"
 #include "uwb_node/uwb_node.h"
 #include "uwb_protocol_messages.h"
-#include <ctype.h>
-#include <stdlib.h>
-#include <string.h>
+#include "common.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -461,7 +459,25 @@ STATIC void uart_cmd_router_handle_uwb(const char* action, const char* target, c
             uart_manager_print("Queue: TX overflows=%u, RX overflows=%u\r\n",
                                (unsigned int)uwb_get_tx_queue_overflows(),
                                (unsigned int)uwb_get_rx_queue_overflows());
-            uwb_port_print_statistics();
+            
+            uwb_port_statistics_t port_stats = uwb_port_get_statistics();
+            uart_manager_print("Port Stats:\r\n");
+            uart_manager_print("  rx_ok_count: %lu\r\n", (unsigned long)port_stats.rx_ok_count);
+            uart_manager_print("  rx_timeout_count: %lu\r\n", (unsigned long)port_stats.rx_timeout_count);
+            uart_manager_print("  rx_error_arfe_count: %lu\r\n", (unsigned long)port_stats.rx_error_arfe_count);
+            uart_manager_print("  rx_error_overrun_count: %lu\r\n", (unsigned long)port_stats.rx_error_overrun_count);
+            uart_manager_print("  rx_error_crc_count: %lu\r\n", (unsigned long)port_stats.rx_error_crc_count);
+            uart_manager_print("  rx_error_preamble_timeout_count: %lu\r\n", (unsigned long)port_stats.rx_error_preamble_timeout_count);
+            uart_manager_print("  rx_error_phy_header_count: %lu\r\n", (unsigned long)port_stats.rx_error_phy_header_count);
+            uart_manager_print("  rx_error_sync_loss_count: %lu\r\n", (unsigned long)port_stats.rx_error_sync_loss_count);
+            uart_manager_print("  rx_error_frame_timeout_count: %lu\r\n", (unsigned long)port_stats.rx_error_frame_timeout_count);
+            uart_manager_print("  rx_error_sfd_timeout_count: %lu\r\n", (unsigned long)port_stats.rx_error_sfd_timeout_count);
+            uart_manager_print("  rx_error_other_count: %lu\r\n", (unsigned long)port_stats.rx_error_other_count);
+            uart_manager_print("  tx_done_count: %lu\r\n", (unsigned long)port_stats.tx_done_count);
+            uart_manager_print("  send_message_count: %lu\r\n", (unsigned long)port_stats.send_message_count);
+            uart_manager_print("  irq_status: 0x%08lX\r\n", (unsigned long)port_stats.irq_status);
+            uart_manager_print("  status_lo: 0x%08lX\r\n", (unsigned long)port_stats.status_lo);
+            uart_manager_print("  status_hi: 0x%08lX\r\n", (unsigned long)port_stats.status_hi);
         }
         else
         {
