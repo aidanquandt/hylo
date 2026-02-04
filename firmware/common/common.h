@@ -63,10 +63,6 @@ typedef struct
     float z;
 } vec3_t;
 
-// todo - add tcm integration
-// #define TCM_FUNCTION __attribute__((section(".itcm")))
-// #define TCM_VARIABLE __attribute__((section(".dtcm")))
-
 /*---------------------------------------------------------------------------
  * Typedefs
  *---------------------------------------------------------------------------*/

@@ -34,15 +34,19 @@ target_include_directories(components_inc INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/modules/watchdog
 )
 
+# Helper function to add component modules with consistent structure
+function(add_component_module MODULE_NAME SOURCES)
+    add_library(${MODULE_NAME} STATIC ${SOURCES})
+    target_link_libraries(${MODULE_NAME} PUBLIC components_inc)
+    set_target_properties(${MODULE_NAME} PROPERTIES FOLDER "components")
+    target_link_libraries(components INTERFACE ${MODULE_NAME})
+endfunction()
+
 # App library - explicit source listing (update when adding files)
 set(APP_SOURCES
     app/app.c
 )
-
-add_library(app STATIC ${APP_SOURCES})
-target_link_libraries(app PUBLIC components_inc)
-set_target_properties(app PROPERTIES FOLDER "components")
-target_link_libraries(components INTERFACE app)
+add_component_module(app "${APP_SOURCES}")
 
 # Modules library - explicit source listing (update when adding files)
 set(MODULE_SOURCES
@@ -65,8 +69,4 @@ set(MODULE_SOURCES
     modules/uwb_node/uwb_node.c
     modules/watchdog/watchdog.c
 )
-
-add_library(modules STATIC ${MODULE_SOURCES})
-target_link_libraries(modules PUBLIC components_inc)
-set_target_properties(modules PROPERTIES FOLDER "components")
-target_link_libraries(components INTERFACE modules)
+add_component_module(modules "${MODULE_SOURCES}")
