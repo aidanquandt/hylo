@@ -2,6 +2,12 @@ CompileFlags:
   Add:
     - '-ferror-limit=0'
     - '-Wno-implicit-int'
+    # ARM GCC system include paths
+    - '-I/Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/arm-none-eabi/include'
+    - '-I/Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/lib/gcc/arm-none-eabi/15.2.1/include'
+    - '-I/Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/lib/gcc/arm-none-eabi/15.2.1/include-fixed'
+    # Target specification for clang
+    - '--target=arm-none-eabi'
   CompilationDatabase: build/arm-gcc-debug
 Diagnostics:
   Suppress:
@@ -9,3 +15,5 @@ Diagnostics:
     - unknown_typename
     - unknown_typename_suggest
     - typename_requires_specqual
+    - unknown_argument
+    - unused_command_line_argument
