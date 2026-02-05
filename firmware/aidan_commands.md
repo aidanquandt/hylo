@@ -15,22 +15,22 @@ uwb_node.set.address 0x0002
 # Power on first anchor, then run:
 ota_config.send.address 0x0001 0x0003
 ota_config.send.type 0x0003 1
-ota_config.send.position 0x0003 0.0 0.0 2.5    # Bottom-left
+ota_config.send.position 0x0003 0.1 0.1 0.9    # Bottom-left
 
 # Power on second anchor, then run:
 ota_config.send.address 0x0001 0x0004
 ota_config.send.type 0x0004 1
-ota_config.send.position 0x0004 6.0 0.0 2.5    # Bottom-right
+ota_config.send.position 0x0004 1.61 0.12 0.05    # Bottom-right
 
 # Power on third anchor, then run:
 ota_config.send.address 0x0001 0x0005
 ota_config.send.type 0x0005 1
-ota_config.send.position 0x0005 6.0 4.0 2.5    # Top-right
+ota_config.send.position 0x0005 1.6 1.01 0.9    # Top-right
 
 # Power on fourth anchor, then run:
 ota_config.send.address 0x0001 0x0006
 ota_config.send.type 0x0006 1
-ota_config.send.position 0x0006 0.0 4.0 2.5    # Top-left
+ota_config.send.position 0x0006 0.0 1.0 0.08    # Top-left
 ```
 
 ### Step 3: Start Ranging
@@ -40,6 +40,18 @@ twrmgr.add.target 0x0004
 twrmgr.add.target 0x0005
 twrmgr.add.target 0x0006
 twrmgr.req.start
+
+twrmgr.req.stop
+
+
+uwb_node.set.type tag
+uwb_node.set.address 0x0002
+twrmgr.add.target 0x0003
+twrmgr.add.target 0x0004
+twrmgr.add.target 0x0005
+twrmgr.add.target 0x0006
+twrmgr.req.start
+
 ```
 
 ### Optional: Test LED Control

@@ -46,6 +46,10 @@ target_link_libraries(cubemx
     bmi323_api        # vendor IMU sensor API (BMI323-specific implementation)
     platform          # HAL wrappers
     lib               # utility libraries
+    -Wl,--start-group
+    m                 # Math library (for sqrtf, fabsf, etc.)
+    c                 # C library
+    -Wl,--end-group
 )
 
 # ---- Linker script ----

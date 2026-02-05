@@ -9,6 +9,8 @@
 #include "queue.h"
 #include "sensor_fusion_types.h"
 #include "common.h"
+#include "position_estimator/position_estimator.h"
+#include "uwb_node.h"
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -51,14 +53,84 @@ STATIC struct
     volatile uint32_t sequence;
 } stats = {0};
 
+// Position estimation state
+STATIC struct
+{
+    uint8_t measurements_this_cycle;
+    uint32_t last_estimate_ms;
+} position_state = {0};
+
+#define MIN_ANCHORS_FOR_ESTIMATE (4U) // Need 4 anchors for coplanar geometry
+#define MAX_MEASUREMENT_AGE_MS (700U) // Maximum age before triggering estimate (allow for slow ranging rates)
+
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
 STATIC void process_ranging_event(const sensor_event_t* event)
 {
-    // TODO: Implement ranging processing
-    // For now, just a placeholder
-    (void)event;
+    // error_handler_log(ERROR_SEVERITY_INFO, "sensor_fusion",
+    //                  "RX ranging event from 0x%04X: %.2fm, pos_valid=%d",
+    //                  event->data.ranging.anchor_addr,
+    //                  event->data.ranging.distance_m,
+    //                  event->data.ranging.anchor_position_valid);
+    
+    // Check if anchor position is known
+    if (!event->data.ranging.anchor_position_valid)
+    {
+        // Anchor position unknown - skip this measurement
+        error_handler_log(ERROR_SEVERITY_WARNING, "sensor_fusion",
+                         "Anchor 0x%04X position INVALID - skipped",
+                         event->data.ranging.anchor_addr);
+        return;
+    }
+
+    // Add measurement to position estimator
+    bool added = position_estimator_add_measurement(event->data.ranging.anchor_addr,
+                                                    event->data.ranging.distance_m, 
+                                                    &event->data.ranging.anchor_position);
+    
+    error_handler_log(ERROR_SEVERITY_INFO, "sf",
+                     "admrs: %d, cntnow: %u",
+                     added, position_state.measurements_this_cycle + (added ? 1 : 0));
+    
+    if (added)
+    {
+        position_state.measurements_this_cycle++;
+
+        // Trigger position estimate if we have enough measurements
+        if (position_state.measurements_this_cycle >= MIN_ANCHORS_FOR_ESTIMATE)
+        {
+            position_estimate_t result;
+            if (position_estimator_compute(&result))
+            {
+                // Update position estimate
+                taskENTER_CRITICAL();
+                position_estimate.x            = result.position.x;
+                position_estimate.y            = result.position.y;
+                position_estimate.z            = result.position.z;
+                position_estimate.confidence   = 1.0f / (1.0f + result.residual_error);
+                position_estimate.timestamp_ms = xTaskGetTickCount();
+                position_estimate.valid        = true;
+                taskEXIT_CRITICAL();
+
+                error_handler_log(ERROR_SEVERITY_INFO, "sensor_fusion",
+                                 "pos: (%.2f, %.2f, %.2f) GDOP=%.2f res=%.3fm anc=%u",
+                                 result.position.x, result.position.y, result.position.z,
+                                 result.gdop, result.residual_error, result.num_anchors_used);
+
+                position_state.last_estimate_ms        = xTaskGetTickCount();
+                position_state.measurements_this_cycle = 0;
+            }
+            else
+            {
+                // Estimation failed - reset for next cycle
+                error_handler_log(ERROR_SEVERITY_WARNING, "sensor_fusion",
+                                 "Position estimation FAILED with %u measurements",
+                                 position_state.measurements_this_cycle);
+                position_state.measurements_this_cycle = 0;
+            }
+        }
+    }
 }
 
 STATIC void process_imu_event(const sensor_event_t* event)
@@ -94,6 +166,13 @@ STATIC void sensor_fusion_init(void)
     position_estimate.confidence   = 0.0f;
     position_estimate.timestamp_ms = 0;
     position_estimate.valid        = false;
+
+    // Initialize position estimator
+    position_estimator_init();
+
+    // Initialize position state
+    position_state.measurements_this_cycle = 0;
+    position_state.last_estimate_ms        = 0;
 
     fusion_initialized = true;
 }
@@ -133,10 +212,36 @@ STATIC void sensor_fusion_process_input_queue(void)
 
 STATIC void sensor_fusion_algorithm(void)
 {
-    // TODO: Run sensor fusion algorithm here
-    // This is where you would implement Kalman filter, complementary filter, etc.
-    // For now, just update timestamp
-    position_estimate.timestamp_ms = xTaskGetTickCount();
+    // Check if we have pending measurements that are getting old
+    uint32_t current_time = xTaskGetTickCount();
+    
+    // Don't timeout if we haven't had a first estimate yet
+    if (position_state.last_estimate_ms == 0)
+    {
+        return;
+    }
+    
+    uint32_t age_ms = current_time - position_state.last_estimate_ms;
+
+    if (position_state.measurements_this_cycle > 0 && age_ms > MAX_MEASUREMENT_AGE_MS)
+    {
+        // Force estimate with whatever measurements we have
+        position_estimate_t result;
+        if (position_estimator_compute(&result))
+        {
+            taskENTER_CRITICAL();
+            position_estimate.x            = result.position.x;
+            position_estimate.y            = result.position.y;
+            position_estimate.z            = result.position.z;
+            position_estimate.confidence   = 1.0f / (1.0f + result.residual_error);
+            position_estimate.timestamp_ms = current_time;
+            position_estimate.valid        = true;
+            taskEXIT_CRITICAL();
+
+            position_state.last_estimate_ms = current_time;
+        }
+        position_state.measurements_this_cycle = 0;
+    }
 }
 
 STATIC void sensor_fusion_process_200Hz(void)

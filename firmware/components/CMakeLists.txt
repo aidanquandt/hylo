@@ -23,6 +23,7 @@ target_include_directories(components_inc INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/modules/imu
     ${CMAKE_CURRENT_SOURCE_DIR}/modules/ota_config
     ${CMAKE_CURRENT_SOURCE_DIR}/modules/sensor_fusion
+    ${CMAKE_CURRENT_SOURCE_DIR}/modules/sensor_fusion/position_estimator
     ${CMAKE_CURRENT_SOURCE_DIR}/modules/twr
     ${CMAKE_CURRENT_SOURCE_DIR}/modules/twr/twr_engine
     ${CMAKE_CURRENT_SOURCE_DIR}/modules/twr/twr_roles
@@ -56,6 +57,7 @@ set(MODULE_SOURCES
     modules/imu/imu.c
     modules/ota_config/ota_config.c
     modules/sensor_fusion/sensor_fusion.c
+    modules/sensor_fusion/position_estimator/position_estimator.c
     modules/twr/twr.c
     modules/twr/twr_engine/twr_algorithm.c
     modules/twr/twr_engine/twr_state_machine.c
