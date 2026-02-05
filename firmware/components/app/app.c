@@ -38,6 +38,8 @@
  * Private Variables
  *---------------------------------------------------------------------------*/
 STATIC volatile uint32_t deadline_miss_count[NUM_MODULES] = {0};
+STATIC volatile uint32_t worst_latency_ticks[NUM_MODULES] = {0};
+STATIC volatile uint32_t module_period_ms[NUM_MODULES] = {0};
 
 /*---------------------------------------------------------------------------
  * Private function prototypes
@@ -57,6 +59,7 @@ STATIC void module_task_1Hz(void* argument)
 {
     modules_E module    = (modules_E)(uintptr_t)argument;
     TickType_t lastWake = xTaskGetTickCount();
+    module_period_ms[module] = 1000;
     for (;;)
     {
         modules[module]->module_process_1Hz();
@@ -64,9 +67,14 @@ STATIC void module_task_1Hz(void* argument)
         // Detect deadline miss (non-blocking)
         TickType_t now          = xTaskGetTickCount();
         TickType_t expectedWake = lastWake + TASK_RATE_1HZ;
-        if (now > expectedWake)
+        if (now > expectedWake)  // Only count as miss if actually late
         {
+            TickType_t latency = now - expectedWake;
             deadline_miss_count[module]++;
+            if (latency > worst_latency_ticks[module])
+            {
+                worst_latency_ticks[module] = latency;
+            }
         }
 
         vTaskDelayUntil(&lastWake, TASK_RATE_1HZ);
@@ -77,6 +85,7 @@ STATIC void module_task_10Hz(void* argument)
 {
     modules_E module    = (modules_E)(uintptr_t)argument;
     TickType_t lastWake = xTaskGetTickCount();
+    module_period_ms[module] = 100;
     for (;;)
     {
         modules[module]->module_process_10Hz();
@@ -84,9 +93,14 @@ STATIC void module_task_10Hz(void* argument)
         // Detect deadline miss (non-blocking)
         TickType_t now          = xTaskGetTickCount();
         TickType_t expectedWake = lastWake + TASK_RATE_10HZ;
-        if (now > expectedWake)
+        if (now > expectedWake)  // Only count as miss if actually late
         {
+            TickType_t latency = now - expectedWake;
             deadline_miss_count[module]++;
+            if (latency > worst_latency_ticks[module])
+            {
+                worst_latency_ticks[module] = latency;
+            }
         }
 
         vTaskDelayUntil(&lastWake, TASK_RATE_10HZ);
@@ -97,6 +111,7 @@ STATIC void module_task_100Hz(void* argument)
 {
     modules_E module    = (modules_E)(uintptr_t)argument;
     TickType_t lastWake = xTaskGetTickCount();
+    module_period_ms[module] = 10;
     for (;;)
     {
         modules[module]->module_process_100Hz();
@@ -104,9 +119,14 @@ STATIC void module_task_100Hz(void* argument)
         // Detect deadline miss (non-blocking)
         TickType_t now          = xTaskGetTickCount();
         TickType_t expectedWake = lastWake + TASK_RATE_100HZ;
-        if (now > expectedWake)
+        if (now > expectedWake)  // Only count as miss if actually late
         {
+            TickType_t latency = now - expectedWake;
             deadline_miss_count[module]++;
+            if (latency > worst_latency_ticks[module])
+            {
+                worst_latency_ticks[module] = latency;
+            }
         }
 
         vTaskDelayUntil(&lastWake, TASK_RATE_100HZ);
@@ -117,6 +137,7 @@ STATIC void module_task_1kHz(void* argument)
 {
     modules_E module    = (modules_E)(uintptr_t)argument;
     TickType_t lastWake = xTaskGetTickCount();
+    module_period_ms[module] = 1;
     for (;;)
     {
         modules[module]->module_process_1kHz();
@@ -124,9 +145,14 @@ STATIC void module_task_1kHz(void* argument)
         // Detect deadline miss (non-blocking)
         TickType_t now          = xTaskGetTickCount();
         TickType_t expectedWake = lastWake + TASK_RATE_1KHZ;
-        if (now > expectedWake)
+        if (now > expectedWake)  // Only count as miss if actually late
         {
+            TickType_t latency = now - expectedWake;
             deadline_miss_count[module]++;
+            if (latency > worst_latency_ticks[module])
+            {
+                worst_latency_ticks[module] = latency;
+            }
         }
 
         vTaskDelayUntil(&lastWake, TASK_RATE_1KHZ);
@@ -236,4 +262,16 @@ uint32_t app_get_deadline_miss_count(modules_E module)
         return 0;
     }
     return deadline_miss_count[module];
+}
+
+void app_get_deadline_stats(modules_E module, deadline_stats_t* stats)
+{
+    if (module >= NUM_MODULES || stats == NULL)
+    {
+        return;
+    }
+
+    stats->miss_count       = deadline_miss_count[module];
+    stats->worst_latency_ms = worst_latency_ticks[module];
+    stats->period_ms        = module_period_ms[module];
 }

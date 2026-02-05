@@ -138,14 +138,17 @@ STATIC void datalogger_monitor_deadline_misses(void)
 
     for (modules_E module = (modules_E)0U; module < NUM_MODULES; module++)
     {
-        uint32_t miss_count = app_get_deadline_miss_count(module);
+        deadline_stats_t stats;
+        app_get_deadline_stats(module, &stats);
 
-        if (miss_count > prev_miss_count[module])
+        if (stats.miss_count > prev_miss_count[module])
         {
-            uint32_t new_misses = miss_count - prev_miss_count[module];
-            error_handler_log(ERROR_SEVERITY_WARNING, "timing", "%s: %u deadline miss(es)\n",
-                              modules[module]->module_name, (unsigned int)new_misses);
-            prev_miss_count[module] = miss_count;
+            uint32_t new_misses = stats.miss_count - prev_miss_count[module];
+            error_handler_log(ERROR_SEVERITY_WARNING, "timing",
+                              "%s: %u miss(es), deadline=%ums, worst_latency=%ums\n",
+                              modules[module]->module_name, (unsigned int)new_misses,
+                              (unsigned int)stats.period_ms, (unsigned int)stats.worst_latency_ms);
+            prev_miss_count[module] = stats.miss_count;
         }
     }
 }
