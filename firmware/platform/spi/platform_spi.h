@@ -37,5 +37,12 @@ platform_spi_status_E platform_spi_transfer(const uint8_t* tx_data, uint8_t* rx_
 platform_spi_status_E platform_spi_transmit(const uint8_t* data, uint16_t length);
 platform_spi_status_E platform_spi_receive(uint8_t* data, uint16_t length);
 platform_spi_status_E platform_spi_set_speed(platform_spi_speed_E speed);
+
+/* Low-level DMA functions (for advanced usage - prefer using standard functions above) */
+platform_spi_status_E platform_spi_transmit_dma(const uint8_t* data, uint16_t length);
+platform_spi_status_E platform_spi_receive_dma(uint8_t* data, uint16_t length);
+platform_spi_status_E platform_spi_transfer_dma(const uint8_t* tx_data, uint8_t* rx_data, 
+                                                 uint16_t length);
+
 void platform_spi_cs_low(platform_spi_cs_E cs_pin);
 void platform_spi_cs_high(platform_spi_cs_E cs_pin);

@@ -28,3 +28,9 @@ void uart_cmd_router_init(void);
  * @note Called automatically by uart_manager when command received
  */
 void uart_cmd_router_dispatch(const char* cmd_string);
+
+/**
+ * @brief Process 10Hz periodic tasks (e.g., IMU streaming)
+ * @note Should be called at 10Hz by uart_manager
+ */
+void uart_cmd_router_process_10Hz(void);

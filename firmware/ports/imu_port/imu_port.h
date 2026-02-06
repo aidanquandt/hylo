@@ -84,6 +84,7 @@ imu_port_status_t imu_port_read_accel_and_gyro(imu_dev_t* dev, vec3_t* accel, ve
 imu_port_status_t imu_port_configure_accel(imu_dev_t* dev, imu_accel_range_t range, imu_odr_t odr);
 imu_port_status_t imu_port_configure_gyro(imu_dev_t* dev, imu_gyro_range_t range, imu_odr_t odr);
 imu_port_status_t imu_port_soft_reset(imu_dev_t* dev);
+imu_port_status_t imu_port_configure_data_ready_int(imu_dev_t* dev);
 void imu_port_delay_us(uint32_t period_us, void* intf_ptr);
 int8_t imu_port_spi_read(uint8_t reg_addr, uint8_t* reg_data, uint32_t len, void* intf_ptr);
 int8_t imu_port_spi_write(uint8_t reg_addr, const uint8_t* reg_data, uint32_t len, void* intf_ptr);

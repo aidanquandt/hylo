@@ -14,6 +14,11 @@ __attribute__((weak)) void platform_gpio_uwb_irq_callback(void)
     // Default empty implementation - override in uwb_port or app layer
 }
 
+__attribute__((weak)) void platform_gpio_imu_irq_callback(void)
+{
+    // Default empty implementation - override in imu module when INT pin is wired
+}
+
 /*---------------------------------------------------------------------------
  * Public function implementations
  *---------------------------------------------------------------------------*/
@@ -59,4 +64,10 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     {
         platform_gpio_uwb_irq_callback();
     }
+#ifdef IMU_INT1_Pin
+    else if (GPIO_Pin == IMU_INT1_Pin)
+    {
+        platform_gpio_imu_irq_callback();
+    }
+#endif
 }

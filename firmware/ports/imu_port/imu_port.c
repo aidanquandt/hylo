@@ -302,6 +302,40 @@ imu_port_status_t imu_port_soft_reset(imu_dev_t* dev)
     return IMU_PORT_SUCCESS;
 }
 
+imu_port_status_t imu_port_configure_data_ready_int(imu_dev_t* dev)
+{
+    if (dev == NULL)
+    {
+        return IMU_PORT_ERROR_NULL_PTR;
+    }
+
+    // Configure INT1 pin: push-pull, active-high, non-latched
+    struct bmi3_int_pin_config int_cfg = {0};
+    int_cfg.pin_type                   = BMI3_INT1;
+    int_cfg.int_latch                  = BMI3_INT_LATCH_DISABLE;
+    int_cfg.pin_cfg[0].lvl             = BMI3_INT_ACTIVE_HIGH;
+    int_cfg.pin_cfg[0].od              = BMI3_INT_PUSH_PULL;
+    int_cfg.pin_cfg[0].output_en       = BMI3_INT_OUTPUT_ENABLE;
+
+    int8_t rslt = bmi323_set_int_pin_config(&int_cfg, &dev->bmi_dev);
+    if (rslt != BMI3_OK)
+    {
+        return IMU_PORT_ERROR_COMM_FAIL;
+    }
+
+    // Map accelerometer data-ready to INT1 pin
+    struct bmi3_map_int map_int = {0};
+    map_int.acc_drdy_int        = BMI3_INT1;
+
+    rslt = bmi323_map_interrupt(map_int, &dev->bmi_dev);
+    if (rslt != BMI3_OK)
+    {
+        return IMU_PORT_ERROR_COMM_FAIL;
+    }
+
+    return IMU_PORT_SUCCESS;
+}
+
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/

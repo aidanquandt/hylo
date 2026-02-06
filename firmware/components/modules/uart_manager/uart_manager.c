@@ -485,7 +485,17 @@ STATIC void uart_manager_process_rx_buffer(void)
  */
 STATIC void uart_manager_process_100Hz(void)
 {
+    STATIC uint8_t prescaler_cnt = 0;
+    
     uart_manager_process_rx_buffer();
+    
+    /* Call 10Hz periodic functions (every 10th call) */
+    prescaler_cnt++;
+    if (prescaler_cnt >= 10)
+    {
+        prescaler_cnt = 0;
+        uart_cmd_router_process_10Hz();
+    }
 }
 
 /*---------------------------------------------------------------------------

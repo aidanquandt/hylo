@@ -12,6 +12,7 @@
 #include "error_handler.h"
 #include "imu.h"
 #include "ota_config/ota_config.h"
+#include "sensor_fusion.h"
 #include "stopwatch.h"
 #include "task.h"
 #include "twr/twr_engine/twr_types.h"
@@ -48,6 +49,8 @@ STATIC void uart_cmd_router_handle_twr_manager(const char* action, const char* t
                                                const char* args);
 STATIC void uart_cmd_router_handle_stopwatch(const char* action, const char* target,
                                              const char* args);
+STATIC void uart_cmd_router_handle_sensor_fusion(const char* action, const char* target,
+                                                  const char* args);
 STATIC void uart_cmd_router_handle_ota_config(const char* action, const char* target,
                                               const char* args);
 
@@ -55,6 +58,10 @@ STATIC void uart_cmd_router_handle_ota_config(const char* action, const char* ta
  * Private Variables
  *---------------------------------------------------------------------------*/
 STATIC bool router_initialized = false;
+STATIC bool imu_stream_enabled = false;
+STATIC uint32_t imu_stream_counter = 0;
+STATIC bool fusion_stream_enabled = false;
+STATIC uint32_t fusion_stream_counter = 0;
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -89,6 +96,7 @@ STATIC void uart_cmd_router_handle_list(void)
     uart_manager_print("  uwb        - UWB radio transceiver\r\n");
     uart_manager_print("  twr        - Two-Way Ranging service\r\n");
     uart_manager_print("  twrmgr - Two-Way Ranging manager\r\n");
+    uart_manager_print("  fusion     - Sensor fusion & Kalman filter\r\n");
     uart_manager_print("  ota_config - OTA configuration (remote node programming)\r\n");
     uart_manager_print("  error      - Error handler module\r\n");
     uart_manager_print("  datalogger - System monitoring\r\n");
@@ -136,9 +144,37 @@ STATIC void uart_cmd_router_handle_beacon(const char* action, const char* target
 
 STATIC void uart_cmd_router_handle_imu(const char* action, const char* target, const char* args)
 {
-    (void)args;
-
-    if (strcmp(action, "get") == 0)
+    if (strcmp(action, "set") == 0)
+    {
+        if (strcmp(target, "stream") == 0)
+        {
+            if (args == NULL || *args == '\0')
+            {
+                uart_manager_print("Stream: %s\r\n", imu_stream_enabled ? "ON" : "OFF");
+                return;
+            }
+            if (strcmp(args, "on") == 0 || strcmp(args, "1") == 0)
+            {
+                imu_stream_enabled = true;
+                imu_stream_counter = 0;
+                uart_manager_print("IMU streaming enabled (10Hz)\r\n");
+            }
+            else if (strcmp(args, "off") == 0 || strcmp(args, "0") == 0)
+            {
+                imu_stream_enabled = false;
+                uart_manager_print("IMU streaming disabled\r\n");
+            }
+            else
+            {
+                uart_manager_print("ERR: Use 'on' or 'off'\r\n");
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else if (strcmp(action, "get") == 0)
     {
         if (strcmp(target, "status") == 0)
         {
@@ -223,6 +259,43 @@ STATIC void uart_cmd_router_handle_imu(const char* action, const char* target, c
     else
     {
         uart_manager_print("ERR: Unknown action '%s'\r\n", action);
+    }
+}
+
+void uart_cmd_router_process_10Hz(void)
+{
+    if (!imu_stream_enabled)
+    {
+        return;
+    }
+
+    imu_data_t data;
+    if (imu_get_data(&data))
+    {
+        uart_manager_print("[%u] A: %6.3f %6.3f %6.3f | G: %7.2f %7.2f %7.2f | T: %5.1f\r\n",
+                           (unsigned int)imu_stream_counter++,
+                           data.accel.x, data.accel.y, data.accel.z,
+                           data.gyro.x, data.gyro.y, data.gyro.z,
+                           data.temperature);
+    }
+    
+    /* Sensor fusion streaming */
+    if (fusion_stream_enabled)
+    {
+        sensor_fusion_position_t pos;
+        if (sensor_fusion_get_position(&pos) && pos.valid)
+        {
+            uart_manager_print("[F%u] Pos: %6.3f %6.3f %6.3f | Vel: %5.2f %5.2f %5.2f | Conf: %4.2f\r\n",
+                               (unsigned int)fusion_stream_counter++,
+                               pos.x, pos.y, pos.z,
+                               pos.vx, pos.vy, pos.vz,
+                               pos.confidence);
+        }
+        else
+        {
+            uart_manager_print("[F%u] Position: INVALID\r\n", 
+                               (unsigned int)fusion_stream_counter++);
+        }
     }
 }
 
@@ -851,6 +924,84 @@ STATIC void uart_cmd_router_handle_stopwatch(const char* action, const char* tar
     }
 }
 
+STATIC void uart_cmd_router_handle_sensor_fusion(const char* action, const char* target,
+                                                  const char* args)
+{
+    if (strcmp(action, "get") == 0)
+    {
+        if (strcmp(target, "position") == 0)
+        {
+            sensor_fusion_position_t pos;
+            if (sensor_fusion_get_position(&pos))
+            {
+                uart_manager_print("Position: X=%.3f Y=%.3f Z=%.3f m\r\n", pos.x, pos.y, pos.z);
+                uart_manager_print("Velocity: X=%.2f Y=%.2f Z=%.2f m/s\r\n", pos.vx, pos.vy, pos.vz);
+                uart_manager_print("Confidence: %.2f | Valid: %s | Updated: %u ms\r\n",
+                                   pos.confidence,
+                                   pos.valid ? "YES" : "NO",
+                                   (unsigned int)pos.timestamp_ms);
+            }
+            else
+            {
+                uart_manager_print("Position estimate not available\r\n");
+            }
+        }
+        else if (strcmp(target, "stats") == 0 || strcmp(target, "queue") == 0)
+        {
+            sensor_queue_stats_t stats;
+            sensor_fusion_get_stats(&stats);
+            uart_manager_print("Queue Stats:\r\n");
+            uart_manager_print("  Pushed:      %u events\r\n", (unsigned int)stats.events_pushed);
+            uart_manager_print("  Popped:      %u events\r\n", (unsigned int)stats.events_popped);
+            uart_manager_print("  Overflows:   %u\r\n", (unsigned int)stats.overflows);
+            uart_manager_print("  Current:     %u items\r\n", (unsigned int)stats.current_depth);
+            uart_manager_print("  Max Depth:   %u\r\n", (unsigned int)stats.max_depth_reached);
+            uart_manager_print("  Pending:     %u events\r\n",
+                               (unsigned int)(stats.events_pushed - stats.events_popped));
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+            uart_manager_print("Available targets: position, stats, queue\r\n");
+        }
+    }
+    else if (strcmp(action, "set") == 0)
+    {
+        if (strcmp(target, "stream") == 0)
+        {
+            if (args == NULL || *args == '\0')
+            {
+                uart_manager_print("Fusion Stream: %s\r\n", fusion_stream_enabled ? "ON" : "OFF");
+                return;
+            }
+            if (strcmp(args, "on") == 0 || strcmp(args, "1") == 0)
+            {
+                fusion_stream_enabled = true;
+                fusion_stream_counter = 0;
+                uart_manager_print("Fusion streaming enabled (10Hz)\r\n");
+            }
+            else if (strcmp(args, "off") == 0 || strcmp(args, "0") == 0)
+            {
+                fusion_stream_enabled = false;
+                uart_manager_print("Fusion streaming disabled\r\n");
+            }
+            else
+            {
+                uart_manager_print("ERR: Use 'on' or 'off'\r\n");
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else
+    {
+        uart_manager_print("ERR: Unknown action '%s'\r\n", action);
+        uart_manager_print("Available actions: get, set\r\n");
+    }
+}
+
 STATIC void uart_cmd_router_handle_ota_config(const char* action, const char* target,
                                               const char* args)
 {
@@ -1293,6 +1444,10 @@ void uart_cmd_router_dispatch(const char* cmd_string)
     else if (strcmp(module, "stopwatch") == 0)
     {
         uart_cmd_router_handle_stopwatch(action, target, args);
+    }
+    else if (strcmp(module, "fusion") == 0)
+    {
+        uart_cmd_router_handle_sensor_fusion(action, target, args);
     }
     else if (strcmp(module, "ota_config") == 0)
     {

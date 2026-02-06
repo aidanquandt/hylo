@@ -15,3 +15,10 @@
 
 /* Watchdog: Set to 0 to disable IWDG for debugging */
 #define FEATURE_WATCHDOG_ENABLE_IWDG (1U)
+
+/* IMU: Set to 1 for 200Hz sampling, 0 for 10Hz (legacy) */
+#define FEATURE_IMU_200HZ_SAMPLING (1U)
+
+/* SPI DMA: Set to 1 to use DMA transfers (non-blocking), 0 for blocking transfers
+ * Note: Requires hardware DMA configuration via CubeMX before enabling */
+#define FEATURE_SPI_USE_DMA (0U)
