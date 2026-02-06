@@ -64,7 +64,7 @@ STATIC void module_task_1Hz(void* argument)
         // Detect deadline miss (non-blocking)
         TickType_t now          = xTaskGetTickCount();
         TickType_t expectedWake = lastWake + TASK_RATE_1HZ;
-        if (now >= expectedWake)
+        if (now > expectedWake)
         {
             deadline_miss_count[module]++;
         }
@@ -84,7 +84,7 @@ STATIC void module_task_10Hz(void* argument)
         // Detect deadline miss (non-blocking)
         TickType_t now          = xTaskGetTickCount();
         TickType_t expectedWake = lastWake + TASK_RATE_10HZ;
-        if (now >= expectedWake)
+        if (now > expectedWake)
         {
             deadline_miss_count[module]++;
         }
@@ -104,7 +104,7 @@ STATIC void module_task_100Hz(void* argument)
         // Detect deadline miss (non-blocking)
         TickType_t now          = xTaskGetTickCount();
         TickType_t expectedWake = lastWake + TASK_RATE_100HZ;
-        if (now >= expectedWake)
+        if (now > expectedWake)
         {
             deadline_miss_count[module]++;
         }
@@ -124,7 +124,7 @@ STATIC void module_task_1kHz(void* argument)
         // Detect deadline miss (non-blocking)
         TickType_t now          = xTaskGetTickCount();
         TickType_t expectedWake = lastWake + TASK_RATE_1KHZ;
-        if (now >= expectedWake)
+        if (now > expectedWake)
         {
             deadline_miss_count[module]++;
         }

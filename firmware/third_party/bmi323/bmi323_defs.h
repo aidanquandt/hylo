@@ -136,7 +136,7 @@
 #endif
 
 /*! To define the chip id of bmi323 */
-#define BMI323_CHIP_ID                          UINT16_C(0x0044) //UINT16_C(0x0043)
+#define BMI323_CHIP_ID                          UINT16_C(0x0043)
 
 /*! To define success code */
 #define BMI323_OK                               INT8_C(0)
