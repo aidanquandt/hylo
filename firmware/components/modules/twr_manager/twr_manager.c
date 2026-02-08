@@ -16,7 +16,7 @@
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define RANGING_RATE_HZ 200                           // Target ranging rate (Hz)
+#define RANGING_RATE_HZ 10                           // Target ranging rate (Hz)
 #define RANGING_PERIOD_TICKS (1000 / RANGING_RATE_HZ) // Period in 1kHz ticks
 #define INVALID_TARGET_ADDR 0x0000                    // Invalid/unset target address
 
