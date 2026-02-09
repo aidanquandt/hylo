@@ -2,12 +2,16 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "imu.h"
+#include "FreeRTOS.h"
 #include "common.h"
 #include "error_handler.h"
+#include "feature_config.h"
 #include "imu_port.h"
 #include "module.h"
 #include "platform_gpio.h"
+#include "sensor_fusion.h"
 #include "state_machine.h"
+#include "task.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -15,6 +19,10 @@
 #define IMU_EXPECTED_CHIP_ID_1 (0x43U)
 #define IMU_EXPECTED_CHIP_ID_2 (0x44U)
 #define STARTUP_DELAY_MS (2000U)
+#define TEMP_READ_PRESCALER (200U) // Read temperature every 200 cycles (~1s at 200Hz)
+#define IMU_1KHZ_PRESCALER (5U)      // Divide 1kHz by 5 = 200Hz
+#define GRAVITY_MS2 (9.80665f)
+#define DEG_TO_RAD (0.01745329252f)
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -57,6 +65,7 @@ typedef struct
  *---------------------------------------------------------------------------*/
 STATIC bool verify_chip_id(void);
 STATIC void read_sensors(void);
+STATIC void push_imu_to_sensor_fusion(void);
 STATIC void imu_state_machine_sample_inputs(void);
 STATIC uint16_t imu_transition_logic(uint16_t currentState, uint32_t stateTimer);
 STATIC void imu_state_initialization_on_entry(uint16_t prevState);
@@ -67,15 +76,23 @@ STATIC void imu_state_faulted_on_entry(uint16_t prevState);
  * Module Functions
  *---------------------------------------------------------------------------*/
 STATIC void imu_init(void);
-STATIC void imu_process_10Hz(void);
+STATIC void imu_process(void);
 
 extern const module_S imu_module;
 
+#if FEATURE_IMU_200HZ_SAMPLING
 const module_S imu_module = {
     .module_name         = "imu",
     .module_init         = imu_init,
-    .module_process_10Hz = imu_process_10Hz,
+    .module_process_1kHz = imu_process,
 };
+#else
+const module_S imu_module = {
+    .module_name         = "imu",
+    .module_init         = imu_init,
+    .module_process_10Hz = imu_process,
+};
+#endif
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -99,6 +116,8 @@ STATIC imu_dev_t* imu_dev                                  = NULL;
 STATIC imu_state_machine_inputs_t imu_state_machine_inputs = {0};
 STATIC imu_measurements_t measurements                     = {0};
 STATIC imu_fault_code_e imu_fault_code                     = FAULT_NONE;
+STATIC uint32_t imu_sample_count                           = 0;
+STATIC uint32_t temp_prescaler_count                       = 0;
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -130,7 +149,12 @@ STATIC void read_sensors(void)
         return;
     }
 
-    measurements.temperature = imu_port_read_temperature(imu_dev);
+    // Read temperature at reduced rate (changes slowly, saves SPI bandwidth)
+    if ((temp_prescaler_count % TEMP_READ_PRESCALER) == 0)
+    {
+        measurements.temperature = imu_port_read_temperature(imu_dev);
+    }
+    temp_prescaler_count++;
 
     int result = imu_port_read_accel_and_gyro(imu_dev, &measurements.accel, &measurements.gyro);
     if (result != IMU_PORT_SUCCESS)
@@ -139,12 +163,45 @@ STATIC void read_sensors(void)
     }
 }
 
+STATIC void push_imu_to_sensor_fusion(void)
+{
+    sensor_event_t event = {
+        .type         = SENSOR_EVENT_IMU,
+        .timestamp_ms = (uint32_t)xTaskGetTickCount(),
+        .sequence     = imu_sample_count++,
+        .data.imu     = {
+            .accel_x = measurements.accel.x * GRAVITY_MS2,
+            .accel_y = measurements.accel.y * GRAVITY_MS2,
+            .accel_z = measurements.accel.z * GRAVITY_MS2,
+            .gyro_x  = measurements.gyro.x * DEG_TO_RAD,
+            .gyro_y  = measurements.gyro.y * DEG_TO_RAD,
+            .gyro_z  = measurements.gyro.z * DEG_TO_RAD,
+            .temp_c  = measurements.temperature,
+        }
+    };
+    sensor_fusion_push_event(&event);
+}
+
 STATIC void imu_init(void)
 {
 }
 
-STATIC void imu_process_10Hz(void)
+STATIC void imu_process(void)
 {
+#if FEATURE_IMU_200HZ_SAMPLING
+    /* Run at 200Hz: prescale 1kHz by 5 */
+    STATIC uint8_t prescaler = 0;
+    prescaler++;
+    if (prescaler >= IMU_1KHZ_PRESCALER)
+    {
+        prescaler = 0;
+    }
+    else
+    {
+        return; /* Skip this cycle */
+    }
+#endif
+    
     imu_state_machine_sample_inputs();
     state_machine_periodic(&imu_state_machine);
 }
@@ -162,7 +219,11 @@ STATIC uint16_t imu_transition_logic(uint16_t currentState, uint32_t stateTimer)
     switch (currentState)
     {
         case STATE_STARTUP:
+#if FEATURE_IMU_200HZ_SAMPLING
+            if (stateTimer >= (STARTUP_DELAY_MS / 5))  /* 200Hz ticks (5ms period) */
+#else
             if (stateTimer >= MS_TO_10HZ_TICKS(STARTUP_DELAY_MS))
+#endif
             {
                 nextState = STATE_INITIALIZATION;
             }
@@ -224,14 +285,14 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
         return;
     }
 
-    int accel_result = imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_2G, IMU_ODR_100HZ);
+    int accel_result = imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_2G, IMU_ODR_200HZ);
     if (accel_result != IMU_PORT_SUCCESS)
     {
         imu_fault_code = FAULT_ACCEL_CONFIG_FAILED;
         return;
     }
 
-    int gyro_result = imu_port_configure_gyro(imu_dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_100HZ);
+    int gyro_result = imu_port_configure_gyro(imu_dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_200HZ);
     if (gyro_result != IMU_PORT_SUCCESS)
     {
         imu_fault_code = FAULT_GYRO_CONFIG_FAILED;
@@ -242,6 +303,10 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
 STATIC void imu_state_active_process(void)
 {
     read_sensors();
+    if (imu_fault_code == FAULT_NONE)
+    {
+        push_imu_to_sensor_fusion();
+    }
 }
 
 STATIC void imu_state_faulted_on_entry(uint16_t prevState)

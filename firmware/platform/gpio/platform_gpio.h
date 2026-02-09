@@ -26,3 +26,8 @@ void platform_gpio_set_led_green(platform_gpio_state_t state);
 void platform_gpio_toggle_led_green(void);
 
 platform_gpio_state_t platform_gpio_read_pin(platform_gpio_pin_t pin);
+
+/*---------------------------------------------------------------------------
+ * External Interrupt Callbacks (weak - override in port layers)
+ *---------------------------------------------------------------------------*/
+void platform_gpio_imu_irq_callback(void);
