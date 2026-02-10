@@ -443,5 +443,9 @@ STATIC void sensor_fusion_process_10Hz(void)
                           pos.vx, pos.vy, pos.vz,
                           pos.confidence);
     }
+    else
+    {
+        uart_manager_print("SF: Position estimate invalid\r\n");
+    }
 #endif
 }
