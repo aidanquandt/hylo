@@ -295,7 +295,7 @@ STATIC void ota_config_handle_set_gpio(const uint8_t* data, uint16_t length, uin
     }
 
     // Apply GPIO state
-    platform_gpio_set_led_green((platform_gpio_state_t)msg->state);
+    platform_gpio_set_leds((platform_gpio_state_t)msg->state);
 
     error_handler_log(ERROR_SEVERITY_INFO, "ota_config", "GPIO set: pin=%d, state=%d", msg->pin,
                       msg->state);

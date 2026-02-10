@@ -22,7 +22,7 @@ typedef enum
 /*---------------------------------------------------------------------------
  * Public function prototypes
  *---------------------------------------------------------------------------*/
-void platform_gpio_set_led_green(platform_gpio_state_t state);
+void platform_gpio_set_leds(platform_gpio_state_t state);
 void platform_gpio_toggle_led_green(void);
 
 platform_gpio_state_t platform_gpio_read_pin(platform_gpio_pin_t pin);

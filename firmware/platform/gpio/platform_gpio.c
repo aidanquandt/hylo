@@ -17,15 +17,19 @@ __attribute__((weak)) void platform_gpio_uwb_irq_callback(void)
 /*---------------------------------------------------------------------------
  * Public function implementations
  *---------------------------------------------------------------------------*/
-void platform_gpio_set_led_green(platform_gpio_state_t state)
+void platform_gpio_set_leds(platform_gpio_state_t state)
 {
     if (state == PLATFORM_GPIO_HIGH)
     {
         BSP_LED_On(LED_GREEN);
+        BSP_LED_On(LED_RED);
+        BSP_LED_On(LED_YELLOW);
     }
     else
     {
         BSP_LED_Off(LED_GREEN);
+        BSP_LED_Off(LED_RED);
+        BSP_LED_Off(LED_YELLOW);
     }
 }
 
