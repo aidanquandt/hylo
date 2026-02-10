@@ -12,6 +12,7 @@
 #include "error_handler.h"
 #include "imu.h"
 #include "ota_config/ota_config.h"
+#include "platform_system.h"
 #include "stopwatch.h"
 #include "task.h"
 #include "twr/twr_engine/twr_types.h"
@@ -50,6 +51,8 @@ STATIC void uart_cmd_router_handle_stopwatch(const char* action, const char* tar
                                              const char* args);
 STATIC void uart_cmd_router_handle_ota_config(const char* action, const char* target,
                                               const char* args);
+STATIC void uart_cmd_router_handle_system(const char* action, const char* target,
+                                          const char* args);
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -83,6 +86,7 @@ STATIC void uart_cmd_router_handle_help(void)
 STATIC void uart_cmd_router_handle_list(void)
 {
     uart_manager_print("\r\nAvailable Modules:\r\n");
+    uart_manager_print("  system     - System information (UUID, device ID)\r\n");
     uart_manager_print("  data       - Data communications module\r\n");
     uart_manager_print("  imu        - IMU sensor module\r\n");
     uart_manager_print("  uwb_node   - UWB node identity and configuration\r\n");
@@ -1184,6 +1188,64 @@ STATIC void uart_cmd_router_handle_twr(const char* action, const char* target, c
     }
 }
 
+STATIC void uart_cmd_router_handle_system(const char* action, const char* target,
+                                          const char* args)
+{
+    (void)args;
+
+    if (strcmp(action, "get") == 0)
+    {
+        if (strcmp(target, "uuid") == 0)
+        {
+            uint32_t word0 = platform_system_get_uuid_word(0);
+            uint32_t word1 = platform_system_get_uuid_word(1);
+            uint32_t word2 = platform_system_get_uuid_word(2);
+
+            uart_manager_print("\r\n");
+            uart_manager_print("=== STM32 Unique ID ===\r\n");
+            uart_manager_print("Full UUID: %08lX-%08lX-%08lX\r\n",
+                               (unsigned long)word0, (unsigned long)word1, (unsigned long)word2);
+            uart_manager_print("\r\n");
+            uart_manager_print("Copy this line to config/device_mapping.c:\r\n");
+            uart_manager_print("{.uuid_word0 = 0x%08lX, .uuid_word1 = 0x%08lX, .uuid_word2 = 0x%08lX, .uwb_address = 0x????, .device_name = \"NAME\"},\r\n",
+                               (unsigned long)word0, (unsigned long)word1, (unsigned long)word2);
+            uart_manager_print("\r\n");
+        }
+        else if (strcmp(target, "info") == 0)
+        {
+            platform_system_device_info_t dev_info;
+            if (platform_system_device_get_info(&dev_info))
+            {
+                uart_manager_print("\r\n");
+                uart_manager_print("=== Device Information ===\r\n");
+                uart_manager_print("UUID: %08lX-%08lX-%08lX\r\n",
+                                   (unsigned long)dev_info.uuid_word0,
+                                   (unsigned long)dev_info.uuid_word1,
+                                   (unsigned long)dev_info.uuid_word2);
+                uart_manager_print("Known Device: %s\r\n", dev_info.is_known_device ? "Yes" : "No");
+                if (dev_info.is_known_device)
+                {
+                    uart_manager_print("Device Name: %s\r\n", dev_info.device_name);
+                    uart_manager_print("Assigned Address: 0x%04X\r\n", dev_info.assigned_address);
+                }
+                uart_manager_print("\r\n");
+            }
+            else
+            {
+                uart_manager_print("ERR: Device ID not initialized\r\n");
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else
+    {
+        uart_manager_print("ERR: Unknown action '%s'\r\n", action);
+    }
+}
+
 /*---------------------------------------------------------------------------
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
@@ -1297,6 +1359,10 @@ void uart_cmd_router_dispatch(const char* cmd_string)
     else if (strcmp(module, "ota_config") == 0)
     {
         uart_cmd_router_handle_ota_config(action, target, args);
+    }
+    else if (strcmp(module, "system") == 0)
+    {
+        uart_cmd_router_handle_system(action, target, args);
     }
     else
     {

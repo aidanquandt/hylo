@@ -15,3 +15,6 @@
 
 /* Watchdog: Set to 0 to disable IWDG for debugging */
 #define FEATURE_WATCHDOG_ENABLE_IWDG (1U)
+
+/* Auto-configure UWB address from device UUID mapping table */
+#define FEATURE_AUTO_CONFIGURE_ADDRESS_FROM_UUID (1U)

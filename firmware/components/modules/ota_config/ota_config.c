@@ -57,6 +57,7 @@ STATIC struct
     uint32_t invalid_messages;
     uint32_t retries_performed;
     uint32_t retry_successes;
+    uint32_t sequence_counter;
 } ota_config_stats = {0};
 
 /*---------------------------------------------------------------------------
@@ -399,6 +400,7 @@ STATIC void ota_config_init_message_header(protocol_header_t* header, uint8_t ms
 {
     header->protocol_type = PROTOCOL_TYPE_OTA_CONFIG;
     header->msg_type      = msg_type;
+    header->sequence = (uint16_t)(ota_config_stats.sequence_counter++ & 0xFFFF);
     header->sequence      = (uint16_t)(ota_config_stats.requests_sent & 0xFFFF);
 }
 
