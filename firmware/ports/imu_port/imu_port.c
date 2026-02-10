@@ -152,9 +152,9 @@ imu_port_status_t imu_port_read_accel(imu_dev_t* dev, vec3_t* accel)
         return IMU_PORT_ERROR_COMM_FAIL;
     }
 
-    accel->x = sensor_data.sens_data.acc.x / 16384.0f;
-    accel->y = sensor_data.sens_data.acc.y / 16384.0f;
-    accel->z = sensor_data.sens_data.acc.z / 16384.0f;
+    accel->x = (sensor_data.sens_data.acc.x / 16384.0f) * GRAVITY_MAGNITUDE;
+    accel->y = (sensor_data.sens_data.acc.y / 16384.0f) * GRAVITY_MAGNITUDE;
+    accel->z = (sensor_data.sens_data.acc.z / 16384.0f) * GRAVITY_MAGNITUDE;
 
     return IMU_PORT_SUCCESS;
 }
@@ -175,9 +175,9 @@ imu_port_status_t imu_port_read_gyro(imu_dev_t* dev, vec3_t* gyro)
         return IMU_PORT_ERROR_COMM_FAIL;
     }
 
-    gyro->x = sensor_data.sens_data.gyr.x / 16.4f;
-    gyro->y = sensor_data.sens_data.gyr.y / 16.4f;
-    gyro->z = sensor_data.sens_data.gyr.z / 16.4f;
+    gyro->x = (sensor_data.sens_data.gyr.x / 16.4f) * DEG_TO_RAD;
+    gyro->y = (sensor_data.sens_data.gyr.y / 16.4f) * DEG_TO_RAD;
+    gyro->z = (sensor_data.sens_data.gyr.z / 16.4f) * DEG_TO_RAD;
 
     return IMU_PORT_SUCCESS;
 }
@@ -201,16 +201,16 @@ imu_port_status_t imu_port_read_accel_and_gyro(imu_dev_t* dev, vec3_t* accel, ve
 
     if (accel != NULL)
     {
-        accel->x = sensor_data[0].sens_data.acc.x / 16384.0f;
-        accel->y = sensor_data[0].sens_data.acc.y / 16384.0f;
-        accel->z = sensor_data[0].sens_data.acc.z / 16384.0f;
+        accel->x = (sensor_data[0].sens_data.acc.x / 16384.0f) * GRAVITY_MAGNITUDE;
+        accel->y = (sensor_data[0].sens_data.acc.y / 16384.0f) * GRAVITY_MAGNITUDE;
+        accel->z = (sensor_data[0].sens_data.acc.z / 16384.0f) * GRAVITY_MAGNITUDE;
     }
 
     if (gyro != NULL)
     {
-        gyro->x = sensor_data[1].sens_data.gyr.x / 16.4f;
-        gyro->y = sensor_data[1].sens_data.gyr.y / 16.4f;
-        gyro->z = sensor_data[1].sens_data.gyr.z / 16.4f;
+        gyro->x = (sensor_data[1].sens_data.gyr.x / 16.4f) * DEG_TO_RAD;
+        gyro->y = (sensor_data[1].sens_data.gyr.y / 16.4f) * DEG_TO_RAD;
+        gyro->z = (sensor_data[1].sens_data.gyr.z / 16.4f) * DEG_TO_RAD;
     }
 
     return IMU_PORT_SUCCESS;

@@ -109,3 +109,8 @@ void sensor_fusion_get_velocity(float* vx, float* vy, float* vz);
 void sensor_fusion_get_attitude(float* roll, float* pitch, float* yaw);
 void sensor_fusion_reset(void);
 bool sensor_fusion_is_valid(void);
+void sensor_fusion_start(void);
+void sensor_fusion_stop(void);
+bool sensor_fusion_is_active(void);
+void sensor_fusion_enable_debug_prints(bool enable);
+bool sensor_fusion_get_debug_prints_enabled(void);

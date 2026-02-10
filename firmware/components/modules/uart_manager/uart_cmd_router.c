@@ -13,6 +13,7 @@
 #include "imu.h"
 #include "ota_config/ota_config.h"
 #include "platform_system.h"
+#include "sensor_fusion.h"
 #include "stopwatch.h"
 #include "task.h"
 #include "twr/twr_engine/twr_types.h"
@@ -53,6 +54,8 @@ STATIC void uart_cmd_router_handle_ota_config(const char* action, const char* ta
                                               const char* args);
 STATIC void uart_cmd_router_handle_system(const char* action, const char* target,
                                           const char* args);
+STATIC void uart_cmd_router_handle_sensor_fusion(const char* action, const char* target,
+                                                 const char* args);
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -94,6 +97,7 @@ STATIC void uart_cmd_router_handle_list(void)
     uart_manager_print("  twr        - Two-Way Ranging service\r\n");
     uart_manager_print("  twrmgr - Two-Way Ranging manager\r\n");
     uart_manager_print("  ota_config - OTA configuration (remote node programming)\r\n");
+    uart_manager_print("  sf         - Sensor Fusion (position estimation)\r\n");
     uart_manager_print("  error      - Error handler module\r\n");
     uart_manager_print("  datalogger - System monitoring\r\n");
     uart_manager_print("  stopwatch  - Performance timing (0-9 instances)\r\n\r\n");
@@ -1248,6 +1252,102 @@ STATIC void uart_cmd_router_handle_system(const char* action, const char* target
     }
 }
 
+STATIC void uart_cmd_router_handle_sensor_fusion(const char* action, const char* target,
+                                                 const char* args)
+{
+    (void)args;
+
+    if (strcmp(action, "get") == 0)
+    {
+        if (strcmp(target, "debug") == 0)
+        {
+            bool enabled = sensor_fusion_get_debug_prints_enabled();
+            uart_manager_print("Sensor Fusion debug prints: %s\r\n", enabled ? "ENABLED" : "DISABLED");
+        }
+        else if (strcmp(target, "status") == 0)
+        {
+            sensor_fusion_position_t pos;
+            if (sensor_fusion_get_position(&pos))
+            {
+                uart_manager_print("\r\nSensor Fusion Status:\r\n");
+                uart_manager_print("Position: (%.2f, %.2f, %.2f) m\r\n", pos.x, pos.y, pos.z);
+                uart_manager_print("Velocity: (%.2f, %.2f, %.2f) m/s\r\n", pos.vx, pos.vy, pos.vz);
+                uart_manager_print("Confidence: %.2f\r\n", pos.confidence);
+                uart_manager_print("Valid: YES\r\n");
+            }
+            else
+            {
+                uart_manager_print("\r\nSensor Fusion Status:\r\n");
+                uart_manager_print("Valid: NO\r\n");
+            }
+        }
+        else if (strcmp(target, "active") == 0)
+        {
+            bool active = sensor_fusion_is_active();
+            uart_manager_print("Sensor Fusion: %s\r\n", active ? "ACTIVE" : "STOPPED");
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else if (strcmp(action, "set") == 0)
+    {
+        if (strcmp(target, "debug") == 0)
+        {
+            if (args == NULL)
+            {
+                uart_manager_print("ERR: Missing argument (0=disable, 1=enable)\r\n");
+                return;
+            }
+            
+            int enable = atoi(args);
+            if (enable != 0 && enable != 1)
+            {
+                uart_manager_print("ERR: Invalid value. Use 0 (disable) or 1 (enable)\r\n");
+                return;
+            }
+            
+            sensor_fusion_enable_debug_prints(enable != 0);
+            uart_manager_print("Sensor Fusion debug prints %s\r\n", enable ? "ENABLED" : "DISABLED");
+        }
+        else if (strcmp(target, "active") == 0)
+        {
+            if (args == NULL)
+            {
+                uart_manager_print("ERR: Missing argument (0=stop, 1=start)\r\n");
+                return;
+            }
+            
+            int enable = atoi(args);
+            if (enable != 0 && enable != 1)
+            {
+                uart_manager_print("ERR: Invalid value. Use 0 (stop) or 1 (start)\r\n");
+                return;
+            }
+            
+            if (enable)
+            {
+                sensor_fusion_start();
+                uart_manager_print("Sensor Fusion STARTED (data cleared)\r\n");
+            }
+            else
+            {
+                sensor_fusion_stop();
+                uart_manager_print("Sensor Fusion STOPPED\r\n");
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else
+    {
+        uart_manager_print("ERR: Unknown action '%s'\r\n", action);
+    }
+}
+
 /*---------------------------------------------------------------------------
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
@@ -1365,6 +1465,10 @@ void uart_cmd_router_dispatch(const char* cmd_string)
     else if (strcmp(module, "system") == 0)
     {
         uart_cmd_router_handle_system(action, target, args);
+    }
+    else if (strcmp(module, "sf") == 0)
+    {
+        uart_cmd_router_handle_sensor_fusion(action, target, args);
     }
     else
     {
