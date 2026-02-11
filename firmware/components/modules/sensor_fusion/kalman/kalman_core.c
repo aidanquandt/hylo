@@ -48,20 +48,22 @@ void kalmanCoreDefaultParams(kalmanCoreParams_t* params)
     params->stdDevInitialAttitude_yaw = 0.01f;       /* Unknown heading */
 
     /* Process noise - tune based on IMU quality */
-    params->procNoiseAcc_xy = 0.5f;
-    params->procNoiseAcc_z = 1.0f;
-    params->procNoiseVel = 0.1f;    /* Allow velocity to change (for UWB-only mode) */
-    params->procNoisePos = 0.002f;   /* Allow position to drift slightly */
-    params->procNoiseAtt = 0.0f;
+    /* These values model the uncertainty in IMU measurements and allow the filter */
+    /* to appropriately weight IMU predictions vs UWB measurements */
+    params->procNoiseAcc_xy = 0.5f;   /* Accelerometer noise XY (m/s^2) */
+    params->procNoiseAcc_z = 1.0f;    /* Accelerometer noise Z (m/s^2) */
+    params->procNoiseVel = 0.1f;      /* Velocity random walk (m/s) - REVERTED to original */
+    params->procNoisePos = 0.005f;    /* Position random walk (m) - Conservative middle ground */
+    params->procNoiseAtt = 0.0001f;   /* Attitude drift (rad) - Small but non-zero */
 
     /* Measurement noise */
     params->measNoiseGyro_rollpitch = 0.1f;  /* rad/s */
     params->measNoiseGyro_yaw = 0.1f;        /* rad/s */
 
     /* Initial state */
-    params->initialX = 0.0f;
-    params->initialY = 0.0f;
-    params->initialZ = 0.0f;
+    params->initialX = 1.44f;
+    params->initialY = 3.05f;
+    params->initialZ = 0.80f;
     params->initialYaw = 0.0f;
 }
 
@@ -502,6 +504,84 @@ void kalmanCoreRobustUpdateWithDistance(kalmanCoreData_t* kf, distanceMeasuremen
     kalmanCoreUpdateWithPKE(kf, &H, &Kwm, &P_w_m, error_check);
 }
 
+void kalmanCoreUpdateWithGravity(kalmanCoreData_t* kf, Axis3f* acc, float accelNoiseFactor)
+{
+    /* Normalize accelerometer measurement */
+    float acc_norm = arm_sqrt(acc->x * acc->x + acc->y * acc->y + acc->z * acc->z);
+    
+    if (acc_norm < 0.1f * GRAVITY_MAGNITUDE || acc_norm > 3.0f * GRAVITY_MAGNITUDE) {
+        /* Accelerometer reading is too far from gravity - likely accelerating */
+        /* Skip this update to avoid corrupting attitude estimate */
+        return;
+    }
+    
+    float inv_norm = 1.0f / acc_norm;
+    float acc_normalized[3] = {
+        acc->x * inv_norm,
+        acc->y * inv_norm,
+        acc->z * inv_norm
+    };
+    
+    /* Expected gravity in body frame = R' * [0, 0, -g] */
+    /* This gives us what the accelerometer should read if only gravity is present */
+    float expected_acc[3] = {
+        -kf->R[2][0] * GRAVITY_MAGNITUDE,
+        -kf->R[2][1] * GRAVITY_MAGNITUDE,
+        -kf->R[2][2] * GRAVITY_MAGNITUDE
+    };
+    
+    /* Normalize expected measurement */
+    float expected_norm = arm_sqrt(expected_acc[0] * expected_acc[0] + 
+                                   expected_acc[1] * expected_acc[1] + 
+                                   expected_acc[2] * expected_acc[2]);
+    if (expected_norm < EPS) {
+        return;  /* Numerical issue */
+    }
+    
+    float inv_exp_norm = 1.0f / expected_norm;
+    float expected_normalized[3] = {
+        expected_acc[0] * inv_exp_norm,
+        expected_acc[1] * inv_exp_norm,
+        expected_acc[2] * inv_exp_norm
+    };
+    
+    /* Measurement: normalized accelerometer */
+    /* Innovation: difference between measured and expected normalized gravity */
+    /* We'll update X and Y components (constrains roll and pitch) */
+    /* Skip Z component to avoid fighting with vertical acceleration */
+    
+    /* Measurement noise - scale based on how much we're accelerating */
+    float deviation_from_gravity = fabsf(acc_norm - GRAVITY_MAGNITUDE) / GRAVITY_MAGNITUDE;
+    float noise_std = 0.1f * (1.0f + 5.0f * deviation_from_gravity) * accelNoiseFactor;
+    
+    /* Update with X component of normalized gravity */
+    {
+        float h[KC_STATE_DIM] = {0};
+        arm_matrix_instance_f32 H = {1, KC_STATE_DIM, h};
+        
+        /* Jacobian: d(acc_x/|acc|) / d(attitude_error) */
+        /* Approximation: treat as -R[2][0] affected by D1 and D2 */
+        h[KC_STATE_D1] = kf->R[2][2];   /* Pitch affects X gravity */
+        h[KC_STATE_D2] = -kf->R[2][1];  /* Yaw affects X gravity */
+        
+        float error = acc_normalized[0] - expected_normalized[0];
+        kalmanCoreScalarUpdate(kf, &H, error, noise_std);
+    }
+    
+    /* Update with Y component of normalized gravity */
+    {
+        float h[KC_STATE_DIM] = {0};
+        arm_matrix_instance_f32 H = {1, KC_STATE_DIM, h};
+        
+        /* Jacobian: d(acc_y/|acc|) / d(attitude_error) */
+        h[KC_STATE_D0] = -kf->R[2][2];  /* Roll affects Y gravity */
+        h[KC_STATE_D2] = kf->R[2][0];   /* Yaw affects Y gravity */
+        
+        float error = acc_normalized[1] - expected_normalized[1];
+        kalmanCoreScalarUpdate(kf, &H, error, noise_std);
+    }
+}
+
 bool kalmanCoreFinalize(kalmanCoreData_t* kf)
 {
     if (!kf->isUpdated) {
@@ -796,29 +876,41 @@ static void predictDt(kalmanCoreData_t* kf, const kalmanCoreParams_t* params,
 
 static void addProcessNoiseDt(kalmanCoreData_t* kf, const kalmanCoreParams_t* params, float dt)
 {
-    /* Position process noise */
-    float pos_noise_xy = powf(params->procNoiseAcc_xy * dt * dt + 
-                              params->procNoiseVel * dt + 
-                              params->procNoisePos, 2);
-    float pos_noise_z = powf(params->procNoiseAcc_z * dt * dt + 
-                             params->procNoiseVel * dt + 
-                             params->procNoisePos, 2);
+    /* Position process noise - CORRECTED: square each term then add */
+    /* Variances add (not standard deviations), so we compute: */
+    /* Q_pos = (sigma_acc * dt^2)^2 + (sigma_vel * dt)^2 + sigma_pos^2 */
+    float acc_contrib_xy = params->procNoiseAcc_xy * dt * dt;
+    float acc_contrib_z = params->procNoiseAcc_z * dt * dt;
+    float vel_contrib = params->procNoiseVel * dt;
+    
+    float pos_noise_xy = acc_contrib_xy * acc_contrib_xy + 
+                         vel_contrib * vel_contrib + 
+                         params->procNoisePos * params->procNoisePos;
+    float pos_noise_z = acc_contrib_z * acc_contrib_z + 
+                        vel_contrib * vel_contrib + 
+                        params->procNoisePos * params->procNoisePos;
     
     kf->P[KC_STATE_X][KC_STATE_X] += pos_noise_xy;
     kf->P[KC_STATE_Y][KC_STATE_Y] += pos_noise_xy;
     kf->P[KC_STATE_Z][KC_STATE_Z] += pos_noise_z;
 
-    /* Velocity process noise */
-    float vel_noise_xy = powf(params->procNoiseAcc_xy * dt + params->procNoiseVel, 2);
-    float vel_noise_z = powf(params->procNoiseAcc_z * dt + params->procNoiseVel, 2);
+    /* Velocity process noise - CORRECTED */
+    float vel_noise_xy = acc_contrib_xy * acc_contrib_xy + 
+                         params->procNoiseVel * params->procNoiseVel;
+    float vel_noise_z = acc_contrib_z * acc_contrib_z + 
+                        params->procNoiseVel * params->procNoiseVel;
     
     kf->P[KC_STATE_PX][KC_STATE_PX] += vel_noise_xy;
     kf->P[KC_STATE_PY][KC_STATE_PY] += vel_noise_xy;
     kf->P[KC_STATE_PZ][KC_STATE_PZ] += vel_noise_z;
 
-    /* Attitude process noise */
-    float att_noise_rp = powf(params->measNoiseGyro_rollpitch * dt + params->procNoiseAtt, 2);
-    float att_noise_yaw = powf(params->measNoiseGyro_yaw * dt + params->procNoiseAtt, 2);
+    /* Attitude process noise - CORRECTED */
+    float gyro_contrib_rp = params->measNoiseGyro_rollpitch * dt;
+    float gyro_contrib_yaw = params->measNoiseGyro_yaw * dt;
+    float att_noise_rp = gyro_contrib_rp * gyro_contrib_rp + 
+                         params->procNoiseAtt * params->procNoiseAtt;
+    float att_noise_yaw = gyro_contrib_yaw * gyro_contrib_yaw + 
+                          params->procNoiseAtt * params->procNoiseAtt;
     
     kf->P[KC_STATE_D0][KC_STATE_D0] += att_noise_rp;
     kf->P[KC_STATE_D1][KC_STATE_D1] += att_noise_rp;

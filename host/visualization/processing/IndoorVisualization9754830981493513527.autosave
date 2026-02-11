@@ -251,14 +251,6 @@ void drawCommandInput() {
     histY += 15;
   }
   
-  // Show what you're typing in large text above the input box
-  if (commandInputFocused && commandInput.length() > 0) {
-    fill(255, 255, 0);  // Bright yellow
-    textSize(28);
-    textAlign(LEFT);
-    text("> " + commandInput, 20, height - 65);
-  }
-  
   // Input box with more visible border - larger box
   
   // Draw border

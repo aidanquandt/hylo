@@ -204,6 +204,19 @@ void kalmanCoreUpdateWithDistance(kalmanCoreData_t* kf, distanceMeasurement_t* d
 void kalmanCoreRobustUpdateWithDistance(kalmanCoreData_t* kf, distanceMeasurement_t* d);
 
 /**
+ * @brief Update roll/pitch using gravity vector constraint from accelerometer
+ * 
+ * This update should be called when the device is stationary or moving slowly
+ * (when |accel| ≈ gravity). It constrains roll and pitch angles by observing
+ * that the accelerometer should measure gravity when not accelerating.
+ * 
+ * @param kf Pointer to filter data
+ * @param acc Accelerometer measurement (m/s^2)
+ * @param accelNoiseFactor Noise scaling factor (1.0 = normal, higher = more uncertain)
+ */
+void kalmanCoreUpdateWithGravity(kalmanCoreData_t* kf, Axis3f* acc, float accelNoiseFactor);
+
+/**
  * @brief Finalize state update (incorporate attitude error into quaternion)
  * @param kf Pointer to filter data
  * @return true if state was finalized, false if no update was needed

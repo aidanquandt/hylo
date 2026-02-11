@@ -1,7 +1,4 @@
 import processing.serial.*;
-import java.awt.Toolkit;
-import java.awt.datatransfer.Clipboard;
-import java.awt.datatransfer.DataFlavor;
 
 // =====================
 // Toggle data source
@@ -251,15 +248,7 @@ void drawCommandInput() {
     histY += 15;
   }
   
-  // Show what you're typing in large text above the input box
-  if (commandInputFocused && commandInput.length() > 0) {
-    fill(255, 255, 0);  // Bright yellow
-    textSize(28);
-    textAlign(LEFT);
-    text("> " + commandInput, 20, height - 65);
-  }
-  
-  // Input box with more visible border - larger box
+  // Input box with more visible border
   
   // Draw border
   if (commandInputFocused) {
@@ -269,38 +258,33 @@ void drawCommandInput() {
     stroke(150);
     strokeWeight(2);
   }
-  fill(0);  // Pure black background
-  rect(10, height - 50, width - 20, 40);
+  fill(commandInputFocused ? color(0, 0, 0) : color(60));  // Black background for better contrast
+  rect(10, height - 45, width - 20, 35);
   noStroke();
   
-  // Draw text with maximum visibility
-  textAlign(LEFT, CENTER);  // Center vertically
-  textSize(24);  // Larger text
-  
-  // Build display string
+  // Draw text with high contrast - larger and with left alignment
+  textSize(18);
+  textAlign(LEFT);
+  fill(255, 255, 0);  // Yellow text for maximum visibility
   String displayText = "> " + commandInput;
   if (commandInputFocused && (millis() / 500) % 2 == 0) {
     displayText += "|";
   }
-  
-  // Draw the text in the center of the input box
-  fill(255, 255, 0);  // Bright yellow
-  text(displayText, 20, height - 30);
+  text(displayText, 18, height - 20);
   
   // Debug: show length of command
   if (commandInputFocused) {
     fill(0, 255, 0);
-    textSize(12);
+    textSize(10);
     textAlign(RIGHT);
-    text("chars: " + commandInput.length(), width - 20, height - 30);
+    text("chars: " + commandInput.length(), width - 15, height - 20);
   }
-  textAlign(LEFT);  // Reset
   
   // Instructions
   fill(commandInputFocused ? color(255, 255, 0) : color(150));
   textSize(11);
   textAlign(CENTER);
-  text("Press 'C' to toggle | ENTER to send | BACKSPACE to delete | CTRL+V to paste | Click to activate", width/2, height - 5);
+  text("Press 'C' to toggle | ENTER to send | BACKSPACE to delete | Click here to activate", width/2, height - 5);
   textAlign(LEFT);
 }
 
@@ -450,25 +434,6 @@ void keyPressed() {
   // Debug: print all key presses
   if (commandInputFocused) {
     println("Key pressed: '" + key + "' (code: " + int(key) + ")");
-  }
-  
-  // Handle paste (Ctrl+V or Cmd+V)
-  if (commandInputFocused && (keyCode == 86 && (key == CODED || key == 22))) {
-    // Check if Ctrl (Windows/Linux) or Cmd (Mac) is pressed
-    try {
-      Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-      String pastedText = (String) clipboard.getData(DataFlavor.stringFlavor);
-      if (pastedText != null) {
-        // Remove any newlines and carriage returns
-        pastedText = pastedText.replace("\n", "").replace("\r", "");
-        commandInput += pastedText;
-        println("Pasted: " + pastedText);
-        println("commandInput now = \"" + commandInput + "\" (length: " + commandInput.length() + ")");
-      }
-    } catch (Exception e) {
-      println("Paste failed: " + e.getMessage());
-    }
-    return;
   }
   
   // Handle command input when focused
