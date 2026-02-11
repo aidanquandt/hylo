@@ -53,6 +53,8 @@ STATIC bool verify_chip_id(void);
 STATIC bool imu_read_accel_and_gyro(void);
 STATIC void imu_read_temperature(void);
 STATIC void imu_push_to_sensor_fusion(void);
+STATIC void imu_transform_accel(const vec3_t* accel_in, vec3_t* accel_out);
+STATIC void imu_transform_gyro(const vec3_t* gyro_in, vec3_t* gyro_out);
 STATIC void imu_state_machine_sample_inputs(void);
 STATIC uint16_t imu_transition_logic(uint16_t currentState, uint32_t stateTimer);
 STATIC void imu_state_initialization_on_entry(uint16_t prevState);
@@ -123,12 +125,19 @@ STATIC bool imu_read_accel_and_gyro(void)
         return false;
     }
 
-    int result = imu_port_read_accel_and_gyro(imu_dev, &ctx.data.accel, &ctx.data.gyro);
+    vec3_t accel_pre_transform;
+    vec3_t gyro_pre_transform;
+
+    int result = imu_port_read_accel_and_gyro(imu_dev, &accel_pre_transform, &gyro_pre_transform);
+    
     if (result != IMU_PORT_SUCCESS)
     {
         imu_fault_code = FAULT_READ_FAILED;
         return false;
     }
+
+    imu_transform_accel(&accel_pre_transform, &ctx.data.accel);
+    imu_transform_gyro(&gyro_pre_transform, &ctx.data.gyro);
     
     return true;
 }
@@ -142,6 +151,70 @@ STATIC void imu_read_temperature(void)
     }
 
     ctx.data.temperature = imu_port_read_temperature(imu_dev);
+}
+
+/**
+ * @brief Transform accelerometer from sensor frame to body frame
+ * @param accel_in Input acceleration from sensor (sensor frame)
+ * @param accel_out Output acceleration (body frame)
+ * 
+ * Applies coordinate transformation based on physical IMU mounting orientation.
+ * Modify the mapping below to match your hardware installation.
+ */
+STATIC void imu_transform_accel(const vec3_t* accel_in, vec3_t* accel_out)
+{
+    // Identity mapping (sensor frame = body frame)
+    // Modify these assignments if IMU is mounted in a different orientation:
+    accel_out->x = accel_in->x;
+    accel_out->y = accel_in->y;
+    accel_out->z = accel_in->z;
+    
+    // Example: 90° rotation about Z-axis (sensor X → body Y, sensor Y → body -X)
+    // accel_out->x = -accel_in->y;
+    // accel_out->y = accel_in->x;
+    // accel_out->z = accel_in->z;
+    
+    // Example: 180° rotation about Z-axis (sensor X → body -X, sensor Y → body -Y)
+    // accel_out->x = -accel_in->x;
+    // accel_out->y = -accel_in->y;
+    // accel_out->z = accel_in->z;
+    
+    // Example: IMU upside down (sensor Z → body -Z)
+    // accel_out->x = accel_in->x;
+    // accel_out->y = accel_in->y;
+    // accel_out->z = -accel_in->z;
+}
+
+/**
+ * @brief Transform gyroscope from sensor frame to body frame
+ * @param gyro_in Input angular velocity from sensor (sensor frame)
+ * @param gyro_out Output angular velocity (body frame)
+ * 
+ * Applies coordinate transformation based on physical IMU mounting orientation.
+ * Must match the same rotation as imu_transform_accel().
+ */
+STATIC void imu_transform_gyro(const vec3_t* gyro_in, vec3_t* gyro_out)
+{
+    // Identity mapping (sensor frame = body frame)
+    // Modify these assignments to match your IMU mounting (same rotation as accel):
+    gyro_out->x = gyro_in->x;
+    gyro_out->y = gyro_in->y;
+    gyro_out->z = gyro_in->z;
+    
+    // Example: 90° rotation about Z-axis (sensor X → body Y, sensor Y → body -X)
+    // gyro_out->x = -gyro_in->y;
+    // gyro_out->y = gyro_in->x;
+    // gyro_out->z = gyro_in->z;
+    
+    // Example: 180° rotation about Z-axis (sensor X → body -X, sensor Y → body -Y)
+    // gyro_out->x = -gyro_in->x;
+    // gyro_out->y = -gyro_in->y;
+    // gyro_out->z = gyro_in->z;
+    
+    // Example: IMU upside down (sensor Z → body -Z)
+    // gyro_out->x = gyro_in->x;
+    // gyro_out->y = gyro_in->y;
+    // gyro_out->z = -gyro_in->z;
 }
 
 STATIC void imu_push_to_sensor_fusion(void)
