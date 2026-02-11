@@ -457,9 +457,8 @@ STATIC void uart_cmd_router_handle_uwb(const char* action, const char* target, c
         {
             uwb_rx_stats_t stats;
             uwb_get_rx_stats(&stats);
-            uart_manager_print("RX: %u received, %u errors, %u filtered\r\n",
-                               (unsigned int)stats.received, (unsigned int)stats.rx_errors,
-                               (unsigned int)stats.filtered);
+            uart_manager_print("RX: %u received, %u filtered\r\n",
+                               (unsigned int)stats.received, (unsigned int)stats.filtered);
             uart_manager_print("Queue: TX overflows=%u, RX overflows=%u\r\n",
                                (unsigned int)uwb_get_tx_queue_overflows(),
                                (unsigned int)uwb_get_rx_queue_overflows());
@@ -468,17 +467,20 @@ STATIC void uart_cmd_router_handle_uwb(const char* action, const char* target, c
             uart_manager_print("Port Stats:\r\n");
             uart_manager_print("  rx_ok_count: %lu\r\n", (unsigned long)port_stats.rx_ok_count);
             uart_manager_print("  rx_timeout_count: %lu\r\n", (unsigned long)port_stats.rx_timeout_count);
-            uart_manager_print("  rx_error_arfe_count: %lu\r\n", (unsigned long)port_stats.rx_error_arfe_count);
-            uart_manager_print("  rx_error_overrun_count: %lu\r\n", (unsigned long)port_stats.rx_error_overrun_count);
-            uart_manager_print("  rx_error_crc_count: %lu\r\n", (unsigned long)port_stats.rx_error_crc_count);
-            uart_manager_print("  rx_error_preamble_timeout_count: %lu\r\n", (unsigned long)port_stats.rx_error_preamble_timeout_count);
-            uart_manager_print("  rx_error_phy_header_count: %lu\r\n", (unsigned long)port_stats.rx_error_phy_header_count);
-            uart_manager_print("  rx_error_sync_loss_count: %lu\r\n", (unsigned long)port_stats.rx_error_sync_loss_count);
-            uart_manager_print("  rx_error_frame_timeout_count: %lu\r\n", (unsigned long)port_stats.rx_error_frame_timeout_count);
-            uart_manager_print("  rx_error_sfd_timeout_count: %lu\r\n", (unsigned long)port_stats.rx_error_sfd_timeout_count);
-            uart_manager_print("  rx_error_other_count: %lu\r\n", (unsigned long)port_stats.rx_error_other_count);
             uart_manager_print("  tx_done_count: %lu\r\n", (unsigned long)port_stats.tx_done_count);
             uart_manager_print("  send_message_count: %lu\r\n", (unsigned long)port_stats.send_message_count);
+            uart_manager_print("HW Diagnostic Counters:\r\n");
+            uart_manager_print("  PHE (PHY header errors): %u\r\n", port_stats.PHE);
+            uart_manager_print("  RSL (sync loss): %u\r\n", port_stats.RSL);
+            uart_manager_print("  CRCG (good CRC): %u\r\n", port_stats.CRCG);
+            uart_manager_print("  CRCB (bad CRC): %u\r\n", port_stats.CRCB);
+            uart_manager_print("  ARFE (addr filter err): %u\r\n", port_stats.ARFE);
+            uart_manager_print("  OVER (RX overrun): %u\r\n", port_stats.OVER);
+            uart_manager_print("  SFDTO (SFD timeout): %u\r\n", port_stats.SFDTO);
+            uart_manager_print("  PTO (preamble timeout): %u\r\n", port_stats.PTO);
+            uart_manager_print("  RTO (RX timeout): %u\r\n", port_stats.RTO);
+            uart_manager_print("  TXF (TX frames): %u\r\n", port_stats.TXF);
+            uart_manager_print("Status Registers:\r\n");
             uart_manager_print("  irq_status: 0x%08lX\r\n", (unsigned long)port_stats.irq_status);
             uart_manager_print("  status_lo: 0x%08lX\r\n", (unsigned long)port_stats.status_lo);
             uart_manager_print("  status_hi: 0x%08lX\r\n", (unsigned long)port_stats.status_hi);

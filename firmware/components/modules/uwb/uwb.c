@@ -2,6 +2,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "uwb.h"
+#include "common.h"
 #include "FreeRTOS.h"
 #include "error_handler.h"
 #include "mac_802154.h"
@@ -15,7 +16,6 @@
 #include "uart_manager.h"
 #include "uwb_port.h"
 #include "uwb_protocol_messages.h"
-#include <string.h>
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -25,12 +25,19 @@
 #define DEFAULT_NODE_ADDRESS (0x0001U) // Changed from 0x0000 (reserved/coordinator address)
 #define DEFAULT_PAN_ID MAC_DEFAULT_PAN_ID
 #define MAX_PROTOCOL_HANDLERS (8U)
-#define UWB_RX_QUEUE_LENGTH (10U)
+#define UWB_RX_QUEUE_LENGTH (20U)  // Increased for burst tolerance during TWR exchanges
 #define UWB_RX_TASK_PRIORITY (6U)
 #define UWB_RX_TASK_STACK_SIZE (768U)
-#define UWB_TX_QUEUE_LENGTH (16U) // Increased for high-rate TWR operation
+#define UWB_TX_QUEUE_LENGTH (16U)
 #define UWB_TX_TASK_PRIORITY (5U)
 #define UWB_TX_TASK_STACK_SIZE (512U)
+#define UWB_TX_TIMEOUT_MS (3U)
+#define UWB_TX_TIMEOUT_THRESHOLD (2U)
+#define UWB_TX_QUEUE_DEPTH_WARNING (8U)
+#define UWB_FAULT_RECOVERY_MS (100U)  // Hardware recovery is instant if it will work
+#define UWB_MAX_RETRY_ATTEMPTS (3U)
+#define UWB_RX_TASK_STACK_CHECK_INTERVAL (1000U)
+#define UWB_RX_TASK_STACK_MIN_WORDS (128U)
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -49,17 +56,11 @@ typedef enum
 typedef struct
 {
     bool fault_present;
+    bool transient_fault_present;
     bool init_device_completed;
     bool start_requested;
     bool stop_requested;
 } uwb_state_machine_inputs_t;
-
-typedef struct
-{
-    uint32_t device_id;
-    float temperature;
-    float voltage;
-} uwb_measurements_t;
 
 typedef struct
 {
@@ -93,7 +94,6 @@ typedef struct
     uint8_t payload[MAC_MAX_PAYLOAD_SIZE];
     uint16_t length;
     uint16_t dest_addr;
-    uint32_t tx_time_dtuh; // 0 = immediate, non-zero = delayed
     uint32_t message_id;
 } uwb_tx_queue_item_t;
 
@@ -101,7 +101,39 @@ typedef struct
 {
     uint32_t tx_queue_overflows;
     uint32_t rx_queue_overflows;
+    uint32_t tx_timeouts;
 } uwb_debug_stats_t;
+
+typedef struct
+{
+    protocol_handler_entry_t handlers[MAX_PROTOCOL_HANDLERS];
+    uint8_t handler_count;
+    protocol_stats_t stats;
+} protocol_context_t;
+
+typedef struct
+{
+    QueueHandle_t queue;
+    SemaphoreHandle_t complete_sem;
+    uwb_tx_complete_handler_t complete_handler;
+    uint32_t next_message_id;
+    volatile uint32_t current_message_id;
+    volatile uint64_t current_tx_timestamp;
+    uint8_t consecutive_timeouts;
+} tx_context_t;
+
+typedef struct
+{
+    QueueHandle_t queue;
+    uwb_rx_stats_t stats;
+} rx_context_t;
+
+typedef struct
+{
+    uwb_fault_code_e fault_code;
+    uint8_t init_retry_count;
+    uwb_state_machine_inputs_t inputs;
+} state_context_t;
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -114,72 +146,97 @@ STATIC void uwb_process_received_message(const uint8_t* data, uint16_t length,
 STATIC void uwb_rx_task(void* argument);
 STATIC void uwb_tx_task(void* argument);
 STATIC void uwb_isr_rx_callback(const uint8_t* data, uint16_t length, uint64_t rx_timestamp);
-STATIC void uwb_tx_done_callback(uint64_t tx_timestamp);
+STATIC void uwb_tx_complete_callback(uint64_t tx_timestamp);
 STATIC void uwb_state_machine_sample_inputs(void);
 STATIC uint16_t uwb_transition_logic(uint16_t currentState, uint32_t stateTimer);
+STATIC void uwb_state_off_on_entry(uint16_t prevState);
 STATIC void uwb_state_initialization_on_entry(uint16_t prevState);
+STATIC void uwb_state_retry_on_entry(uint16_t prevState);
 STATIC void uwb_state_faulted_on_entry(uint16_t prevState);
+STATIC bool uwb_is_transient_fault(uwb_fault_code_e fault);
 
 /*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
 STATIC void uwb_init(void);
 STATIC void uwb_create_task(void);
-STATIC void uwb_process_10Hz(void);
+STATIC void uwb_process_100Hz(void);
 
 extern const module_S uwb_module;
 
 const module_S uwb_module = {
-    .module_name         = "uwb",
-    .module_init         = uwb_init,
-    .module_create_task  = uwb_create_task,
-    .module_process_10Hz = uwb_process_10Hz, // State machine for fault detection
+    .module_name          = "uwb",
+    .module_init          = uwb_init,
+    .module_create_task   = uwb_create_task,
+    .module_process_100Hz = uwb_process_100Hz, // State machine for fault detection
 };
 
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-STATIC protocol_handler_entry_t protocol_handlers[MAX_PROTOCOL_HANDLERS];
-STATIC uint8_t protocol_handler_count        = 0;
-STATIC protocol_stats_t protocol_stats       = {0};
-STATIC uwb_tx_done_handler_t tx_done_handler = NULL;
-STATIC uint32_t next_message_id              = 1;
-STATIC uint32_t current_tx_message_id        = 0; // ID of message currently being transmitted
-STATIC QueueHandle_t uwb_rx_queue            = NULL;
-STATIC QueueHandle_t uwb_tx_queue            = NULL;
-STATIC SemaphoreHandle_t uwb_tx_done_sem     = NULL;
-STATIC uwb_debug_stats_t debug_stats         = {0};
 
-STATIC const state_s uwb_states[] = {
-    [UWB_STATE_OFF]            = {.process = NULL, .onEntry = NULL, .onExit = NULL},
-    [UWB_STATE_INITIALIZATION] = {.process = NULL,
-                                  .onEntry = uwb_state_initialization_on_entry,
-                                  .onExit  = NULL},
-    [UWB_STATE_ACTIVE]         = {.process = NULL, .onEntry = NULL, .onExit = NULL},
-    [UWB_STATE_FAULTED] = {.process = NULL, .onEntry = uwb_state_faulted_on_entry, .onExit = NULL}};
+// Protocol handling
+STATIC protocol_context_t protocol = {0};
 
-STATIC state_machine_s uwb_state_machine = {.prev_state      = UWB_STATE_OFF,
-                                            .curr_state      = UWB_STATE_OFF,
-                                            .next_state      = UWB_STATE_OFF,
-                                            .timer           = 0,
-                                            .transitionLogic = uwb_transition_logic,
-                                            .states          = uwb_states};
-
-STATIC uwb_dev_t* uwb_dev                   = NULL;
-STATIC uwb_measurements_t measurements      = {0};
-STATIC uwb_fault_code_e fault_code          = FAULT_NONE;
-STATIC uwb_state_machine_inputs_t sm_inputs = {0};
-STATIC uwb_addressing_t addressing          = {
-             .my_pan_id   = DEFAULT_PAN_ID,
-             .my_address  = DEFAULT_NODE_ADDRESS,
-             .tx_sequence = 0,
+// TX context
+STATIC tx_context_t tx = {
+    .next_message_id = 1,  // Start at 1, avoid 0
 };
 
-STATIC uwb_rx_stats_t rx_stats = {0};
+// RX context
+STATIC rx_context_t rx = {0};
+
+// State machine
+STATIC state_context_t state = {
+    .fault_code = FAULT_NONE,
+};
+
+STATIC const state_s uwb_states[] = {
+    [UWB_STATE_OFF]            = {.onEntry = uwb_state_off_on_entry},
+    [UWB_STATE_INITIALIZATION] = {.onEntry = uwb_state_initialization_on_entry},
+    [UWB_STATE_ACTIVE]         = {0},
+    [UWB_STATE_RETRY]          = {.onEntry = uwb_state_retry_on_entry},
+    [UWB_STATE_FAULTED]        = {.onEntry = uwb_state_faulted_on_entry},
+};
+
+STATIC state_machine_s uwb_state_machine = {
+    .prev_state      = UWB_STATE_OFF,
+    .curr_state      = UWB_STATE_OFF,
+    .next_state      = UWB_STATE_OFF,
+    .timer           = 0,
+    .transitionLogic = uwb_transition_logic,
+    .states          = uwb_states,
+};
+
+// Device context
+STATIC uwb_dev_t* uwb_dev = NULL;
+STATIC uint32_t device_id = 0;
+STATIC uwb_addressing_t addressing = {
+    .my_pan_id   = DEFAULT_PAN_ID,
+    .my_address  = DEFAULT_NODE_ADDRESS,
+    .tx_sequence = 0,
+};
+
+// Debug statistics
+STATIC uwb_debug_stats_t debug_stats = {0};
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
+
+STATIC bool uwb_is_transient_fault(uwb_fault_code_e fault)
+{
+    return (fault == FAULT_PROBE_FAILED || fault == FAULT_TX_FAILED || fault == FAULT_RX_FAILED);
+}
+
+STATIC void uwb_state_off_on_entry(uint16_t prevState)
+{
+    (void)prevState;
+    
+    uwb_dev = NULL;
+    state.fault_code = FAULT_NONE;
+    state.init_retry_count = 0;
+}
 
 STATIC bool verify_device_id(void)
 {
@@ -194,31 +251,32 @@ STATIC bool verify_device_id(void)
         return false;
     }
 
-    measurements.device_id = uwb_port_read_device_id(uwb_dev);
+    device_id = uwb_port_read_device_id(uwb_dev);
 
-    return (measurements.device_id == UWB_EXPECTED_DEV_ID);
+    return (device_id == UWB_EXPECTED_DEV_ID);
 }
 
 STATIC void uwb_init(void)
 {
-    // Create FreeRTOS resources BEFORE scheduler starts
-    uwb_rx_queue = xQueueCreate(UWB_RX_QUEUE_LENGTH, sizeof(uwb_rx_event_t));
-    if (uwb_rx_queue == NULL)
+    // Create RX queue
+    rx.queue = xQueueCreate(UWB_RX_QUEUE_LENGTH, sizeof(uwb_rx_event_t));
+    if (rx.queue == NULL)
     {
         error_handler_fatal("uwb", "Failed to create RX queue");
     }
 
-    uwb_tx_queue = xQueueCreate(UWB_TX_QUEUE_LENGTH, sizeof(uwb_tx_queue_item_t));
-    if (uwb_tx_queue == NULL)
+    // Create TX queue
+    tx.queue = xQueueCreate(UWB_TX_QUEUE_LENGTH, sizeof(uwb_tx_queue_item_t));
+    if (tx.queue == NULL)
     {
         error_handler_fatal("uwb", "Failed to create TX queue");
     }
 
-    // Binary semaphore for TX task to wait for TX completion (given from ISR)
-    uwb_tx_done_sem = xSemaphoreCreateBinary();
-    if (uwb_tx_done_sem == NULL)
+    // Binary semaphore for TX completion signaling from ISR
+    tx.complete_sem = xSemaphoreCreateBinary();
+    if (tx.complete_sem == NULL)
     {
-        error_handler_fatal("uwb", "Failed to create TX done semaphore");
+        error_handler_fatal("uwb", "Failed to create TX completion semaphore");
     }
 }
 
@@ -246,11 +304,12 @@ STATIC void uwb_create_task(void)
 
 STATIC void uwb_state_machine_sample_inputs(void)
 {
-    sm_inputs.fault_present         = (fault_code != FAULT_NONE);
-    sm_inputs.init_device_completed = (uwb_dev != NULL);
+    state.inputs.fault_present           = (state.fault_code != FAULT_NONE);
+    state.inputs.transient_fault_present = uwb_is_transient_fault(state.fault_code);
+    state.inputs.init_device_completed   = (uwb_dev != NULL);
 }
 
-STATIC void uwb_process_10Hz(void)
+STATIC void uwb_process_100Hz(void)
 {
     uwb_state_machine_sample_inputs();
     state_machine_periodic(&uwb_state_machine);
@@ -258,48 +317,79 @@ STATIC void uwb_process_10Hz(void)
 
 STATIC uint16_t uwb_transition_logic(uint16_t currentState, uint32_t stateTimer)
 {
-    (void)stateTimer; // Unused
     uint16_t nextState = currentState;
 
     switch (currentState)
     {
         case UWB_STATE_OFF:
-            if (sm_inputs.start_requested)
+            if (state.inputs.start_requested)
             {
-                sm_inputs.start_requested = false;
-                nextState                 = UWB_STATE_INITIALIZATION;
+                state.inputs.start_requested = false;
+                nextState = UWB_STATE_INITIALIZATION;
             }
             break;
 
         case UWB_STATE_INITIALIZATION:
-            if (sm_inputs.fault_present)
+            if (state.inputs.fault_present)
             {
-                nextState = UWB_STATE_FAULTED;
+                // Transient faults (TX/RX) get retries, others go straight to FAULTED
+                if (state.init_retry_count < UWB_MAX_RETRY_ATTEMPTS &&
+                    state.inputs.transient_fault_present)
+                {
+                    state.init_retry_count++;
+                    nextState = UWB_STATE_RETRY;
+                }
+                else
+                {
+                    nextState = UWB_STATE_FAULTED;
+                }
             }
-            else if (sm_inputs.init_device_completed)
+            else if (state.inputs.init_device_completed)
             {
+                state.init_retry_count = 0;
                 nextState = UWB_STATE_ACTIVE;
             }
             break;
 
         case UWB_STATE_ACTIVE:
-            if (sm_inputs.fault_present)
+            if (state.inputs.fault_present)
             {
-                nextState = UWB_STATE_FAULTED;
+                // Transient faults (TX/RX) get retries, others go straight to FAULTED
+                if (state.init_retry_count < UWB_MAX_RETRY_ATTEMPTS &&
+                    state.inputs.transient_fault_present)
+                {
+                    state.init_retry_count++;
+                    nextState = UWB_STATE_RETRY;
+                }
+                else
+                {
+                    nextState = UWB_STATE_FAULTED;
+                }
             }
-            else if (sm_inputs.stop_requested)
+            else if (state.inputs.stop_requested)
             {
-                sm_inputs.stop_requested = false;
-                nextState                = UWB_STATE_OFF;
+                state.inputs.stop_requested = false;
+                nextState = UWB_STATE_OFF;
+            }
+            break;
+
+        case UWB_STATE_RETRY:
+            if (state.inputs.stop_requested)
+            {
+                state.inputs.stop_requested = false;
+                nextState = UWB_STATE_OFF;
+            }
+            else if (stateTimer > MS_TO_100HZ_TICKS(UWB_FAULT_RECOVERY_MS))
+            {
+                nextState = UWB_STATE_INITIALIZATION;
             }
             break;
 
         case UWB_STATE_FAULTED:
-            if (sm_inputs.stop_requested)
+            if (state.inputs.stop_requested)
             {
-                sm_inputs.stop_requested = false;
-                fault_code               = FAULT_NONE;
-                nextState                = UWB_STATE_OFF;
+                state.inputs.stop_requested = false;
+                nextState = UWB_STATE_OFF;
             }
             break;
 
@@ -315,25 +405,25 @@ STATIC void uwb_state_initialization_on_entry(uint16_t prevState)
 {
     (void)prevState;
 
-    fault_code = FAULT_NONE;
+    state.fault_code = FAULT_NONE;
 
     uwb_dev = uwb_port_init();
     if (uwb_dev == NULL)
     {
-        fault_code = FAULT_INIT_NULL_DEV;
+        state.fault_code = FAULT_INIT_NULL_DEV;
         return;
     }
 
     uwb_port_status_t ret = uwb_port_probe_and_init(uwb_dev);
     if (ret != UWB_PORT_SUCCESS)
     {
-        fault_code = FAULT_PROBE_FAILED;
+        state.fault_code = FAULT_PROBE_FAILED;
         return;
     }
 
     if (!verify_device_id())
     {
-        fault_code = FAULT_DEVICE_ID_INVALID;
+        state.fault_code = FAULT_DEVICE_ID_INVALID;
         return;
     }
 
@@ -343,16 +433,16 @@ STATIC void uwb_state_initialization_on_entry(uint16_t prevState)
     ret = uwb_port_configure(uwb_dev);
     if (ret != UWB_PORT_SUCCESS)
     {
-        fault_code = FAULT_CONFIG_FAILED;
+        state.fault_code = FAULT_CONFIG_FAILED;
         return;
     }
 
     uwb_port_register_isr_callbacks(uwb_dev);
     uwb_port_set_rx_callback(uwb_isr_rx_callback);
-    uwb_port_set_tx_done_callback(uwb_tx_done_callback);
+    uwb_port_set_tx_done_callback(uwb_tx_complete_callback);
     uwb_port_enable_rx_interrupt();
 
-    rx_stats = (uwb_rx_stats_t){0};
+    rx.stats = (uwb_rx_stats_t){0};
 }
 
 STATIC void uwb_isr_rx_callback(const uint8_t* data, uint16_t length, uint64_t rx_timestamp)
@@ -372,31 +462,27 @@ STATIC void uwb_isr_rx_callback(const uint8_t* data, uint16_t length, uint64_t r
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-    // Non-blocking send - drops packet if queue full (prevents ISR blocking)
-    if (xQueueSendFromISR(uwb_rx_queue, &event, &xHigherPriorityTaskWoken) != pdPASS)
+    if (xQueueSendFromISR(rx.queue, &event, &xHigherPriorityTaskWoken) != pdPASS)
     {
-        // Queue full - packet dropped
         debug_stats.rx_queue_overflows++;
-        // Log what protocol was dropped
+        
+        // Log dropped protocol for diagnostics
         if (length >= sizeof(protocol_header_t))
         {
-            uint8_t protocol_type     = data[0];
-            const char* protocol_name = "UNKNOWN";
-            switch (protocol_type)
-            {
-                case PROTOCOL_TYPE_TWR:
-                    protocol_name = "TWR";
-                    break;
-                case PROTOCOL_TYPE_DATA:
-                    protocol_name = "DATA";
-                    break;
-                case PROTOCOL_TYPE_OTA_CONFIG:
-                    protocol_name = "OTA_CONFIG";
-                    break;
-            }
-            uart_manager_print(
-                "[ISR_DROP] RX Queue full: Protocol=%s (0x%02X) - Total drops=%lu\r\n",
-                protocol_name, protocol_type, (unsigned long)debug_stats.rx_queue_overflows);
+            static const char* protocol_names[] = {
+                [PROTOCOL_TYPE_TWR]        = "TWR",
+                [PROTOCOL_TYPE_DATA]       = "DATA",
+                [PROTOCOL_TYPE_OTA_CONFIG] = "OTA_CONFIG",
+            };
+            
+            uint8_t protocol_type = data[0];
+            const char* name = (protocol_type < sizeof(protocol_names) / sizeof(protocol_names[0]) &&
+                               protocol_names[protocol_type] != NULL)
+                                   ? protocol_names[protocol_type]
+                                   : "UNKNOWN";
+            
+            uart_manager_print("[ISR_DROP] RX Queue full: Protocol=%s (0x%02X) - Total=%lu\r\n",
+                             name, protocol_type, (unsigned long)debug_stats.rx_queue_overflows);
         }
     }
 
@@ -414,18 +500,18 @@ STATIC void uwb_rx_task(void* argument)
     for (;;)
     {
         // Block indefinitely waiting for RX events from ISR
-        if (xQueueReceive(uwb_rx_queue, &event, portMAX_DELAY) == pdPASS)
+        if (xQueueReceive(rx.queue, &event, portMAX_DELAY) == pdPASS)
         {
             // Process in task context - safe to call protocol handlers
             uwb_process_received_message(event.data, event.length, event.rx_timestamp);
         }
 
-        // Periodic stack watermark check (every 1000 packets)
-        if (++loop_count >= 1000)
+        // Periodic stack watermark check
+        if (++loop_count >= UWB_RX_TASK_STACK_CHECK_INTERVAL)
         {
             loop_count                  = 0;
             UBaseType_t stack_remaining = uxTaskGetStackHighWaterMark(NULL);
-            if (stack_remaining < 128)
+            if (stack_remaining < UWB_RX_TASK_STACK_MIN_WORDS)
             {
                 error_handler_log(ERROR_SEVERITY_WARNING, "uwb_rx",
                                   "Low stack: %lu words remaining", (unsigned long)stack_remaining);
@@ -445,8 +531,17 @@ STATIC void uwb_process_received_message(const uint8_t* data, uint16_t length,
     }
 
     // Parse MAC frame
-    mac_frame_short_t* rx_frame = (mac_frame_short_t*)data;
-    uint16_t payload_len        = length - MAC_FRAME_SHORT_HEADER_SIZE;
+    const mac_frame_short_t* rx_frame = (const mac_frame_short_t*)data;
+    
+    // Filter non-data frames (beacons, ACKs, commands)
+    uint16_t frame_type = rx_frame->frame_control & MAC_FC_TYPE_MASK;
+    if (frame_type != MAC_FC_TYPE_DATA)
+    {
+        rx.stats.filtered++;
+        return;
+    }
+    
+    uint16_t payload_len = length - MAC_FRAME_SHORT_HEADER_SIZE;
 
     if (payload_len > MAC_MAX_PAYLOAD_SIZE)
     {
@@ -455,28 +550,21 @@ STATIC void uwb_process_received_message(const uint8_t* data, uint16_t length,
         return;
     }
 
-    rx_stats.received++;
+    rx.stats.received++;
 
     // Dispatch to protocol handler with timestamp paired to this message
     uwb_dispatch_protocol_message(rx_frame->payload, payload_len, rx_frame->src_addr, rx_timestamp);
 }
 
-STATIC void uwb_tx_done_callback(uint64_t tx_timestamp)
+STATIC void uwb_tx_complete_callback(uint64_t tx_timestamp)
 {
-    // CRITICAL: This runs in ISR context
-    // Signal TX task that transmission is complete
+    // CRITICAL: This runs in ISR context - only store timestamp and signal task
+    // Handler invocation happens in TX task context to avoid blocking operations in ISR
+    tx.current_tx_timestamp = tx_timestamp;
+    
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    xSemaphoreGiveFromISR(uwb_tx_done_sem, &xHigherPriorityTaskWoken);
+    xSemaphoreGiveFromISR(tx.complete_sem, &xHigherPriorityTaskWoken);
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-
-    // Forward TX done notification with message ID to registered handler
-    if (tx_done_handler != NULL)
-    {
-        tx_done_handler(current_tx_message_id, tx_timestamp);
-    }
-
-    // Clear current message ID
-    current_tx_message_id = 0;
 }
 
 STATIC void uwb_tx_task(void* argument)
@@ -488,15 +576,22 @@ STATIC void uwb_tx_task(void* argument)
     for (;;)
     {
         // Block indefinitely waiting for TX requests
-        if (xQueueReceive(uwb_tx_queue, &tx_item, portMAX_DELAY) != pdPASS)
+        if (xQueueReceive(tx.queue, &tx_item, portMAX_DELAY) != pdPASS)
         {
             continue;
         }
 
-        // Wait for radio to be ready
-        while (uwb_state_machine.curr_state != UWB_STATE_ACTIVE)
+        // Check radio state once - don't spin if faulted
+        if (uwb_state_machine.curr_state != UWB_STATE_ACTIVE)
         {
-            vTaskDelay(pdMS_TO_TICKS(10));
+            // Radio not ready - notify handler and drop message
+            if (tx.complete_handler != NULL)
+            {
+                tx.complete_handler(tx_item.message_id, 0);
+            }
+            error_handler_log(ERROR_SEVERITY_WARNING, "uwb", 
+                             "TX dropped: radio not active (state=%u)", uwb_state_machine.curr_state);
+            continue;
         }
 
         // Build MAC frame
@@ -512,87 +607,116 @@ STATIC void uwb_tx_task(void* argument)
         memcpy(frame->payload, tx_item.payload, tx_item.length);
         uint16_t frame_len = MAC_FRAME_SHORT_HEADER_SIZE + tx_item.length;
 
-        // Store message ID for TX done callback
-        current_tx_message_id = tx_item.message_id;
+        // Store message ID for TX completion callback
+        tx.current_message_id = tx_item.message_id;
 
-        // Transmit (immediate or delayed)
-        uwb_port_status_t result;
-        if (tx_item.tx_time_dtuh == 0)
-        {
-            result = uwb_port_send_message(uwb_dev, tx_buffer, frame_len);
-        }
-        else
-        {
-            result =
-                uwb_port_send_message_delayed(uwb_dev, tx_buffer, frame_len, tx_item.tx_time_dtuh);
-        }
-
+        // Transmit
+        uwb_port_status_t result = uwb_port_send_message(uwb_dev, tx_buffer, frame_len);
         if (result != UWB_PORT_SUCCESS)
         {
             // TX failed - notify handler with message ID and zero timestamp
-            current_tx_message_id = 0;
-            if (tx_done_handler != NULL)
+            tx.current_message_id = 0;
+            if (tx.complete_handler != NULL)
             {
-                tx_done_handler(tx_item.message_id, 0);
+                tx.complete_handler(tx_item.message_id, 0);
             }
             error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "TX failed: port error %d", result);
             continue;
         }
 
-        // Wait for TX done ISR (blocks until transmission completes)
-        // Timeout after 100ms to prevent deadlock
-        if (xSemaphoreTake(uwb_tx_done_sem, pdMS_TO_TICKS(100)) != pdTRUE)
+        // Wait for TX completion (~300µs typical, timeout provides 10× margin)
+        if (xSemaphoreTake(tx.complete_sem, pdMS_TO_TICKS(UWB_TX_TIMEOUT_MS)) != pdTRUE)
         {
             error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "TX done timeout for msg %lu",
                               (unsigned long)tx_item.message_id);
-            current_tx_message_id = 0;
+            
+            debug_stats.tx_timeouts++;
+            tx.consecutive_timeouts++;
+            tx.current_message_id = 0;
+            
+            // Notify application that TX failed (timestamp=0 indicates failure)
+            if (tx.complete_handler != NULL)
+            {
+                tx.complete_handler(tx_item.message_id, 0);
+            }
+            
+            // Hardware fault detection: multiple consecutive timeouts indicate stuck radio
+            if (tx.consecutive_timeouts >= UWB_TX_TIMEOUT_THRESHOLD)
+            {
+                error_handler_log(ERROR_SEVERITY_ERROR, "uwb", 
+                                 "Hardware stuck: %u consecutive TX timeouts", tx.consecutive_timeouts);
+                tx.consecutive_timeouts = 0;
+                xQueueReset(tx.queue);
+                
+                state.fault_code = FAULT_TX_FAILED;
+            }
+        }
+        else
+        {
+            // TX completed successfully - reset timeout counter and notify handler in task context
+            tx.consecutive_timeouts = 0;
+            
+            // Read timestamp and message ID atomically in task context (ISR only writes)
+            uint32_t message_id = tx.current_message_id;
+            uint64_t timestamp = tx.current_tx_timestamp;
+            tx.current_message_id = 0;
+            
+            // Safe to call application handler from task context (not ISR)
+            if (tx.complete_handler != NULL)
+            {
+                tx.complete_handler(message_id, timestamp);
+            }
         }
     }
+}
+
+STATIC void uwb_state_retry_on_entry(uint16_t prevState)
+{
+    (void)prevState;
+    error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Retry attempt %u/%u",
+                      state.init_retry_count, UWB_MAX_RETRY_ATTEMPTS);
+    
+    // Clean up from failed initialization
+    uwb_dev = NULL;
+    xQueueReset(tx.queue);
 }
 
 STATIC void uwb_state_faulted_on_entry(uint16_t prevState)
 {
     (void)prevState;
 
-    const char* fault_str;
-    switch (fault_code)
-    {
-        case FAULT_INIT_NULL_DEV:
-            fault_str = "Device init failed (NULL)";
-            break;
-        case FAULT_PROBE_FAILED:
-            fault_str = "Probe/init failed";
-            break;
-        case FAULT_DEVICE_ID_INVALID:
-            fault_str = "Invalid device ID";
-            break;
-        case FAULT_CONFIG_FAILED:
-            fault_str = "TX/RX config failed";
-            break;
-        case FAULT_TX_FAILED:
-            fault_str = "Transmission failed";
-            break;
-        case FAULT_RX_FAILED:
-            fault_str = "Reception failed";
-            break;
-        default:
-            fault_str = "Unknown fault";
-            break;
-    }
-
-    error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "%s (code=%u)", fault_str, fault_code);
+    static const char* fault_strings[] = {
+        [FAULT_NONE]              = "None",
+        [FAULT_INIT_NULL_DEV]     = "Device init failed (NULL)",
+        [FAULT_PROBE_FAILED]      = "Probe/init failed",
+        [FAULT_DEVICE_ID_INVALID] = "Invalid device ID",
+        [FAULT_CONFIG_FAILED]     = "TX/RX config failed",
+        [FAULT_TX_FAILED]         = "Transmission hardware fault",
+        [FAULT_RX_FAILED]         = "Reception failed",
+    };
+    
+    const char* fault_str = (state.fault_code < sizeof(fault_strings) / sizeof(fault_strings[0]))
+                                ? fault_strings[state.fault_code]
+                                : "Unknown fault";
+    
+    error_handler_log(ERROR_SEVERITY_ERROR, "uwb", 
+                     "%s (code=%u) - manual stop required", fault_str, state.fault_code);
+    
+    // Clean up device state
+    uwb_dev = NULL;
+    xQueueReset(tx.queue);
 }
 
 STATIC void uwb_dispatch_protocol_message(const uint8_t* data, uint16_t length, uint16_t src_addr,
                                           uint64_t rx_timestamp)
 {
-    protocol_stats.total_received++;
+    protocol.stats.total_received++;
 
     if (data == NULL || length < sizeof(protocol_header_t))
     {
         error_handler_log(ERROR_SEVERITY_WARNING, "uwb",
                           "Invalid protocol message: null data or too short");
-        protocol_stats.invalid++;
+        protocol.stats.invalid++;
         return;
     }
 
@@ -602,16 +726,16 @@ STATIC void uwb_dispatch_protocol_message(const uint8_t* data, uint16_t length, 
     {
         error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Invalid protocol type: 0x%02X",
                           protocol_type);
-        protocol_stats.invalid++;
+        protocol.stats.invalid++;
         return;
     }
 
     bool handled = false;
-    for (uint8_t i = 0; i < protocol_handler_count; i++)
+    for (uint8_t i = 0; i < protocol.handler_count; i++)
     {
-        if (protocol_handlers[i].protocol_type == protocol_type)
+        if (protocol.handlers[i].protocol_type == protocol_type)
         {
-            protocol_handlers[i].handler(data, length, src_addr, rx_timestamp);
+            protocol.handlers[i].handler(data, length, src_addr, rx_timestamp);
             handled = true;
             break;
         }
@@ -619,7 +743,7 @@ STATIC void uwb_dispatch_protocol_message(const uint8_t* data, uint16_t length, 
 
     if (!handled)
     {
-        protocol_stats.unhandled++;
+        protocol.stats.unhandled++;
     }
 }
 
@@ -634,12 +758,9 @@ void uwb_get_status(uwb_status_t* status)
         return;
     }
 
-    // Direct assignment - no type conversion needed
     status->state       = (uwb_state_e)uwb_state_machine.curr_state;
-    status->device_id   = measurements.device_id;
-    status->temperature = measurements.temperature;
-    status->voltage     = measurements.voltage;
-    status->fault_code  = fault_code;
+    status->device_id   = device_id;
+    status->fault_code  = state.fault_code;
     status->my_address  = addressing.my_address;
     status->my_pan_id   = addressing.my_pan_id;
 }
@@ -651,14 +772,12 @@ void uwb_get_rx_stats(uwb_rx_stats_t* stats)
         return;
     }
 
-    stats->received  = rx_stats.received;
-    stats->rx_errors = rx_stats.rx_errors;
-    stats->filtered  = rx_stats.filtered;
+    *stats = rx.stats;
 }
 
 void uwb_reset_rx_stats(void)
 {
-    rx_stats = (uwb_rx_stats_t){0};
+    rx.stats = (uwb_rx_stats_t){0};
 }
 
 uint32_t uwb_get_tx_queue_overflows(void)
@@ -669,6 +788,20 @@ uint32_t uwb_get_tx_queue_overflows(void)
 uint32_t uwb_get_rx_queue_overflows(void)
 {
     return debug_stats.rx_queue_overflows;
+}
+
+uint32_t uwb_get_tx_timeouts(void)
+{
+    return debug_stats.tx_timeouts;
+}
+
+uint32_t uwb_get_tx_queue_depth(void)
+{
+    if (tx.queue == NULL)
+    {
+        return 0;
+    }
+    return (uint32_t)uxQueueMessagesWaiting(tx.queue);
 }
 
 bool uwb_is_ready(void)
@@ -683,12 +816,12 @@ uwb_dev_t* uwb_get_device(void)
 
 void uwb_start(void)
 {
-    sm_inputs.start_requested = true;
+    state.inputs.start_requested = true;
 }
 
 void uwb_stop(void)
 {
-    sm_inputs.stop_requested = true;
+    state.inputs.stop_requested = true;
 }
 
 void uwb_set_address(uint16_t address, uint16_t pan_id)
@@ -728,97 +861,44 @@ uwb_send_result_t uwb_send_message(const uint8_t* data, uint16_t length, uint16_
 {
     uwb_send_result_t result = {.success = false, .message_id = 0};
 
-    // Validate radio state and parameters
     if (uwb_state_machine.curr_state != UWB_STATE_ACTIVE || data == NULL || length == 0 ||
         length > MAC_MAX_PAYLOAD_SIZE)
     {
         return result;
     }
 
-    // Generate unique message ID
-    uint32_t message_id = next_message_id++;
-    if (next_message_id == 0)
-        next_message_id = 1; // Avoid ID 0
+    // Generate unique message ID (avoid 0)
+    uint32_t message_id = tx.next_message_id++;
+    if (tx.next_message_id == 0)
+    {
+        tx.next_message_id = 1;
+    }
 
-    // Build TX queue item (immediate transmission)
     uwb_tx_queue_item_t tx_item = {
-        .length       = length,
-        .dest_addr    = dest_addr,
-        .tx_time_dtuh = 0, // Immediate
-        .message_id   = message_id,
+        .length     = length,
+        .dest_addr  = dest_addr,
+        .message_id = message_id,
     };
     memcpy(tx_item.payload, data, length);
 
-    // Enqueue for transmission (non-blocking)
-    if (xQueueSend(uwb_tx_queue, &tx_item, 0) != pdPASS)
+    if (xQueueSend(tx.queue, &tx_item, 0) != pdPASS)
     {
         debug_stats.tx_queue_overflows++;
         error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "TX queue full");
         return result;
     }
 
-    // Debug: Log queue depth
-    UBaseType_t queue_waiting = uxQueueMessagesWaiting(uwb_tx_queue);
-    if (queue_waiting > 8)
+    // Warn if queue depth is high
+    UBaseType_t queue_waiting = uxQueueMessagesWaiting(tx.queue);
+    if (queue_waiting > UWB_TX_QUEUE_DEPTH_WARNING)
     {
         error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "TX queue depth: %lu items",
                           (unsigned long)queue_waiting);
     }
 
-    // Success - message queued for transmission
     result.success    = true;
     result.message_id = message_id;
     return result;
-}
-
-uwb_send_result_t uwb_send_message_delayed(const uint8_t* data, uint16_t length, uint16_t dest_addr,
-                                           uint32_t tx_time_dtuh)
-{
-    uwb_send_result_t result = {.success = false, .message_id = 0};
-
-    // Validate radio state and parameters
-    if (uwb_state_machine.curr_state != UWB_STATE_ACTIVE || data == NULL || length == 0 ||
-        length > MAC_MAX_PAYLOAD_SIZE)
-    {
-        return result;
-    }
-
-    // Generate unique message ID
-    uint32_t message_id = next_message_id++;
-    if (next_message_id == 0)
-        next_message_id = 1; // Avoid ID 0
-
-    // Build TX queue item (delayed transmission)
-    uwb_tx_queue_item_t tx_item = {
-        .length       = length,
-        .dest_addr    = dest_addr,
-        .tx_time_dtuh = tx_time_dtuh,
-        .message_id   = message_id,
-    };
-    memcpy(tx_item.payload, data, length);
-
-    // Enqueue for transmission (non-blocking)
-    if (xQueueSend(uwb_tx_queue, &tx_item, 0) != pdPASS)
-    {
-        debug_stats.tx_queue_overflows++;
-        error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Delayed TX queue full");
-        return result;
-    }
-
-    // Success - message queued for delayed transmission
-    result.success    = true;
-    result.message_id = message_id;
-    return result;
-}
-
-uint64_t uwb_get_last_tx_timestamp(void)
-{
-    if (uwb_dev == NULL)
-    {
-        return 0;
-    }
-
-    return uwb_port_get_last_tx_timestamp(uwb_dev);
 }
 
 bool uwb_register_protocol_handler(uint8_t protocol_type, uwb_protocol_handler_t handler)
@@ -827,45 +907,51 @@ bool uwb_register_protocol_handler(uint8_t protocol_type, uwb_protocol_handler_t
     {
         return false;
     }
-
-    // Check if protocol already registered - update if found
-    for (uint8_t i = 0; i < protocol_handler_count; i++)
+    
+    // Validate protocol type range (per uwb_protocol_messages.h)
+    if (protocol_type == 0 || protocol_type > 0x0F)
     {
-        if (protocol_handlers[i].protocol_type == protocol_type)
+        error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "Invalid protocol type: 0x%02X", protocol_type);
+        return false;
+    }
+
+    // Update existing handler if already registered
+    for (uint8_t i = 0; i < protocol.handler_count; i++)
+    {
+        if (protocol.handlers[i].protocol_type == protocol_type)
         {
-            protocol_handlers[i].handler = handler;
+            protocol.handlers[i].handler = handler;
             return true;
         }
     }
 
     // Add new handler
-    if (protocol_handler_count >= MAX_PROTOCOL_HANDLERS)
+    if (protocol.handler_count >= MAX_PROTOCOL_HANDLERS)
     {
         error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "Protocol handler table full");
         return false;
     }
 
-    protocol_handlers[protocol_handler_count].protocol_type = protocol_type;
-    protocol_handlers[protocol_handler_count].handler       = handler;
-    protocol_handler_count++;
+    protocol.handlers[protocol.handler_count].protocol_type = protocol_type;
+    protocol.handlers[protocol.handler_count].handler       = handler;
+    protocol.handler_count++;
 
     return true;
 }
 
 void uwb_unregister_protocol_handler(uint8_t protocol_type)
 {
-    // Find and remove handler
-    for (uint8_t i = 0; i < protocol_handler_count; i++)
+    for (uint8_t i = 0; i < protocol.handler_count; i++)
     {
-        if (protocol_handlers[i].protocol_type == protocol_type)
+        if (protocol.handlers[i].protocol_type == protocol_type)
         {
             // Shift remaining handlers down
-            for (uint8_t j = i; j < protocol_handler_count - 1; j++)
+            for (uint8_t j = i; j < protocol.handler_count - 1; j++)
             {
-                protocol_handlers[j] = protocol_handlers[j + 1];
+                protocol.handlers[j] = protocol.handlers[j + 1];
             }
-            protocol_handler_count--;
-            memset(&protocol_handlers[protocol_handler_count], 0, sizeof(protocol_handler_entry_t));
+            protocol.handler_count--;
+            memset(&protocol.handlers[protocol.handler_count], 0, sizeof(protocol_handler_entry_t));
             return;
         }
     }
@@ -875,24 +961,24 @@ void uwb_get_protocol_stats(uint32_t* total_received, uint32_t* unhandled, uint3
 {
     if (total_received != NULL)
     {
-        *total_received = protocol_stats.total_received;
+        *total_received = protocol.stats.total_received;
     }
     if (unhandled != NULL)
     {
-        *unhandled = protocol_stats.unhandled;
+        *unhandled = protocol.stats.unhandled;
     }
     if (invalid != NULL)
     {
-        *invalid = protocol_stats.invalid;
+        *invalid = protocol.stats.invalid;
     }
 }
 
 void uwb_reset_protocol_stats(void)
 {
-    memset(&protocol_stats, 0, sizeof(protocol_stats));
+    protocol.stats = (protocol_stats_t){0};
 }
 
-void uwb_register_tx_done_handler(uwb_tx_done_handler_t handler)
+void uwb_register_tx_complete_handler(uwb_tx_complete_handler_t handler)
 {
-    tx_done_handler = handler;
+    tx.complete_handler = handler;
 }

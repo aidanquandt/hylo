@@ -17,7 +17,7 @@
  *---------------------------------------------------------------------------*/
 STATIC void twr_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr,
                                  uint64_t rx_timestamp);
-STATIC void twr_tx_done_handler(uint32_t message_id, uint64_t tx_timestamp);
+STATIC void twr_tx_complete_handler(uint32_t message_id, uint64_t tx_timestamp);
 STATIC void twr_module_init(void);
 STATIC void twr_process_1kHz(void);
 
@@ -53,7 +53,7 @@ STATIC void twr_module_init(void)
         error_handler_log(ERROR_SEVERITY_ERROR, "twr", "Failed to register TWR protocol handler");
     }
 
-    uwb_register_tx_done_handler(twr_tx_done_handler);
+    uwb_register_tx_complete_handler(twr_tx_complete_handler);
     module_initialized = true;
 
     // Note: Auto-start is deferred to twr_process_1kHz() to ensure UWB is ready
@@ -101,18 +101,18 @@ STATIC void twr_protocol_handler(const uint8_t* data, uint16_t length, uint16_t 
     }
 }
 
-STATIC void twr_tx_done_handler(uint32_t message_id, uint64_t tx_timestamp)
+STATIC void twr_tx_complete_handler(uint32_t message_id, uint64_t tx_timestamp)
 {
     // Check which state machine is expecting this TX completion
     if (responder_twr_ctx.pending_tx_id == message_id)
     {
-        twr_tx_done_callback(&responder_twr_ctx, message_id, tx_timestamp);
+        twr_tx_complete_callback(&responder_twr_ctx, message_id, tx_timestamp);
     }
     else if (initiator_twr_ctx.pending_tx_id == message_id)
     {
-        twr_tx_done_callback(&initiator_twr_ctx, message_id, tx_timestamp);
+        twr_tx_complete_callback(&initiator_twr_ctx, message_id, tx_timestamp);
     }
-    // Else: stale/unexpected TX done, ignore
+    // Else: stale/unexpected TX completion, ignore
 }
 
 /*---------------------------------------------------------------------------
@@ -132,7 +132,7 @@ void twr_rx_callback(twr_context_t* ctx, const uint8_t* data, uint16_t length, u
     twr_state_machine_handle_event(ctx, &event);
 }
 
-void twr_tx_done_callback(twr_context_t* ctx, uint32_t message_id, uint64_t tx_timestamp)
+void twr_tx_complete_callback(twr_context_t* ctx, uint32_t message_id, uint64_t tx_timestamp)
 {
     if (ctx == NULL)
         return;

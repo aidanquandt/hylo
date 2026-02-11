@@ -70,19 +70,25 @@ typedef void (*uwb_port_tx_done_callback_t)(uint64_t tx_timestamp);
  *---------------------------------------------------------------------------*/
 typedef struct
 {
+    // Software-tracked events (not in hardware counters)
     uint32_t rx_ok_count;
     uint32_t rx_timeout_count;
-    uint32_t rx_error_arfe_count;
-    uint32_t rx_error_overrun_count;
-    uint32_t rx_error_crc_count;
-    uint32_t rx_error_preamble_timeout_count;
-    uint32_t rx_error_phy_header_count;
-    uint32_t rx_error_sync_loss_count;
-    uint32_t rx_error_frame_timeout_count;
-    uint32_t rx_error_sfd_timeout_count;
-    uint32_t rx_error_other_count;
     uint32_t tx_done_count;
     uint32_t send_message_count;
+    
+    // Hardware diagnostic counters (read via dwt_readeventcounters)
+    uint16_t PHE;   // PHY header errors
+    uint16_t RSL;   // Frame sync loss events
+    uint16_t CRCG;  // Good CRC frames
+    uint16_t CRCB;  // Bad CRC frames
+    uint8_t ARFE;   // Address filter errors
+    uint8_t OVER;   // RX buffer overruns
+    uint16_t SFDTO; // SFD timeout events
+    uint16_t PTO;   // Preamble timeout events
+    uint8_t RTO;    // RX frame wait timeout events
+    uint16_t TXF;   // Transmitted frames
+    
+    // Live status registers (polled at stats request)
     uint32_t irq_status;
     uint32_t status_lo;
     uint32_t status_hi;
@@ -101,11 +107,7 @@ void uwb_port_set_pan_id(uwb_dev_t* dev, uint16_t pan_id);
 void uwb_port_set_address(uwb_dev_t* dev, uint16_t address);
 uwb_port_status_t uwb_port_configure(uwb_dev_t* dev);
 uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uint16_t length);
-uwb_port_status_t uwb_port_send_message_delayed(uwb_dev_t* dev, const uint8_t* data,
-                                                uint16_t length, uint64_t tx_timestamp_dtuh);
 uint64_t uwb_port_read_device_time(void);
-uint64_t uwb_port_get_last_tx_timestamp(uwb_dev_t* dev);
-uint64_t uwb_port_get_last_rx_timestamp(uwb_dev_t* dev);
 void uwb_port_enable_rx_interrupt(void);
 void uwb_port_handle_irq(void);
 uint32_t uwb_port_read_irq_status(void);
