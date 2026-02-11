@@ -53,6 +53,8 @@ STATIC bool verify_chip_id(void);
 STATIC bool imu_read_accel_and_gyro(void);
 STATIC void imu_read_temperature(void);
 STATIC void imu_push_to_sensor_fusion(void);
+STATIC void imu_transform_accel(const vec3_t* accel_in, vec3_t* accel_out);
+STATIC void imu_transform_gyro(const vec3_t* gyro_in, vec3_t* gyro_out);
 STATIC void imu_state_machine_sample_inputs(void);
 STATIC uint16_t imu_transition_logic(uint16_t currentState, uint32_t stateTimer);
 STATIC void imu_state_initialization_on_entry(uint16_t prevState);
@@ -123,12 +125,19 @@ STATIC bool imu_read_accel_and_gyro(void)
         return false;
     }
 
-    int result = imu_port_read_accel_and_gyro(imu_dev, &ctx.data.accel, &ctx.data.gyro);
+    vec3_t accel_pre_transform;
+    vec3_t gyro_pre_transform;
+
+    int result = imu_port_read_accel_and_gyro(imu_dev, &accel_pre_transform, &gyro_pre_transform);
+    
     if (result != IMU_PORT_SUCCESS)
     {
         imu_fault_code = FAULT_READ_FAILED;
         return false;
     }
+
+    imu_transform_accel(&accel_pre_transform, &ctx.data.accel);
+    imu_transform_gyro(&gyro_pre_transform, &ctx.data.gyro);
     
     return true;
 }
@@ -142,6 +151,21 @@ STATIC void imu_read_temperature(void)
     }
 
     ctx.data.temperature = imu_port_read_temperature(imu_dev);
+}
+
+STATIC void imu_transform_accel(const vec3_t* accel_in, vec3_t* accel_out)
+{
+    // Identity mapping (sensor frame = body frame)
+    accel_out->x = accel_in->z;
+    accel_out->y = accel_in->y;
+    accel_out->z = -1*accel_in->x;
+}
+
+STATIC void imu_transform_gyro(const vec3_t* gyro_in, vec3_t* gyro_out)
+{
+    gyro_out->x = gyro_in->z;
+    gyro_out->y = gyro_in->y;
+    gyro_out->z = -1*gyro_in->x;
 }
 
 STATIC void imu_push_to_sensor_fusion(void)
@@ -251,14 +275,14 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
         return;
     }
 
-    int accel_result = imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_2G, IMU_ODR_100HZ);
+    int accel_result = imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_2G, IMU_ODR_200HZ);
     if (accel_result != IMU_PORT_SUCCESS)
     {
         imu_fault_code = FAULT_ACCEL_CONFIG_FAILED;
         return;
     }
 
-    int gyro_result = imu_port_configure_gyro(imu_dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_100HZ);
+    int gyro_result = imu_port_configure_gyro(imu_dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_200HZ);
     if (gyro_result != IMU_PORT_SUCCESS)
     {
         imu_fault_code = FAULT_GYRO_CONFIG_FAILED;

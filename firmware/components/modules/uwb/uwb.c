@@ -2,8 +2,8 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "uwb.h"
-#include "common.h"
 #include "FreeRTOS.h"
+#include "common.h"
 #include "error_handler.h"
 #include "mac_802154.h"
 #include "module.h"
@@ -25,7 +25,7 @@
 #define DEFAULT_NODE_ADDRESS (0x0001U) // Changed from 0x0000 (reserved/coordinator address)
 #define DEFAULT_PAN_ID MAC_DEFAULT_PAN_ID
 #define MAX_PROTOCOL_HANDLERS (8U)
-#define UWB_RX_QUEUE_LENGTH (20U)  // Increased for burst tolerance during TWR exchanges
+#define UWB_RX_QUEUE_LENGTH (20U) // Increased for burst tolerance during TWR exchanges
 #define UWB_RX_TASK_PRIORITY (6U)
 #define UWB_RX_TASK_STACK_SIZE (768U)
 #define UWB_TX_QUEUE_LENGTH (16U)
@@ -34,7 +34,7 @@
 #define UWB_TX_TIMEOUT_MS (3U)
 #define UWB_TX_TIMEOUT_THRESHOLD (2U)
 #define UWB_TX_QUEUE_DEPTH_WARNING (8U)
-#define UWB_FAULT_RECOVERY_MS (100U)  // Hardware recovery is instant if it will work
+#define UWB_FAULT_RECOVERY_MS (100U) // Hardware recovery is instant if it will work
 #define UWB_MAX_RETRY_ATTEMPTS (3U)
 #define UWB_RX_TASK_STACK_CHECK_INTERVAL (1000U)
 #define UWB_RX_TASK_STACK_MIN_WORDS (128U)
@@ -114,11 +114,11 @@ typedef struct
 typedef struct
 {
     QueueHandle_t queue;
-    SemaphoreHandle_t complete_sem;
+    TaskHandle_t task_handle; // For ISR → Task notification
     uwb_tx_complete_handler_t complete_handler;
     uint32_t next_message_id;
-    volatile uint32_t current_message_id;
-    volatile uint64_t current_tx_timestamp;
+    volatile uint32_t current_message_id;   // Written by task, read by ISR callback validation
+    volatile uint64_t current_tx_timestamp; // Written by ISR, read by task
     uint8_t consecutive_timeouts;
 } tx_context_t;
 
@@ -174,19 +174,12 @@ const module_S uwb_module = {
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-
-// Protocol handling
+STATIC SemaphoreHandle_t uwb_hw_mutex = NULL;
 STATIC protocol_context_t protocol = {0};
-
-// TX context
 STATIC tx_context_t tx = {
-    .next_message_id = 1,  // Start at 1, avoid 0
+    .next_message_id = 1, // Start at 1, avoid 0
 };
-
-// RX context
 STATIC rx_context_t rx = {0};
-
-// State machine
 STATIC state_context_t state = {
     .fault_code = FAULT_NONE,
 };
@@ -208,16 +201,14 @@ STATIC state_machine_s uwb_state_machine = {
     .states          = uwb_states,
 };
 
-// Device context
-STATIC uwb_dev_t* uwb_dev = NULL;
-STATIC uint32_t device_id = 0;
+STATIC uwb_dev_t* uwb_dev          = NULL;
+STATIC uint32_t device_id          = 0;
 STATIC uwb_addressing_t addressing = {
     .my_pan_id   = DEFAULT_PAN_ID,
     .my_address  = DEFAULT_NODE_ADDRESS,
     .tx_sequence = 0,
 };
 
-// Debug statistics
 STATIC uwb_debug_stats_t debug_stats = {0};
 
 /*---------------------------------------------------------------------------
@@ -232,9 +223,9 @@ STATIC bool uwb_is_transient_fault(uwb_fault_code_e fault)
 STATIC void uwb_state_off_on_entry(uint16_t prevState)
 {
     (void)prevState;
-    
-    uwb_dev = NULL;
-    state.fault_code = FAULT_NONE;
+
+    uwb_dev                = NULL;
+    state.fault_code       = FAULT_NONE;
     state.init_retry_count = 0;
 }
 
@@ -272,12 +263,15 @@ STATIC void uwb_init(void)
         error_handler_fatal("uwb", "Failed to create TX queue");
     }
 
-    // Binary semaphore for TX completion signaling from ISR
-    tx.complete_sem = xSemaphoreCreateBinary();
-    if (tx.complete_sem == NULL)
+    // Hardware mutex for serializing all hardware access and protecting addressing state
+    uwb_hw_mutex = xSemaphoreCreateBinary();
+    if (uwb_hw_mutex == NULL)
     {
-        error_handler_fatal("uwb", "Failed to create TX completion semaphore");
+        error_handler_fatal("uwb", "Failed to create UWB hardware mutex");
     }
+
+    // Initialize to available state (count = 1)
+    xSemaphoreGive(uwb_hw_mutex);
 }
 
 STATIC void uwb_create_task(void)
@@ -292,7 +286,7 @@ STATIC void uwb_create_task(void)
 
     // Create TX task for serialized transmission
     task_result = xTaskCreate(uwb_tx_task, "uwb_tx", UWB_TX_TASK_STACK_SIZE, NULL,
-                              UWB_TX_TASK_PRIORITY, NULL);
+                              UWB_TX_TASK_PRIORITY, &tx.task_handle);
     if (task_result != pdPASS)
     {
         error_handler_fatal("uwb", "Failed to create TX task");
@@ -325,7 +319,7 @@ STATIC uint16_t uwb_transition_logic(uint16_t currentState, uint32_t stateTimer)
             if (state.inputs.start_requested)
             {
                 state.inputs.start_requested = false;
-                nextState = UWB_STATE_INITIALIZATION;
+                nextState                    = UWB_STATE_INITIALIZATION;
             }
             break;
 
@@ -347,7 +341,7 @@ STATIC uint16_t uwb_transition_logic(uint16_t currentState, uint32_t stateTimer)
             else if (state.inputs.init_device_completed)
             {
                 state.init_retry_count = 0;
-                nextState = UWB_STATE_ACTIVE;
+                nextState              = UWB_STATE_ACTIVE;
             }
             break;
 
@@ -369,7 +363,7 @@ STATIC uint16_t uwb_transition_logic(uint16_t currentState, uint32_t stateTimer)
             else if (state.inputs.stop_requested)
             {
                 state.inputs.stop_requested = false;
-                nextState = UWB_STATE_OFF;
+                nextState                   = UWB_STATE_OFF;
             }
             break;
 
@@ -377,7 +371,7 @@ STATIC uint16_t uwb_transition_logic(uint16_t currentState, uint32_t stateTimer)
             if (state.inputs.stop_requested)
             {
                 state.inputs.stop_requested = false;
-                nextState = UWB_STATE_OFF;
+                nextState                   = UWB_STATE_OFF;
             }
             else if (stateTimer > MS_TO_100HZ_TICKS(UWB_FAULT_RECOVERY_MS))
             {
@@ -389,7 +383,7 @@ STATIC uint16_t uwb_transition_logic(uint16_t currentState, uint32_t stateTimer)
             if (state.inputs.stop_requested)
             {
                 state.inputs.stop_requested = false;
-                nextState = UWB_STATE_OFF;
+                nextState                   = UWB_STATE_OFF;
             }
             break;
 
@@ -465,7 +459,7 @@ STATIC void uwb_isr_rx_callback(const uint8_t* data, uint16_t length, uint64_t r
     if (xQueueSendFromISR(rx.queue, &event, &xHigherPriorityTaskWoken) != pdPASS)
     {
         debug_stats.rx_queue_overflows++;
-        
+
         // Log dropped protocol for diagnostics
         if (length >= sizeof(protocol_header_t))
         {
@@ -474,15 +468,16 @@ STATIC void uwb_isr_rx_callback(const uint8_t* data, uint16_t length, uint64_t r
                 [PROTOCOL_TYPE_DATA]       = "DATA",
                 [PROTOCOL_TYPE_OTA_CONFIG] = "OTA_CONFIG",
             };
-            
+
             uint8_t protocol_type = data[0];
-            const char* name = (protocol_type < sizeof(protocol_names) / sizeof(protocol_names[0]) &&
-                               protocol_names[protocol_type] != NULL)
-                                   ? protocol_names[protocol_type]
-                                   : "UNKNOWN";
-            
+            const char* name =
+                (protocol_type < sizeof(protocol_names) / sizeof(protocol_names[0]) &&
+                 protocol_names[protocol_type] != NULL)
+                    ? protocol_names[protocol_type]
+                    : "UNKNOWN";
+
             uart_manager_print("[ISR_DROP] RX Queue full: Protocol=%s (0x%02X) - Total=%lu\r\n",
-                             name, protocol_type, (unsigned long)debug_stats.rx_queue_overflows);
+                               name, protocol_type, (unsigned long)debug_stats.rx_queue_overflows);
         }
     }
 
@@ -532,7 +527,7 @@ STATIC void uwb_process_received_message(const uint8_t* data, uint16_t length,
 
     // Parse MAC frame
     const mac_frame_short_t* rx_frame = (const mac_frame_short_t*)data;
-    
+
     // Filter non-data frames (beacons, ACKs, commands)
     uint16_t frame_type = rx_frame->frame_control & MAC_FC_TYPE_MASK;
     if (frame_type != MAC_FC_TYPE_DATA)
@@ -540,7 +535,7 @@ STATIC void uwb_process_received_message(const uint8_t* data, uint16_t length,
         rx.stats.filtered++;
         return;
     }
-    
+
     uint16_t payload_len = length - MAC_FRAME_SHORT_HEADER_SIZE;
 
     if (payload_len > MAC_MAX_PAYLOAD_SIZE)
@@ -558,12 +553,12 @@ STATIC void uwb_process_received_message(const uint8_t* data, uint16_t length,
 
 STATIC void uwb_tx_complete_callback(uint64_t tx_timestamp)
 {
-    // CRITICAL: This runs in ISR context - only store timestamp and signal task
+    // CRITICAL: This runs in ISR context - only store timestamp and notify task
     // Handler invocation happens in TX task context to avoid blocking operations in ISR
     tx.current_tx_timestamp = tx_timestamp;
-    
+
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    xSemaphoreGiveFromISR(tx.complete_sem, &xHigherPriorityTaskWoken);
+    vTaskNotifyGiveFromISR(tx.task_handle, &xHigherPriorityTaskWoken);
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
@@ -575,26 +570,34 @@ STATIC void uwb_tx_task(void* argument)
 
     for (;;)
     {
-        // Block indefinitely waiting for TX requests
+        // Producer-Consumer Pattern: Wait for work, THEN acquire resource
+        // Do NOT take mutex before queue receive - would deadlock waiting for message
+        // while holding mutex, blocking all hardware access (set_address, soft_reset, etc)
         if (xQueueReceive(tx.queue, &tx_item, portMAX_DELAY) != pdPASS)
         {
             continue;
         }
 
-        // Check radio state once - don't spin if faulted
+        // Drop messages if radio not ready
         if (uwb_state_machine.curr_state != UWB_STATE_ACTIVE)
         {
-            // Radio not ready - notify handler and drop message
             if (tx.complete_handler != NULL)
             {
                 tx.complete_handler(tx_item.message_id, 0);
             }
-            error_handler_log(ERROR_SEVERITY_WARNING, "uwb", 
-                             "TX dropped: radio not active (state=%u)", uwb_state_machine.curr_state);
             continue;
         }
 
-        // Build MAC frame
+        // Acquire hardware NOW (only when we have work and radio is ready)
+        // Mutex held through entire TX sequence: build → transmit → complete
+        // This ensures atomicity: addressing state used to build frame remains valid
+        // until HW completes transmission and we correlate the timestamp
+        xSemaphoreTake(uwb_hw_mutex, portMAX_DELAY);
+
+        // Clear stale notifications from late ISR
+        ulTaskNotifyTake(pdTRUE, 0);
+
+        // Build MAC frame (reads addressing.*, must be inside mutex)
         uint8_t tx_buffer[MAC_MAX_FRAME_SIZE];
         mac_frame_short_t* frame = (mac_frame_short_t*)tx_buffer;
 
@@ -607,65 +610,78 @@ STATIC void uwb_tx_task(void* argument)
         memcpy(frame->payload, tx_item.payload, tx_item.length);
         uint16_t frame_len = MAC_FRAME_SHORT_HEADER_SIZE + tx_item.length;
 
-        // Store message ID for TX completion callback
+        // Store message ID for validation
         tx.current_message_id = tx_item.message_id;
 
         // Transmit
         uwb_port_status_t result = uwb_port_send_message(uwb_dev, tx_buffer, frame_len);
         if (result != UWB_PORT_SUCCESS)
         {
-            // TX failed - notify handler with message ID and zero timestamp
             tx.current_message_id = 0;
+            xSemaphoreGive(uwb_hw_mutex);
+
+            error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "TX failed: port error %d", result);
             if (tx.complete_handler != NULL)
             {
                 tx.complete_handler(tx_item.message_id, 0);
             }
-            error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "TX failed: port error %d", result);
             continue;
         }
 
-        // Wait for TX completion (~300µs typical, timeout provides 10× margin)
-        if (xSemaphoreTake(tx.complete_sem, pdMS_TO_TICKS(UWB_TX_TIMEOUT_MS)) != pdTRUE)
+        // Wait for ISR completion signal (~300µs typical, 3ms timeout = 10x margin)
+        // NOTE: Mutex held during wait - this is CORRECT because:
+        //   1. Hardware is physically busy transmitting (can't be interrupted)
+        //   2. Prevents address changes mid-TX (frame built with current address)
+        //   3. ISR just signals, doesn't manipulate mutex (ISRs shouldn't block)
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(UWB_TX_TIMEOUT_MS)) == 0)
         {
-            error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "TX done timeout for msg %lu",
-                              (unsigned long)tx_item.message_id);
-            
+            // Timeout - hardware may be stuck
             debug_stats.tx_timeouts++;
             tx.consecutive_timeouts++;
             tx.current_message_id = 0;
-            
-            // Notify application that TX failed (timestamp=0 indicates failure)
+            xSemaphoreGive(uwb_hw_mutex);
+
+            error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "TX timeout msg %lu",
+                              (unsigned long)tx_item.message_id);
             if (tx.complete_handler != NULL)
             {
                 tx.complete_handler(tx_item.message_id, 0);
             }
-            
-            // Hardware fault detection: multiple consecutive timeouts indicate stuck radio
+
+            // Fault detection: consecutive timeouts indicate hardware lockup
             if (tx.consecutive_timeouts >= UWB_TX_TIMEOUT_THRESHOLD)
             {
-                error_handler_log(ERROR_SEVERITY_ERROR, "uwb", 
-                                 "Hardware stuck: %u consecutive TX timeouts", tx.consecutive_timeouts);
+                error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "Hardware stuck after %u timeouts",
+                                  tx.consecutive_timeouts);
                 tx.consecutive_timeouts = 0;
                 xQueueReset(tx.queue);
-                
                 state.fault_code = FAULT_TX_FAILED;
             }
+            continue;
         }
-        else
+
+        // TX completed - validate message ID and capture timestamp
+        tx.consecutive_timeouts       = 0;
+        uint32_t completed_message_id = tx.current_message_id;
+        uint64_t timestamp            = tx.current_tx_timestamp;
+        tx.current_message_id         = 0;
+
+        // Release mutex AFTER reading timestamp - entire TX sequence now complete
+        xSemaphoreGive(uwb_hw_mutex);
+
+        // Validate ID (detect late ISR from timed-out TX)
+        if (completed_message_id != tx_item.message_id)
         {
-            // TX completed successfully - reset timeout counter and notify handler in task context
-            tx.consecutive_timeouts = 0;
-            
-            // Read timestamp and message ID atomically in task context (ISR only writes)
-            uint32_t message_id = tx.current_message_id;
-            uint64_t timestamp = tx.current_tx_timestamp;
-            tx.current_message_id = 0;
-            
-            // Safe to call application handler from task context (not ISR)
-            if (tx.complete_handler != NULL)
-            {
-                tx.complete_handler(message_id, timestamp);
-            }
+            error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "ID mismatch: expected %lu, got %lu",
+                              (unsigned long)tx_item.message_id,
+                              (unsigned long)completed_message_id);
+            timestamp = 0; // Mark as invalid
+        }
+
+        // Notify application (outside mutex - user code may block)
+        if (tx.complete_handler != NULL)
+        {
+            tx.complete_handler(tx_item.message_id, timestamp);
         }
     }
 }
@@ -673,9 +689,9 @@ STATIC void uwb_tx_task(void* argument)
 STATIC void uwb_state_retry_on_entry(uint16_t prevState)
 {
     (void)prevState;
-    error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Retry attempt %u/%u",
-                      state.init_retry_count, UWB_MAX_RETRY_ATTEMPTS);
-    
+    error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Retry attempt %u/%u", state.init_retry_count,
+                      UWB_MAX_RETRY_ATTEMPTS);
+
     // Clean up from failed initialization
     uwb_dev = NULL;
     xQueueReset(tx.queue);
@@ -694,14 +710,14 @@ STATIC void uwb_state_faulted_on_entry(uint16_t prevState)
         [FAULT_TX_FAILED]         = "Transmission hardware fault",
         [FAULT_RX_FAILED]         = "Reception failed",
     };
-    
+
     const char* fault_str = (state.fault_code < sizeof(fault_strings) / sizeof(fault_strings[0]))
                                 ? fault_strings[state.fault_code]
                                 : "Unknown fault";
-    
-    error_handler_log(ERROR_SEVERITY_ERROR, "uwb", 
-                     "%s (code=%u) - manual stop required", fault_str, state.fault_code);
-    
+
+    error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "%s (code=%u) - manual stop required", fault_str,
+                      state.fault_code);
+
     // Clean up device state
     uwb_dev = NULL;
     xQueueReset(tx.queue);
@@ -758,11 +774,15 @@ void uwb_get_status(uwb_status_t* status)
         return;
     }
 
-    status->state       = (uwb_state_e)uwb_state_machine.curr_state;
-    status->device_id   = device_id;
-    status->fault_code  = state.fault_code;
-    status->my_address  = addressing.my_address;
-    status->my_pan_id   = addressing.my_pan_id;
+    status->state      = (uwb_state_e)uwb_state_machine.curr_state;
+    status->device_id  = device_id;
+    status->fault_code = state.fault_code;
+
+    // Atomic read of addressing state (protected by mutex)
+    xSemaphoreTake(uwb_hw_mutex, portMAX_DELAY);
+    status->my_address = addressing.my_address;
+    status->my_pan_id  = addressing.my_pan_id;
+    xSemaphoreGive(uwb_hw_mutex);
 }
 
 void uwb_get_rx_stats(uwb_rx_stats_t* stats)
@@ -809,11 +829,6 @@ bool uwb_is_ready(void)
     return (uwb_state_machine.curr_state == UWB_STATE_ACTIVE);
 }
 
-uwb_dev_t* uwb_get_device(void)
-{
-    return uwb_dev;
-}
-
 void uwb_start(void)
 {
     state.inputs.start_requested = true;
@@ -826,6 +841,8 @@ void uwb_stop(void)
 
 void uwb_set_address(uint16_t address, uint16_t pan_id)
 {
+    xSemaphoreTake(uwb_hw_mutex, portMAX_DELAY);
+
     addressing.my_address = address;
     addressing.my_pan_id  = pan_id;
 
@@ -834,15 +851,19 @@ void uwb_set_address(uint16_t address, uint16_t pan_id)
         uwb_port_set_pan_id(uwb_dev, addressing.my_pan_id);
         uwb_port_set_address(uwb_dev, addressing.my_address);
     }
+
+    xSemaphoreGive(uwb_hw_mutex);
 }
 
 uint16_t uwb_get_address(void)
 {
+    // Atomic read on ARM Cortex-M7 (16-bit load is single instruction)
     return addressing.my_address;
 }
 
 uint16_t uwb_get_pan_id(void)
 {
+    // Atomic read on ARM Cortex-M7 (16-bit load is single instruction)
     return addressing.my_pan_id;
 }
 
@@ -853,7 +874,10 @@ bool uwb_soft_reset(void)
         return false;
     }
 
+    xSemaphoreTake(uwb_hw_mutex, portMAX_DELAY);
     uwb_port_status_t ret = uwb_port_soft_reset(uwb_dev);
+    xSemaphoreGive(uwb_hw_mutex);
+
     return (ret == UWB_PORT_SUCCESS);
 }
 
@@ -867,12 +891,14 @@ uwb_send_result_t uwb_send_message(const uint8_t* data, uint16_t length, uint16_
         return result;
     }
 
-    // Generate unique message ID (avoid 0)
+    // Generate unique message ID (atomic increment, avoid 0)
+    taskENTER_CRITICAL();
     uint32_t message_id = tx.next_message_id++;
     if (tx.next_message_id == 0)
     {
         tx.next_message_id = 1;
     }
+    taskEXIT_CRITICAL();
 
     uwb_tx_queue_item_t tx_item = {
         .length     = length,
@@ -907,11 +933,12 @@ bool uwb_register_protocol_handler(uint8_t protocol_type, uwb_protocol_handler_t
     {
         return false;
     }
-    
+
     // Validate protocol type range (per uwb_protocol_messages.h)
     if (protocol_type == 0 || protocol_type > 0x0F)
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "Invalid protocol type: 0x%02X", protocol_type);
+        error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "Invalid protocol type: 0x%02X",
+                          protocol_type);
         return false;
     }
 
