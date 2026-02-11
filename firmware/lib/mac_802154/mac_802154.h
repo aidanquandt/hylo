@@ -22,6 +22,8 @@ typedef enum
     MAC_FC_TYPE_COMMAND = 0x0003  // MAC command frame
 } mac_frame_type_e;
 
+#define MAC_FC_TYPE_MASK (0x0007) // Mask for frame type field (bits 0-2)
+
 // Security (bit 3)
 typedef enum
 {

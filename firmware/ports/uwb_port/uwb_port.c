@@ -19,10 +19,7 @@ struct uwb_dev_s
 {
     dwchip_t dw_chip;
     uint64_t last_tx_ts;
-    uint64_t last_rx_ts;
 };
-
-
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -38,6 +35,23 @@ STATIC int32_t uwb_spi_write_crc(uint16_t headerLength, const uint8_t* headerBuf
 STATIC void uwb_spi_set_slow_rate(void);
 STATIC void uwb_spi_set_fast_rate(void);
 STATIC void uwb_wakeup_device_impl(void);
+
+/*---------------------------------------------------------------------------
+ * Defines
+ *---------------------------------------------------------------------------*/
+#define SPI_READ_SETUP_DELAY_CYCLES (10U)    // Inter-byte delay for DW3000 SPI read setup
+#define SOFT_RESET_DELAY_MS (3U)             // Delay after soft reset before polling IDLE_RC
+#define IDLE_RC_POLL_INTERVAL_MS (10U)       // Polling interval for IDLE_RC status check
+#define IDLE_RC_MAX_RETRIES (100U)           // Maximum retries waiting for IDLE_RC (1 second total)
+#define MAC_CRC_LENGTH (2U)                  // IEEE 802.15.4 CRC length in bytes
+#define WAKEUP_PULSE_DURATION_US (600U)      // CS low pulse duration to wake DW3000 from sleep
+#define WAKEUP_STABILIZATION_DELAY_MS (1U)   // Delay after wakeup for clock stabilization
+#define DW3000_ANTENNA_DELAY (16385U)        // Antenna delay for TX/RX (calibrated value)
+#define DW3000_PREAMBLE_CODE (9U)            // Preamble code for channel 5  
+#define DW3000_SFD_TIMEOUT (129U)            // SFD timeout: preamble length +  SFD length
+#define DW3000_TX_PDELAY (0x34U)             // TX preamble delay (Qorvo default)
+#define DW3000_TX_POWER (0xFDFDFDFDUL)       // TX power (max on all PRFs)
+
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
@@ -78,7 +92,8 @@ STATIC int32_t uwb_spi_read(uint16_t headerLength, uint8_t* headerBuffer, uint16
         return DWT_ERROR;
     }
 
-    for (volatile int i = 0; i < 10; i++)
+    // Required delay between header and data read per DW3000 datasheet
+    for (volatile uint32_t i = 0; i < SPI_READ_SETUP_DELAY_CYCLES; i++)
         ;
 
     if (platform_spi_receive(readBuffer, readLength) != PLATFORM_SPI_SUCCESS)
@@ -179,14 +194,16 @@ STATIC void uwb_port_rx_ok_callback(const dwt_cb_data_t* cb_data)
         return;
 
     uint16_t frame_len = cb_data->datalength;
-    if (frame_len <= 2 || frame_len > UWB_MAX_MESSAGE_LENGTH)
+    if (frame_len <= MAC_CRC_LENGTH || frame_len > UWB_MAX_MESSAGE_LENGTH)
     {
         dwt_rxenable(DWT_START_RX_IMMEDIATE);
         return;
     }
 
-    uint16_t data_len = frame_len - 2;
-    uint8_t rx_buffer[UWB_MAX_MESSAGE_LENGTH];
+    // Static buffer: ISR is not reentrant, safe to reuse
+    // Avoids allocating 127 bytes on ISR stack (typically only 256-512 bytes total)
+    static uint8_t rx_buffer[UWB_MAX_MESSAGE_LENGTH];
+    uint16_t data_len = frame_len - MAC_CRC_LENGTH;
     dwt_readrxdata(rx_buffer, data_len, 0);
 
     uint64_t current_ts = 0;
@@ -208,44 +225,10 @@ STATIC void uwb_port_rx_timeout_callback(const dwt_cb_data_t* cb_data)
 
 STATIC void uwb_port_rx_error_callback(const dwt_cb_data_t* cb_data)
 {
-    if (cb_data->status & DWT_INT_ARFE_BIT_MASK)
-    {
-        uwb_port_stats.rx_error_arfe_count++;
-    }
-    else if (cb_data->status & DWT_INT_RXOVRR_BIT_MASK)
-    {
-        uwb_port_stats.rx_error_overrun_count++;
-        dwt_forcetrxoff();
-    }
-    else if (cb_data->status & DWT_INT_RXFCE_BIT_MASK)
-    {
-        uwb_port_stats.rx_error_crc_count++;
-    }
-    else if (cb_data->status & DWT_INT_RXPTO_BIT_MASK)
-    {
-        uwb_port_stats.rx_error_preamble_timeout_count++;
-    }
-    else if (cb_data->status & DWT_INT_RXPHE_BIT_MASK)
-    {
-        uwb_port_stats.rx_error_phy_header_count++;
-    }
-    else if (cb_data->status & DWT_INT_RXFSL_BIT_MASK)
-    {
-        uwb_port_stats.rx_error_sync_loss_count++;
-    }
-    else if (cb_data->status & DWT_INT_RXFTO_BIT_MASK)
-    {
-        uwb_port_stats.rx_error_frame_timeout_count++;
-    }
-    else if (cb_data->status & DWT_INT_RXSTO_BIT_MASK)
-    {
-        uwb_port_stats.rx_error_sfd_timeout_count++;
-    }
-    else
-    {
-        uwb_port_stats.rx_error_other_count++;
-    }
-
+    (void)cb_data;
+    // Hardware already tracks all error types in diagnostic counters
+    // No need to manually increment - use dwt_readeventcounters() when stats requested
+    // Per Qorvo SDK: just re-enable RX after any error
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
 }
 
@@ -264,6 +247,11 @@ STATIC void uwb_port_tx_done_callback(const dwt_cb_data_t* cb_data)
             tx_done_callback(current_device->last_tx_ts);
         }
     }
+
+    // Explicit RX control: always enable RX after TX completes
+    // This is the single, predictable point where RX is re-enabled after transmission
+    // Simpler than relying on hardware auto-transitions (DWT_RESPONSE_EXPECTED)
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
 }
 
 /*---------------------------------------------------------------------------
@@ -281,6 +269,9 @@ uwb_port_status_t uwb_port_probe_and_init(uwb_dev_t* dev)
         return UWB_PORT_ERROR_NULL_PTR;
     }
 
+    // Explicitly wake device before probe - device may be in deep sleep on first power-up
+    uwb_wakeup_device_impl();
+
     static const struct dwt_driver_s* driver_list[] = {&dw3000_driver};
 
     struct dwt_probe_s probe_data = {.dw                    = &dev->dw_chip,
@@ -296,7 +287,7 @@ uwb_port_status_t uwb_port_probe_and_init(uwb_dev_t* dev)
     }
 
     dwt_softreset(0);
-    vTaskDelay(pdMS_TO_TICKS(3));
+    vTaskDelay(pdMS_TO_TICKS(SOFT_RESET_DELAY_MS));
 
     uint32_t timeout = 100;
     while (!dwt_checkidlerc() && timeout--)
@@ -334,7 +325,7 @@ uwb_port_status_t uwb_port_soft_reset(uwb_dev_t* dev)
     }
 
     dwt_softreset(0);
-    vTaskDelay(pdMS_TO_TICKS(3));
+    vTaskDelay(pdMS_TO_TICKS(SOFT_RESET_DELAY_MS));
 
     return UWB_PORT_SUCCESS;
 }
@@ -342,9 +333,9 @@ uwb_port_status_t uwb_port_soft_reset(uwb_dev_t* dev)
 STATIC void uwb_wakeup_device_impl(void)
 {
     platform_spi_cs_low(UWB_PORT_CS_PIN);
-    platform_os_delay_us_blocking(600);
+    platform_os_delay_us_blocking(WAKEUP_PULSE_DURATION_US);
     platform_spi_cs_high(UWB_PORT_CS_PIN);
-    vTaskDelay(pdMS_TO_TICKS(1));
+    vTaskDelay(pdMS_TO_TICKS(WAKEUP_STABILIZATION_DELAY_MS));
 }
 
 uwb_port_status_t uwb_port_check_device_id(uwb_dev_t* dev)
@@ -398,21 +389,23 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev)
         return UWB_PORT_ERROR_NULL_PTR;
     }
 
+    // Per DW3000 User Manual: IC must be in idle mode before calling dwt_configure()
     dwt_forcetrxoff();
-
-    dwt_writesysstatuslo(0xFFFFFFFF);
-    dwt_writesysstatushi(0xFF);
+    
+    // Clear status registers before configuration
+    dwt_writesysstatuslo(DWT_INT_ALL_LO);
+    dwt_writesysstatushi(DWT_INT_ALL_HI);
 
     dwt_config_t config = {.chan           = (uint8_t)UWB_CHANNEL_5,
                            .txPreambLength = DWT_PLEN_128,
                            .rxPAC          = DWT_PAC8,
-                           .txCode         = 9,
-                           .rxCode         = 9,
+                           .txCode         = DW3000_PREAMBLE_CODE,
+                           .rxCode         = DW3000_PREAMBLE_CODE,
                            .sfdType        = DWT_SFD_DW_8,
                            .dataRate       = DWT_BR_6M8,
                            .phrMode        = DWT_PHRMODE_STD,
                            .phrRate        = DWT_PHRRATE_STD,
-                           .sfdTO          = (129 + 8 - 8),
+                           .sfdTO          = DW3000_SFD_TIMEOUT,
                            .stsMode        = DWT_STS_MODE_OFF,
                            .stsLength      = DWT_STS_LEN_64,
                            .pdoaMode       = DWT_PDOA_M0};
@@ -422,15 +415,18 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev)
         return UWB_PORT_ERROR_COMM_FAIL;
     }
 
-    dwt_setrxantennadelay(16385);
-    dwt_settxantennadelay(16385);
+    dwt_setrxantennadelay(DW3000_ANTENNA_DELAY);
+    dwt_settxantennadelay(DW3000_ANTENNA_DELAY);
 
     dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
 
     dwt_configureframefilter(DWT_FF_ENABLE_802_15_4, DWT_FF_DATA_EN);
 
-    dwt_txconfig_t txconfig = {.PGdly = 0x34, .power = 0xfdfdfdfdUL};
+    dwt_txconfig_t txconfig = {.PGdly = DW3000_TX_PDELAY, .power = DW3000_TX_POWER};
     dwt_configuretxrf(&txconfig);
+
+    // Enable LEDs - will blink on TX/RX events for visual debugging
+    dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
 
     if (dwt_rxenable(DWT_START_RX_IMMEDIATE) != DWT_SUCCESS)
     {
@@ -449,35 +445,12 @@ uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uin
         return UWB_PORT_ERROR_CONFIG;
 
     dwt_writetxdata(length, (uint8_t*)data, 0);
-    dwt_writetxfctrl(length + 2, 0, 1);
+    dwt_writetxfctrl(length + MAC_CRC_LENGTH, 0, 1);
+
+    // Stop RX before TX - per DW3000 datasheet, must explicitly transition from RX to TX
     dwt_forcetrxoff();
 
-    int ret = dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
-
-    if (ret != DWT_SUCCESS)
-    {
-        dwt_rxenable(DWT_START_RX_IMMEDIATE);
-        return UWB_PORT_ERROR_TX_FAIL;
-    }
-
-    return UWB_PORT_SUCCESS;
-}
-
-uwb_port_status_t uwb_port_send_message_delayed(uwb_dev_t* dev, const uint8_t* data,
-                                                uint16_t length, uint64_t tx_timestamp_dtuh)
-{
-    if (dev == NULL || data == NULL)
-        return UWB_PORT_ERROR_NULL_PTR;
-    if (length == 0 || length > UWB_MAX_MESSAGE_LENGTH)
-        return UWB_PORT_ERROR_CONFIG;
-
-    dwt_writetxdata(length, (uint8_t*)data, 0);
-    dwt_writetxfctrl(length + 2, 0, 1);
-    dwt_forcetrxoff();
-
-    dwt_setdelayedtrxtime(tx_timestamp_dtuh);
-
-    int ret = dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED);
+    int ret = dwt_starttx(DWT_START_TX_IMMEDIATE);
 
     if (ret != DWT_SUCCESS)
     {
@@ -494,42 +467,17 @@ uint64_t uwb_port_read_device_time(void)
     return (uint64_t)(sys_time_hi32);
 }
 
-uint64_t uwb_port_get_last_tx_timestamp(uwb_dev_t* dev)
-{
-    if (dev == NULL)
-    {
-        return 0;
-    }
-
-    return dev->last_tx_ts;
-}
-
-uint64_t uwb_port_get_last_rx_timestamp(uwb_dev_t* dev)
-{
-    if (dev == NULL)
-    {
-        return 0;
-    }
-
-    return dev->last_rx_ts;
-}
-
 void uwb_port_enable_rx_interrupt(void)
 {
+    // Clear all status bits before enabling interrupts (critical for clean startup)
     dwt_writesysstatuslo(DWT_INT_ALL_LO);
     dwt_writesysstatushi(DWT_INT_ALL_HI);
 
-    dwt_setinterrupt(DWT_INT_TXFRS_BIT_MASK |      // TX Done
-                         DWT_INT_RXFCG_BIT_MASK |  // RX Good
-                         DWT_INT_RXFCE_BIT_MASK |  // RX Error (CRC)
-                         DWT_INT_RXPTO_BIT_MASK |  // Preamble Timeout
-                         DWT_INT_RXPHE_BIT_MASK |  // PHY Header Error
-                         DWT_INT_RXFSL_BIT_MASK |  // Sync Loss
-                         DWT_INT_RXOVRR_BIT_MASK | // RX Overrun
-                         DWT_INT_ARFE_BIT_MASK |   // Address Filter
-                         DWT_INT_RXFTO_BIT_MASK |  // Frame Wait Timeout
-                         DWT_INT_RXSTO_BIT_MASK,   // SFD Timeout
-                     0, DWT_ENABLE_INT_ONLY);
+    dwt_setinterrupt(DWT_INT_RXFCG_BIT_MASK | // RX Good frames
+                        SYS_STATUS_ALL_RX_ERR | // All RX error types (PHE, RSL, CRC, etc.)
+                        SYS_STATUS_ALL_RX_TO | // All RX timeout types (PTO, SFD, etc.)
+                        DWT_INT_TXFRS_BIT_MASK, // TX Done
+                        0 , DWT_ENABLE_INT_ONLY);
 }
 
 void uwb_port_handle_irq(void)
@@ -577,6 +525,22 @@ uwb_port_statistics_t uwb_port_get_statistics(void)
 {
     uwb_port_statistics_t stats = uwb_port_stats;
     
+    // Read hardware diagnostic counters
+    dwt_deviceentcnts_t hw_counters;
+    dwt_readeventcounters(&hw_counters);
+    
+    stats.PHE   = hw_counters.PHE;
+    stats.RSL   = hw_counters.RSL;
+    stats.CRCG  = hw_counters.CRCG;
+    stats.CRCB  = hw_counters.CRCB;
+    stats.ARFE  = hw_counters.ARFE;
+    stats.OVER  = hw_counters.OVER;
+    stats.SFDTO = hw_counters.SFDTO;
+    stats.PTO   = hw_counters.PTO;
+    stats.RTO   = hw_counters.RTO;
+    stats.TXF   = hw_counters.TXF;
+    
+    // Read live status registers
     stats.irq_status = uwb_port_read_irq_status();
     stats.status_lo  = uwb_port_read_status_register_low();
     stats.status_hi  = uwb_port_read_status_register_high();
