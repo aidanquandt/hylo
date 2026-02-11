@@ -32,7 +32,12 @@ endfunction()
 add_platform_module(gpio)
 add_platform_module(os)
 add_platform_module(spi)
-add_platform_module(system)
 add_platform_module(timer)
 add_platform_module(uart)
 add_platform_module(watchdog)
+
+# System module has special dependency on config for device mapping
+add_library(system STATIC system/platform_system.c)
+target_link_libraries(system PUBLIC platform_inc config)
+set_target_properties(system PROPERTIES FOLDER "platform")
+target_link_libraries(platform INTERFACE system)

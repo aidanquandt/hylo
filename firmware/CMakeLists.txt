@@ -30,6 +30,7 @@ add_compile_options(-ffunction-sections -fdata-sections)
 add_link_options(-Wl,--gc-sections)
 
 # ---- Subdirs in dependency order (low → high) ----
+add_subdirectory(config)                 # device/board configurations
 add_subdirectory(cubemx)                 # produces the 'cubemx' executable/elf
 add_subdirectory(platform)               # HAL wrappers (lib)
 add_subdirectory(lib)                    # utility libraries (counter, etc.)
