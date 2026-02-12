@@ -1,0 +1,5 @@
+# This file defines code owners for the repository
+# The owner(s) will be automatically requested for review on PRs
+
+# Protect everything by default - aidanquandt must review all PRs to main
+* @aidanquandt
