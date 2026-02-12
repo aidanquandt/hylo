@@ -1,4 +1,4 @@
-# Aidan Commands Reference
+# Commands Reference
 
 ## Quick Start: Setup 4 Anchors
 
