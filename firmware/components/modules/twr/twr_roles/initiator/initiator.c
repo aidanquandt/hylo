@@ -9,20 +9,17 @@
 #include "../twr_engine/twr_algorithm.h"
 #include "../twr_engine/twr_state_machine.h"
 #include "FreeRTOS.h"
-#include "feature_config.h"
+#include "common.h"
 #include "error_handler.h"
+#include "feature_config.h"
 #include "stopwatch.h"
 #include "task.h"
 #include "uwb.h"
 #include "uwb_protocol_messages.h"
-#include "common.h"
+
 
 /*---------------------------------------------------------------------------
- * Defines
- *---------------------------------------------------------------------------*/
-#define TWR_MAX_RETRIES 2U
 
-/*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
 STATIC bool initiator_send_message_impl(twr_msg_type_e msg_type, twr_context_t* ctx);
@@ -215,34 +212,12 @@ STATIC void initiator_handle_tx_complete_impl(const twr_event_t* event, twr_cont
 
 STATIC void initiator_handle_timeout_impl(const twr_event_t* event, twr_context_t* ctx)
 {
-    // error_handler_log(ERROR_SEVERITY_ERROR, "initiator", "Timeout waiting for message %d",
-    //                   event->timeout.expected_msg);
+    (void)event; // Unused parameter
 
-    // Retry logic
-    if (ctx->retry_count < TWR_MAX_RETRIES)
-    {
-        ctx->retry_count++;
-        // error_handler_log(ERROR_SEVERITY_INFO, "initiator", "Retrying (attempt %u)",
-        //                   ctx->retry_count);
-
-        // Restart with POLL
-        ctx->expected_msg = TWR_MSG_RESPONSE;
-
-        if (ctx->callbacks->send_message(TWR_MSG_POLL, ctx))
-        {
-            twr_state_machine_transition_to(ctx, TWR_STATE_SENDING);
-        }
-        else
-        {
-            twr_state_machine_transition_to(ctx, TWR_STATE_IDLE);
-        }
-    }
-    else
-    {
-        ctx->failed_transactions++;
-        ctx->last_result.valid = false; // Invalidate cached result on failure
-        twr_state_machine_transition_to(ctx, TWR_STATE_IDLE);
-    }
+    // No retries at state machine level - let scheduler/manager handle retry logic
+    ctx->failed_transactions++;
+    ctx->last_result.valid = false; // Invalidate cached result on failure
+    twr_state_machine_transition_to(ctx, TWR_STATE_IDLE);
 }
 
 STATIC void initiator_handle_fault_impl(const twr_event_t* event, twr_context_t* ctx)

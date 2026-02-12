@@ -4,14 +4,14 @@
 #include "twr_scheduler.h"
 #include "FreeRTOS.h"
 #include "backoff.h"
+#include "common.h"
 #include "error_handler.h"
 #include "task.h"
-#include "common.h"
 
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define TWR_TARGET_BACKOFF_MIN_MS (20U)   // Minimum backoff delay (initiator fails in ~9ms)
+#define TWR_TARGET_BACKOFF_MIN_MS (10U)   // Minimum backoff delay (2 ranging cycles at 200Hz)
 #define TWR_TARGET_BACKOFF_MAX_MS (2000U) // Maximum backoff delay
 #define TWR_TARGET_WARN_THRESHOLD (2U)    // Log warning only after this many consecutive failures
 
@@ -302,7 +302,8 @@ void twr_scheduler_report_result(uint16_t address, bool success)
         {
             error_handler_log(ERROR_SEVERITY_WARNING, "twr_sched",
                               "Target 0x%04X backing off for %lu ms (failures=%u)", address,
-                              (unsigned long)backoff_delay, target_list[index].consecutive_failures);
+                              (unsigned long)backoff_delay,
+                              target_list[index].consecutive_failures);
         }
     }
 }
