@@ -1,0 +1,60 @@
+{
+    "folders": [
+        {
+            "name": "firmware",
+            "path": "firmware"
+        },
+        {
+            "name": "host",
+            "path": "host"
+        },
+        {
+            "name": "testing",
+            "path": "testing"
+        }
+    ],
+    "settings": {
+        // Terminal: MSYS2 UCRT64 for ARM GCC toolchain
+        "terminal.integrated.defaultProfile.windows": "UCRT64",
+        "terminal.integrated.profiles.windows": {
+            "UCRT64": {
+                "path": "C:\\msys64\\msys2_shell.cmd",
+                "args": [
+                    "-defterm",
+                    "-here",
+                    "-no-start",
+                    "-ucrt64"
+                ],
+                "icon": "terminal-bash"
+            }
+        },
+        
+        // File associations across all subprojects
+        "files.associations": {
+            "*.pde": "java"
+        },
+        
+        // Performance: exclude build artifacts and dependencies from watchers/search
+        "files.watcherExclude": {
+            "**/build/**": true,
+            "**/node_modules/**": true,
+            "**/.git/objects/**": true,
+            "**/.git/subtree-cache/**": true
+        },
+        "search.exclude": {
+            "**/build/**": true,
+            "**/third_party/**": true,
+            "**/node_modules/**": true,
+            "**/.git/**": true
+        }
+    },
+    "extensions": {
+        "recommendations": [
+            "llvm-vs-code-extensions.vscode-clangd",
+            "ms-vscode.cmake-tools",
+            "marus25.cortex-debug",
+            "zixuanwang.linkerscript",
+            "br4ch1st0chr0n3.processing-vscode"
+        ]
+    }
+}

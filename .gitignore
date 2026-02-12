@@ -42,9 +42,9 @@ rules.ninja
 *.stackdump
 
 # Editor/IDE
-*.code-workspace
 .idea/
 .settings/
+.vscode/
 
 # OS cruft
 Thumbs.db
