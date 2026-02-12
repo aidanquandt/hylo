@@ -13,6 +13,7 @@
  *---------------------------------------------------------------------------*/
 #define TWR_TARGET_BACKOFF_MIN_MS (20U)   // Minimum backoff delay (initiator fails in ~9ms)
 #define TWR_TARGET_BACKOFF_MAX_MS (2000U) // Maximum backoff delay
+#define TWR_TARGET_WARN_THRESHOLD (2U)    // Log warning only after this many consecutive failures
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -297,9 +298,12 @@ void twr_scheduler_report_result(uint16_t address, bool success)
         uint32_t now                        = xTaskGetTickCount();
         target_list[index].backoff_until_ms = now + backoff_delay;
 
-        error_handler_log(ERROR_SEVERITY_WARNING, "twr_sched",
-                          "Target 0x%04X backing off for %lu ms (failures=%u)", address,
-                          (unsigned long)backoff_delay, target_list[index].consecutive_failures);
+        if (target_list[index].consecutive_failures > TWR_TARGET_WARN_THRESHOLD)
+        {
+            error_handler_log(ERROR_SEVERITY_WARNING, "twr_sched",
+                              "Target 0x%04X backing off for %lu ms (failures=%u)", address,
+                              (unsigned long)backoff_delay, target_list[index].consecutive_failures);
+        }
     }
 }
 

@@ -239,7 +239,6 @@ STATIC void initiator_handle_timeout_impl(const twr_event_t* event, twr_context_
     }
     else
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "initiator", "Max retries exceeded");
         ctx->failed_transactions++;
         ctx->last_result.valid = false; // Invalidate cached result on failure
         twr_state_machine_transition_to(ctx, TWR_STATE_IDLE);
