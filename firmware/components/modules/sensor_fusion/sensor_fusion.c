@@ -134,8 +134,6 @@ STATIC void process_ranging_event(const sensor_event_t* event)
         uart_manager_print("SF_DEBUG: Ranging stats - accepted:%lu rejected:%lu (%.1f%% reject)\r\n",
                           stats.ranging_accepted, stats.ranging_rejected,
                           100.0f * stats.ranging_rejected / (stats.ranging_accepted + stats.ranging_rejected + 1));
-        // uart_manager_print("SF_DEBUG: Processed ranging update #%lu from anchor 0x%04X\r\n",
-        //                   update_count, ranging->anchor_addr);
     }
 }
 
