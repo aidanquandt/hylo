@@ -23,6 +23,23 @@
         },
         {
             "type": "cortex-debug",
+            "request": "launch",
+            "name": "Release (OpenOCD)",
+            "cwd": "${workspaceFolder}",
+            "executable": "${workspaceFolder}/build/arm-gcc-release/cubemx/cubemx.elf",
+            "servertype": "openocd",
+            "device": "STM32H723XG",
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32h7x.cfg"
+            ],
+            "runToEntryPoint": "main",
+            "svdFile": "${workspaceFolder}/STM32H723.svd",
+            "preLaunchTask": "build-release",
+            "gdbPath": "gdb-multiarch"
+        },
+        {
+            "type": "cortex-debug",
             "request": "attach",
             "name": "Attach (OpenOCD)",
             "cwd": "${workspaceFolder}",

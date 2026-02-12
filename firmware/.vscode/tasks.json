@@ -19,9 +19,32 @@
             "problemMatcher": "$gcc"
         },
         {
+            "label": "build-release",
+            "type": "shell",
+            "command": "cmake --preset=arm-gcc-release && cmake --build --preset=arm-gcc-release",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": "$gcc"
+        },
+        {
             "label": "clean",
             "type": "shell",
             "command": "cmake --build build/arm-gcc-debug --target clean",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "clean-release",
+            "type": "shell",
+            "command": "cmake --build build/arm-gcc-release --target clean",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -37,9 +60,27 @@
             "problemMatcher": []
         },
         {
+            "label": "configure-release",
+            "type": "shell",
+            "command": "cmake --preset=arm-gcc-release",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "rebuild",
             "type": "shell",
             "command": "rm -rf build/arm-gcc-debug && cmake --preset=arm-gcc-debug && cmake --build --preset=arm-gcc-debug",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": "$gcc"
+        },
+        {
+            "label": "rebuild-release",
+            "type": "shell",
+            "command": "rm -rf build/arm-gcc-release && cmake --preset=arm-gcc-release && cmake --build --preset=arm-gcc-release",
             "options": {
                 "cwd": "${workspaceFolder}"
             },

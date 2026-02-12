@@ -1,21 +1,39 @@
 {
+    // Firmware-specific settings (STM32 embedded development)
+    // These settings only apply when working in the firmware directory
+    
     "cmake.preferredGenerators": [
         "Ninja"
     ],
     "cmake.configureOnOpen": false,
     "cmake.configureOnEdit": false,
-    "terminal.integrated.profiles.windows": {
-        "MSYS2 UCRT64": {
-            "path": "C:\\msys64\\usr\\bin\\bash.exe",
-            "args": [
-                "--login",
-                "-i"
-            ],
-            "env": {
-                "MSYSTEM": "UCRT64",
-                "CHERE_INVOKING": "1"
-            }
+    "cmake.statusbar.advanced": {
+        "build": {
+            "visibility": "icon"
+        },
+        "launch": {
+            "visibility": "hidden"
         }
     },
-    "terminal.integrated.defaultProfile.windows": "MSYS2 UCRT64"
+    
+    // File associations specific to embedded development
+    "files.associations": {
+        "*.ld": "linkerscript",
+        "*.svd": "xml",
+        "*.ioc": "xml"
+    },
+    
+    // Code formatting with clangd
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+    "[c]": {
+        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+    },
+    
+    // Disable C_Cpp extension in favor of clangd
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "clangd.arguments": [
+        "--header-insertion=never",
+        "--compile-commands-dir=${workspaceFolder}/build/arm-gcc-debug"
+    ]
 }
