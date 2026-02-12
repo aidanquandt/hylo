@@ -46,6 +46,9 @@ rules.ninja
 .idea/
 .settings/
 
+# Processing IDE
+*.autosave
+
 # OS cruft
 Thumbs.db
 Desktop.ini
