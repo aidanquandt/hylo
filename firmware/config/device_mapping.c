@@ -40,7 +40,6 @@ const uint32_t device_mapping_table_size = sizeof(device_mapping_table) / sizeof
 
 const device_mapping_entry_t* device_mapping_find(uint32_t uuid_word0, uint32_t uuid_word1, uint32_t uuid_word2)
 {
-    // Early return if table is empty
     if (device_mapping_table_size == 0)
     {
         return NULL;
