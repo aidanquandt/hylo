@@ -3,7 +3,7 @@ import processing.serial.*;
 // =====================
 // Toggle data source
 // =====================
-boolean USE_CSV = true;  // <-- set false to use Serial again
+boolean USE_CSV = false;  // <-- set false to use Serial again
 
 // Serial communication
 Serial myPort;
@@ -17,10 +17,10 @@ int lastStepMillis = 0;   // timing for stepping rows
 // ================================
 
 // Base station positions (x, y) in meters (set to null if unused)
-float[] base0 = {1.95, 3.1};
-float[] base1 = {3.12, 0.4};
-float[] base2 = {3.53, 2.43};
-float[] base3 = {0.0, 0.34};
+float[] base0 = {4.915, 3.758};
+float[] base1 = {0.877, 0.02};
+float[] base2 = {0.828, 4.018};
+float[] base3 = {4.904, 0.46};
 float[] base4 = null;
 float[] base5 = null;
 float[] base6 = null;
@@ -33,7 +33,7 @@ float[][] baseStations = {base0, base1, base2, base3, base4, base5, base6, base7
 float minX = -0.5;
 float maxX = 6;
 float minY = -0.5;
-float maxY = 3.5;
+float maxY = 4.5;
 
 // Current data
 float tagX = 0;
@@ -64,8 +64,15 @@ void setup() {
     printArray(Serial.list());
 
     // NOTE: You hard-coded COM9 already; keep it if that's correct.
-    myPort = new Serial(this, "COM9", 115200);
-    myPort.bufferUntil('\n');
+    try {
+      myPort = new Serial(this, "COM6", 115200);
+      myPort.bufferUntil('\n');
+      println("Successfully opened COM6 at 115200 baud");
+    } catch (Exception e) {
+      println("ERROR: Could not open COM6");
+      println(e.getMessage());
+      println("Make sure PuTTY is closed and COM6 is available");
+    }
   } else {
     // ==== CSV PLAYBACK ADDITIONS ====
     // Put your CSV in the sketch's data/ folder and name it "log.csv"
@@ -143,20 +150,30 @@ void drawCoordinateSystem() {
   popMatrix();
 }
 
-void drawBaseStation(int index, float x, float y) {
+void drawBaseStation(int index, float x, float y, float distance) {
   float screenX = map(x, minX, maxX, 50, width - 50);
   float screenY = map(y, minY, maxY, height - 50, 50);
 
-  // Draw base station marker only (no distance circles)
+  if (distance > 0) {
+    stroke(baseColors[index]);
+    strokeWeight(1);
+    fill(baseColors[index], 30);
+    float radius = map(distance, 0, maxX - minX, 0, width - 100);
+    ellipse(screenX, screenY, radius*2, radius*2);
+  }
+
   stroke(baseColors[index]);
   strokeWeight(3);
   fill(baseColors[index]);
   ellipse(screenX, screenY, 12, 12);
 
-  // Label
   fill(255);
   textAlign(CENTER);
   text("B" + index, screenX, screenY - 15);
+
+  if (distance > 0) {
+    text(nf(distance, 1, 2) + "m", screenX, screenY + 25);
+  }
 }
 
 void drawTagPosition(float x, float y, String label, color c) {
@@ -206,26 +223,74 @@ void serialEvent(Serial myPort) {
   if (USE_CSV) return; // ignore serial when using CSV
 
   inString = myPort.readStringUntil('\n');
-  if (inString != null) {
-    inString = trim(inString);
-    if (inString.startsWith("x,y,x_filtered")) return;
+  if (inString == null) return;
 
-    String[] data = split(inString, ',');
-    if (data.length >= 12) {
-      try {
-        tagX = float(data[0]);
-        tagY = float(data[1]);
-        tagXFiltered = float(data[2]);
-        tagYFiltered = float(data[3]);
-        for (int i = 0; i < 8; i++) {
-          distances[i] = float(data[4 + i]);
-        }
-        dataReceived = true;
-      } catch (Exception e) {
-        println("Parse error: " + inString);
-      }
-    }
+  inString = trim(inString);
+  
+  // Debug: print every line received
+  println("Received: " + inString);
+
+  // Only parse sensor-fusion lines
+  if (!inString.startsWith("SF:")) return;
+  
+  println("Parsing SF line...");
+
+  try {
+    float x = extractFloatAfter(inString, "x=");
+    float y = extractFloatAfter(inString, "y=");
+
+    // Optional: you can also grab these later if you want
+    // float z   = extractFloatAfter(inString, "z=");
+    // float vx  = extractFloatAfter(inString, "vx=");
+    // float vy  = extractFloatAfter(inString, "vy=");
+    // float conf= extractFloatAfter(inString, "conf=");
+
+    tagX = x;
+    tagY = y;
+
+    // If you don't have separate filtered values, just mirror raw
+    tagXFiltered = x;
+    tagYFiltered = y;
+
+    // You are not using distances from this message format
+    for (int i = 0; i < 8; i++) distances[i] = 0;
+
+    dataReceived = true;
+    println("Successfully parsed: x=" + x + " y=" + y);
+  } catch (Exception e) {
+    println("Parse error (SF line): " + inString);
+    e.printStackTrace();
   }
+}
+
+float extractFloatAfter(String s, String key) {
+  int start = s.indexOf(key);
+  if (start < 0) throw new RuntimeException("Missing key: " + key);
+
+  start += key.length(); // move past "x=" or "y=" etc.
+  
+  // Skip any leading whitespace after the key
+  while (start < s.length() && s.charAt(start) == ' ') {
+    start++;
+  }
+
+  // Find the end of the number: space, pipe, or end-of-string
+  int endSpace = s.indexOf(' ', start);
+  int endPipe  = s.indexOf('|', start);
+
+  int end;
+  if (endSpace < 0 && endPipe < 0) end = s.length();
+  else if (endSpace < 0) end = endPipe;
+  else if (endPipe < 0) end = endSpace;
+  else end = min(endSpace, endPipe);
+
+  String num = s.substring(start, end).trim();
+
+  // In case something like "0.00m" ever sneaks in, strip non-number tail safely
+  // (keeps digits, sign, decimal, exponent)
+  num = num.replaceAll("[^0-9eE+\\-\\.]", "");
+
+  return float(num);
 }
 
 // =====================
@@ -255,7 +320,7 @@ void loadFromCsvRow(int r) {
   if (row != null && csv.getColumnCount() > 0 && csv.getColumnTitle(0) != null) {
     // Try header names first
     try {
-      tagX = row.getFloat("x");
+      tagX = row.getFloat("x= ");
       tagY = row.getFloat("y");
       tagXFiltered = row.getFloat("x_filtered");
       tagYFiltered = row.getFloat("y_filtered");
