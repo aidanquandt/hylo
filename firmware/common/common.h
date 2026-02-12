@@ -48,6 +48,20 @@
 #define ABS(x) (((x) < 0) ? -(x) : (x))
 #define CLAMP(x, min, max) (MIN(MAX((x), (min)), (max)))
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+#ifndef M_PI_F
+#define M_PI_F (3.14159265358979323846f)
+#endif
+
+#define DEG_TO_RAD (M_PI_F / 180.0f)
+#define RAD_TO_DEG (180.0f / M_PI_F)
+
+// Gravity constant in m/s²
+#define GRAVITY_MAGNITUDE (9.81f)
+
 /*---------------------------------------------------------------------------
  * Common Types
  *---------------------------------------------------------------------------*/

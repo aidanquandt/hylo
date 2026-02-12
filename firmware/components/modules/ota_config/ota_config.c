@@ -400,8 +400,7 @@ STATIC void ota_config_init_message_header(protocol_header_t* header, uint8_t ms
 {
     header->protocol_type = PROTOCOL_TYPE_OTA_CONFIG;
     header->msg_type      = msg_type;
-    header->sequence = (uint16_t)(ota_config_stats.sequence_counter++ & 0xFFFF);
-    header->sequence      = (uint16_t)(ota_config_stats.requests_sent & 0xFFFF);
+    header->sequence      = (uint16_t)(ota_config_stats.sequence_counter++ & 0xFFFF);
 }
 
 STATIC int8_t ota_config_allocate_slot(uint16_t target_addr, uint16_t sequence)
@@ -441,7 +440,10 @@ STATIC void ota_config_free_slot(int8_t slot)
     if (xSemaphoreTake(pending_requests_mutex, portMAX_DELAY) == pdTRUE)
     {
         pending_requests[slot].in_use = false;
-        pending_requests[slot].new_addr = 0; // Clear stale new_addr to prevent incorrect matching
+        pending_requests[slot].new_addr = 0;
+        pending_requests[slot].target_addr = 0;  // Clear to prevent stale address matching
+        pending_requests[slot].sequence = 0;      // Clear to prevent stale sequence matching
+        pending_requests[slot].waiting_task = NULL;
         xSemaphoreGive(pending_requests_mutex);
     }
 }

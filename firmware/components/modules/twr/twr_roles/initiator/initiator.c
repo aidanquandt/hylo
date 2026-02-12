@@ -215,15 +215,15 @@ STATIC void initiator_handle_tx_complete_impl(const twr_event_t* event, twr_cont
 
 STATIC void initiator_handle_timeout_impl(const twr_event_t* event, twr_context_t* ctx)
 {
-    error_handler_log(ERROR_SEVERITY_ERROR, "initiator", "Timeout waiting for message %d",
-                      event->timeout.expected_msg);
+    // error_handler_log(ERROR_SEVERITY_ERROR, "initiator", "Timeout waiting for message %d",
+    //                   event->timeout.expected_msg);
 
     // Retry logic
     if (ctx->retry_count < TWR_MAX_RETRIES)
     {
         ctx->retry_count++;
-        error_handler_log(ERROR_SEVERITY_INFO, "initiator", "Retrying (attempt %u)",
-                          ctx->retry_count);
+        // error_handler_log(ERROR_SEVERITY_INFO, "initiator", "Retrying (attempt %u)",
+        //                   ctx->retry_count);
 
         // Restart with POLL
         ctx->expected_msg = TWR_MSG_RESPONSE;

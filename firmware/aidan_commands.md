@@ -12,29 +12,25 @@ uwb_node.set.address 0x0002
 
 ### Step 2: Configure Each Anchor (Power On One at a Time)
 ```bash
-
-# # FOR ROOM 2035
-# # Power on first anchor, then run:
+# Power on first anchor, then run:
 # ota_config.send.address 0x0001 0x0003
-# ota_config.send.type 0x0003 1
-# ota_config.send.position 0x0003 0.0 0.0 0.0
+ota_config.send.type 0x0003 1
+ota_config.send.position 0x0003 4.915 3.758 1.32
 
-# # Power on second anchor, then run:
+# Power on second anchor, then run:
 # ota_config.send.address 0x0001 0x0004
-# ota_config.send.type 0x0004 1
-# ota_config.send.position 0x0004 1.5 0.0 0.0
+ota_config.send.type 0x0004 1
+ota_config.send.position 0x0004 0.877 0.02 1.046
 
-# # Power on third anchor, then run:
+# Power on third anchor, then run:
 # ota_config.send.address 0x0001 0x0005
-# ota_config.send.type 0x0005 1
-# ota_config.send.position 0x0005 1.5 3.0 0.0
+ota_config.send.type 0x0005 1
+ota_config.send.position 0x0005 0.828 4.018 1.756
 
-# # Power on fourth anchor, then run:
+# Power on fourth anchor, then run:
 # ota_config.send.address 0x0001 0x0006
-# ota_config.send.type 0x0006 1
-# ota_config.send.position 0x0006 0.0 3.0 0.0
-
-# FOR ROOM 2009
+ota_config.send.type 0x0006 1
+ota_config.send.position 0x0006 4.904 0.46 1.632
 ```
 
 ### Step 3: Start Ranging
@@ -50,7 +46,7 @@ twrmgr.req.stop
 
 
 
-
+sf.set.debug 1
 uwb_node.set.type tag
 uwb_node.set.address 0x0002
 twrmgr.add.target 0x0003
@@ -58,25 +54,24 @@ twrmgr.add.target 0x0004
 twrmgr.add.target 0x0005
 twrmgr.add.target 0x0006
 twrmgr.req.start
+
+sf.set.active 1
+sf.set.active 0
 ```
 
 ### Optional: Test LED Control
 ```bash
 # Turn LED ON on node 0x0003
 ota_config.set.gpio 0x0003 0 1
+ota_config.set.gpio 0x0004 0 1
+ota_config.set.gpio 0x0005 0 1
+ota_config.set.gpio 0x0006 0 1
 
 # Turn LED OFF on node 0x0003
 ota_config.set.gpio 0x0003 0 0
-
-
-
-uwb_node.set.type tag
-uwb_node.set.address 0x0007
-twrmgr.add.target 0x0008
-twrmgr.req.start
-
-uwb_node.set.type anchor
-uwb_node.set.address 0x0008
+ota_config.set.gpio 0x0004 0 0
+ota_config.set.gpio 0x0005 0 0
+ota_config.set.gpio 0x0006 0 0
 ```
 
 ---

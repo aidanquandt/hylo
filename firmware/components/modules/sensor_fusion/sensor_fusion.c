@@ -53,6 +53,8 @@ const module_S sensor_fusion_module = {
 STATIC QueueHandle_t sensor_queue                 = NULL;
 STATIC sensor_fusion_position_t position_estimate = {0};
 STATIC bool fusion_initialized                    = false;
+STATIC bool fusion_active                         = false;
+STATIC bool debug_prints_enabled                  = false;
 STATIC kalmanCoreData_t kf_data;
 STATIC kalmanCoreParams_t kf_params;
 STATIC uint32_t update_count = 0;
@@ -76,6 +78,10 @@ STATIC void process_ranging_event(const sensor_event_t* event)
     
     if (!ranging->anchor_position_valid)
     {
+        if (debug_prints_enabled)
+        {
+            uart_manager_print("SF_DEBUG: Ranging skipped - anchor position invalid\r\n");
+        }
         return;  // Cannot update without known anchor position
     }
     
@@ -88,11 +94,18 @@ STATIC void process_ranging_event(const sensor_event_t* event)
         .anchorId = (uint8_t)(ranging->anchor_addr & 0xFF)
     };
     
-    kalmanCoreAddProcessNoise(&kf_data, &kf_params, event->timestamp_ms);
+    // kalmanCoreAddProcessNoise(&kf_data, &kf_params, event->timestamp_ms);
     kalmanCoreUpdateWithDistance(&kf_data, &d);
     kalmanCoreFinalize(&kf_data);
     
     update_count++;
+
+    // DEBUG: Log every 10th update
+    if (debug_prints_enabled && (update_count % 10 == 0))
+    {
+        // uart_manager_print("SF_DEBUG: Processed ranging update #%lu from anchor 0x%04X\r\n",
+        //                   update_count, ranging->anchor_addr);
+    }
 }
 
 STATIC void process_imu_event(const sensor_event_t* event)
@@ -174,6 +187,12 @@ STATIC void sensor_fusion_task(void* pvParameters)
         {
             stats.events_popped++;
             
+            // Discard events when sensor fusion is not active
+            if (!fusion_active)
+            {
+                continue;
+            }
+            
             switch (event.type)
             {
                 case SENSOR_EVENT_RANGING:
@@ -225,6 +244,20 @@ STATIC void sensor_fusion_update_position_estimate(void)
                    !isnan(position_estimate.z));
     
     position_estimate.valid = valid_updates && reasonable_pos && no_nans;
+
+    // DEBUG: Log why position is invalid
+    if (debug_prints_enabled && !position_estimate.valid)
+    {
+        uart_manager_print("SF_DEBUG: valid=%d, updates=%lu (need %d), pos=(%.2f,%.2f,%.2f), noNaN=%d, reasonable=%d\r\n",
+                          position_estimate.valid,
+                          update_count,
+                          MIN_UPDATES_FOR_VALID,
+                          position_estimate.x,
+                          position_estimate.y,
+                          position_estimate.z,
+                          no_nans,
+                          reasonable_pos);
+    }
     
     // Simple confidence metric based on update count
     position_estimate.confidence = (update_count < CONFIDENCE_RAMP_UPDATES) ? 
@@ -427,6 +460,46 @@ bool sensor_fusion_is_valid(void)
     return valid;
 }
 
+void sensor_fusion_start(void)
+{
+    if (!fusion_initialized)
+    {
+        return;
+    }
+    
+    // Reset/clear all data when starting
+    sensor_fusion_reset();
+    
+    // Activate sensor fusion
+    fusion_active = true;
+}
+
+void sensor_fusion_stop(void)
+{
+    if (!fusion_initialized)
+    {
+        return;
+    }
+    
+    // Deactivate sensor fusion (events will be discarded)
+    fusion_active = false;
+}
+
+bool sensor_fusion_is_active(void)
+{
+    return fusion_active;
+}
+
+void sensor_fusion_enable_debug_prints(bool enable)
+{
+    debug_prints_enabled = enable;
+}
+
+bool sensor_fusion_get_debug_prints_enabled(void)
+{
+    return debug_prints_enabled;
+}
+
 STATIC void sensor_fusion_process_10Hz(void)
 {
 #if FEATURE_PRINT_SENSOR_FUSION_LOCATION_ESTIMATE
@@ -436,16 +509,19 @@ STATIC void sensor_fusion_process_10Hz(void)
     }
 
     sensor_fusion_position_t pos;
-    if (sensor_fusion_get_position(&pos))
+    if (debug_prints_enabled)
     {
-        uart_manager_print("SF: x=%.2f y=%.2f z=%.2f m | vx=%.2f vy=%.2f vz=%.2f m/s | conf=%.2f\r\n",
-                          pos.x, pos.y, pos.z,
-                          pos.vx, pos.vy, pos.vz,
-                          pos.confidence);
-    }
-    else
-    {
-        uart_manager_print("SF: Position estimate invalid\r\n");
+        if (sensor_fusion_get_position(&pos))
+        {
+            uart_manager_print("SF: x=%6.2f y=%6.2f z=%6.2f m | vx=%6.2f vy=%6.2f vz=%6.2f m/s | conf=%.2f\r\n",
+                            pos.x, pos.y, pos.z,
+                            pos.vx, pos.vy, pos.vz,
+                            pos.confidence);
+        }
+        else if (fusion_active)
+        {
+            uart_manager_print("SF: Position estimate invalid\r\n");
+        }
     }
 #endif
 }

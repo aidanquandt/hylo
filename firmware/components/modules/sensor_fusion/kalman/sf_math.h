@@ -30,10 +30,17 @@
 
 /* PI is already defined in arm_math.h */
 
+#ifndef DEG_TO_RAD
 #define DEG_TO_RAD (M_PI_F / 180.0f)
-#define RAD_TO_DEG (180.0f / M_PI_F)
+#endif
 
+#ifndef RAD_TO_DEG
+#define RAD_TO_DEG (180.0f / M_PI_F)
+#endif
+
+#ifndef GRAVITY_MAGNITUDE
 #define GRAVITY_MAGNITUDE (9.81f)
+#endif
 
 #define SF_MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define SF_MAX(a, b) (((a) > (b)) ? (a) : (b))
