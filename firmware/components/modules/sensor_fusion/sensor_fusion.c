@@ -124,8 +124,14 @@ STATIC void process_imu_event(const sensor_event_t* event)
         .z = imu->gyro_z
     };
     
+    /* Predict state using IMU measurements */
     kalmanCorePredict(&kf_data, &kf_params, &acc, &gyro, event->timestamp_ms);
     kalmanCoreAddProcessNoise(&kf_data, &kf_params, event->timestamp_ms);
+    
+    /* DISABLED: Gravity constraint - causing divergence issues */
+    /* TODO: Debug and re-enable after fixing Jacobian */
+    // kalmanCoreUpdateWithGravity(&kf_data, &acc, 1.0f);
+    
     kalmanCoreFinalize(&kf_data);
 }
 

@@ -165,9 +165,9 @@ STATIC void imu_transform_accel(const vec3_t* accel_in, vec3_t* accel_out)
 {
     // Identity mapping (sensor frame = body frame)
     // Modify these assignments if IMU is mounted in a different orientation:
-    accel_out->x = accel_in->x;
+    accel_out->x = accel_in->z;
     accel_out->y = accel_in->y;
-    accel_out->z = accel_in->z;
+    accel_out->z = -1*accel_in->x;
     
     // Example: 90° rotation about Z-axis (sensor X → body Y, sensor Y → body -X)
     // accel_out->x = -accel_in->y;
@@ -197,9 +197,9 @@ STATIC void imu_transform_gyro(const vec3_t* gyro_in, vec3_t* gyro_out)
 {
     // Identity mapping (sensor frame = body frame)
     // Modify these assignments to match your IMU mounting (same rotation as accel):
-    gyro_out->x = gyro_in->x;
+    gyro_out->x = gyro_in->z;
     gyro_out->y = gyro_in->y;
-    gyro_out->z = gyro_in->z;
+    gyro_out->z = -1*gyro_in->x;
     
     // Example: 90° rotation about Z-axis (sensor X → body Y, sensor Y → body -X)
     // gyro_out->x = -gyro_in->y;
@@ -324,14 +324,14 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
         return;
     }
 
-    int accel_result = imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_2G, IMU_ODR_100HZ);
+    int accel_result = imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_2G, IMU_ODR_200HZ);
     if (accel_result != IMU_PORT_SUCCESS)
     {
         imu_fault_code = FAULT_ACCEL_CONFIG_FAILED;
         return;
     }
 
-    int gyro_result = imu_port_configure_gyro(imu_dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_100HZ);
+    int gyro_result = imu_port_configure_gyro(imu_dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_200HZ);
     if (gyro_result != IMU_PORT_SUCCESS)
     {
         imu_fault_code = FAULT_GYRO_CONFIG_FAILED;
