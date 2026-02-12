@@ -4,6 +4,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "common.h"
+#include "kalman/kalman_core.h"
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -114,3 +115,9 @@ void sensor_fusion_stop(void);
 bool sensor_fusion_is_active(void);
 void sensor_fusion_enable_debug_prints(bool enable);
 bool sensor_fusion_get_debug_prints_enabled(void);
+void sensor_fusion_enable_imu(bool enable);
+bool sensor_fusion_get_imu_enabled(void);
+void sensor_fusion_set_process_noise(float pos, float vel, float att);
+void sensor_fusion_get_process_noise(float* pos, float* vel, float* att);
+void sensor_fusion_get_kalman_params(kalmanCoreParams_t* params);
+void sensor_fusion_set_kalman_params(const kalmanCoreParams_t* params);

@@ -11,6 +11,7 @@
 #include "uart_manager.h"
 #include "common.h"
 #include "kalman/kalman_core.h"
+#include "outlier_rejection.h"
 #include <math.h>
 
 /*---------------------------------------------------------------------------
@@ -59,6 +60,7 @@ STATIC kalmanCoreData_t kf_data;
 STATIC kalmanCoreParams_t kf_params;
 STATIC uint32_t update_count = 0;
 STATIC TaskHandle_t sensor_fusion_task_handle = NULL;
+STATIC bool imu_enabled = true;  // Enable IMU by default
 
 STATIC struct
 {
@@ -67,6 +69,8 @@ STATIC struct
     volatile uint32_t overflows;
     volatile uint32_t max_depth;
     volatile uint32_t sequence;
+    volatile uint32_t ranging_rejected;     // UWB measurements rejected as outliers
+    volatile uint32_t ranging_accepted;     // UWB measurements accepted
 } stats = {0};
 
 /*---------------------------------------------------------------------------
@@ -92,7 +96,29 @@ STATIC void process_ranging_event(const sensor_event_t* event)
         .distance = ranging->distance_m,
         .stdDev = RANGING_DEFAULT_STDDEV_M,
         .anchorId = (uint8_t)(ranging->anchor_addr & 0xFF)
-    };
+    };Outlier rejection using innovation-based gating
+    float innovation, innovation_variance;
+    bool is_valid = outlier_validate_ranging(&kf_data, &d, &innovation, &innovation_variance);
+    
+    if (!is_valid)
+    {
+        stats.ranging_rejected++;
+        if (debug_prints_enabled)
+        {
+            float mahal = outlier_mahalanobis_distance(innovation, innovation_variance);
+            uart_manager_print("SF_OUTLIER: Rejected ranging from 0x%04X: "
+                             "innov=%.3f, var=%.3f, mahal=%.2f\r\n",
+                             ranging->anchor_addr, innovation, innovation_variance, mahal);
+        }
+        return;
+    }
+    
+    // Adaptive measurement noise based on innovation consistency
+    d.stdDev = outlier_adaptive_measurement_noise(RANGING_DEFAULT_STDDEV_M, 
+                                                   innovation, 
+                                                   innovation_variance);
+    
+    stats.ranging_accepted++;
     
     // kalmanCoreAddProcessNoise(&kf_data, &kf_params, event->timestamp_ms);
     kalmanCoreUpdateWithDistance(&kf_data, &d);
@@ -103,6 +129,9 @@ STATIC void process_ranging_event(const sensor_event_t* event)
     // DEBUG: Log every 10th update
     if (debug_prints_enabled && (update_count % 10 == 0))
     {
+        uart_manager_print("SF_DEBUG: Ranging stats - accepted:%lu rejected:%lu (%.1f%% reject)\r\n",
+                          stats.ranging_accepted, stats.ranging_rejected,
+                          100.0f * stats.ranging_rejected / (stats.ranging_accepted + stats.ranging_rejected + 1)
         // uart_manager_print("SF_DEBUG: Processed ranging update #%lu from anchor 0x%04X\r\n",
         //                   update_count, ranging->anchor_addr);
     }
@@ -206,7 +235,10 @@ STATIC void sensor_fusion_task(void* pvParameters)
                     break;
 
                 case SENSOR_EVENT_IMU:
-                    process_imu_event(&event);
+                    if (imu_enabled)
+                    {
+                        process_imu_event(&event);
+                    }
                     break;
 
                 default:
@@ -504,6 +536,65 @@ void sensor_fusion_enable_debug_prints(bool enable)
 bool sensor_fusion_get_debug_prints_enabled(void)
 {
     return debug_prints_enabled;
+}
+
+void sensor_fusion_enable_imu(bool enable)
+{
+    imu_enabled = enable;
+    uart_manager_print("SF: IMU %s\r\n", enable ? "enabled" : "disabled");
+}
+
+bool sensor_fusion_get_imu_enabled(void)
+{
+    return imu_enabled;
+}
+
+void sensor_fusion_set_process_noise(float pos, float vel, float att)
+{
+    if (!fusion_initialized)
+    {
+        return;
+    }
+    
+    kf_params.procNoisePos = pos;
+    kf_params.procNoiseVel = vel;
+    kf_params.procNoiseAtt = att;
+    
+    uart_manager_print("SF: Process noise updated - pos=%.4f, vel=%.4f, att=%.4f\r\n",
+                      pos, vel, att);
+}
+
+void sensor_fusion_get_process_noise(float* pos, float* vel, float* att)
+{
+    if (!fusion_initialized || pos == NULL || vel == NULL || att == NULL)
+    {
+        return;
+    }
+    
+    *pos = kf_params.procNoisePos;
+    *vel = kf_params.procNoiseVel;
+    *att = kf_params.procNoiseAtt;
+}
+
+void sensor_fusion_get_kalman_params(kalmanCoreParams_t* params)
+{
+    if (!fusion_initialized || params == NULL)
+    {
+        return;
+    }
+    
+    *params = kf_params;
+}
+
+void sensor_fusion_set_kalman_params(const kalmanCoreParams_t* params)
+{
+    if (!fusion_initialized || params == NULL)
+    {
+        return;
+    }
+    
+    kf_params = *params;
+    uart_manager_print("SF: Kalman parameters updated\r\n");
 }
 
 STATIC void sensor_fusion_process_10Hz(void)

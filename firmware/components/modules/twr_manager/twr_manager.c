@@ -16,9 +16,16 @@
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define RANGING_RATE_HZ 50                           // Target ranging rate (Hz)
-#define RANGING_PERIOD_TICKS (1000 / RANGING_RATE_HZ) // Period in 1kHz ticks
-#define INVALID_TARGET_ADDR 0x0000                    // Invalid/unset target address
+#define RANGING_RATE_HZ_DEFAULT 50                      // Default ranging rate (Hz)
+#define RANGING_RATE_HZ_MIN 1                           // Minimum ranging rate (Hz)
+#define RANGING_RATE_HZ_MAX 200                         // Maximum ranging rate (Hz)
+#define INVALID_TARGET_ADDR 0x0000                      // Invalid/unset target address
+
+/*---------------------------------------------------------------------------
+ * Private Variables
+ *---------------------------------------------------------------------------*/
+STATIC uint16_t ranging_rate_hz = RANGING_RATE_HZ_DEFAULT;
+STATIC uint16_t ranging_period_ticks = (1000 / RANGING_RATE_HZ_DEFAULT);
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -159,7 +166,7 @@ STATIC void twr_manager_try_start_ranging(void)
 {
     // Rate limiting: only attempt ranging at configured rate
     ctx.rate_prescaler++;
-    if (ctx.rate_prescaler < RANGING_PERIOD_TICKS)
+    if (ctx.rate_prescaler < ranging_period_ticks)
     {
         return;
     }
@@ -351,4 +358,28 @@ uint32_t twr_manager_get_success_count(void)
 uint32_t twr_manager_get_failure_count(void)
 {
     return ctx.failure_count;
+}
+
+bool twr_manager_set_ranging_rate(uint16_t rate_hz)
+{
+    if (rate_hz < RANGING_RATE_HZ_MIN || rate_hz > RANGING_RATE_HZ_MAX)
+    {
+        error_handler_log(ERROR_SEVERITY_ERROR, "twrmgr", 
+                         "Invalid ranging rate %u Hz (valid range: %u-%u Hz)",
+                         rate_hz, RANGING_RATE_HZ_MIN, RANGING_RATE_HZ_MAX);
+        return false;
+    }
+    
+    ranging_rate_hz = rate_hz;
+    ranging_period_ticks = (1000 / rate_hz);
+    
+    error_handler_log(ERROR_SEVERITY_INFO, "twrmgr", 
+                     "Ranging rate set to %u Hz (period: %u ms)",
+                     rate_hz, ranging_period_ticks);
+    return true;
+}
+
+uint16_t twr_manager_get_ranging_rate(void)
+{
+    return ranging_rate_hz;
 }

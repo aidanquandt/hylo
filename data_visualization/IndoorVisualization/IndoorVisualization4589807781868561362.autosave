@@ -1,7 +1,4 @@
 import processing.serial.*;
-import java.awt.Toolkit;
-import java.awt.datatransfer.Clipboard;
-import java.awt.datatransfer.DataFlavor;
 
 // =====================
 // Toggle data source
@@ -74,7 +71,7 @@ void setup() {
 
     // NOTE: You hard-coded COM9 already; keep it if that's correct.
     try {
-      myPort = new Serial(this, "COM3", 115200);
+      myPort = new Serial(this, "COM6", 115200);
       myPort.bufferUntil('\n');
       println("Successfully opened COM6 at 115200 baud");
     } catch (Exception e) {
@@ -227,22 +224,12 @@ void drawLegend() {
 }
 
 void drawCommandInput() {
-  // Draw command input area at bottom - make it more visible
-  if (commandInputFocused) {
-    fill(0, 100, 0, 230);  // Green background when active
-  } else {
-    fill(40, 40, 40, 200);  // Gray background when inactive
-  }
-  rect(0, height - 140, width, 140);
-  
-  // Status text
-  fill(commandInputFocused ? color(0, 255, 0) : color(200));
-  textAlign(CENTER);
-  textSize(16);
-  text(commandInputFocused ? "COMMAND MODE: ON" : "COMMAND MODE: OFF (Press C to activate)", width/2, height - 120);
+  // Draw command input area at bottom
+  fill(20, 150);
+  rect(0, height - 120, width, 120);
   
   // Command history
-  fill(200);
+  fill(150);
   textAlign(LEFT);
   textSize(11);
   int histY = height - 100;
@@ -251,56 +238,19 @@ void drawCommandInput() {
     histY += 15;
   }
   
-  // Show what you're typing in large text above the input box
-  if (commandInputFocused && commandInput.length() > 0) {
-    fill(255, 255, 0);  // Bright yellow
-    textSize(28);
-    textAlign(LEFT);
-    text("> " + commandInput, 20, height - 65);
-  }
+  // Input box
+  textSize(12);
+  fill(commandInputFocused ? color(40, 80, 40) : color(40));
+  rect(10, height - 35, width - 20, 25);
   
-  // Input box with more visible border - larger box
-  
-  // Draw border
-  if (commandInputFocused) {
-    stroke(0, 255, 0);
-    strokeWeight(4);
-  } else {
-    stroke(150);
-    strokeWeight(2);
-  }
-  fill(0);  // Pure black background
-  rect(10, height - 50, width - 20, 40);
-  noStroke();
-  
-  // Draw text with maximum visibility
-  textAlign(LEFT, CENTER);  // Center vertically
-  textSize(24);  // Larger text
-  
-  // Build display string
-  String displayText = "> " + commandInput;
-  if (commandInputFocused && (millis() / 500) % 2 == 0) {
-    displayText += "|";
-  }
-  
-  // Draw the text in the center of the input box
-  fill(255, 255, 0);  // Bright yellow
-  text(displayText, 20, height - 30);
-  
-  // Debug: show length of command
-  if (commandInputFocused) {
-    fill(0, 255, 0);
-    textSize(12);
-    textAlign(RIGHT);
-    text("chars: " + commandInput.length(), width - 20, height - 30);
-  }
-  textAlign(LEFT);  // Reset
+  fill(commandInputFocused ? color(0, 255, 0) : color(200));
+  text("> " + commandInput + (commandInputFocused && (millis() / 500) % 2 == 0 ? "_" : ""), 15, height - 17);
   
   // Instructions
-  fill(commandInputFocused ? color(255, 255, 0) : color(150));
-  textSize(11);
-  textAlign(CENTER);
-  text("Press 'C' to toggle | ENTER to send | BACKSPACE to delete | CTRL+V to paste | Click to activate", width/2, height - 5);
+  fill(150);
+  textSize(10);
+  textAlign(RIGHT);
+  text("Click input box or press TAB to enter commands | ENTER to send | ESC to clear", width - 15, height - 5);
   textAlign(LEFT);
 }
 
@@ -431,43 +381,24 @@ void loadFromCsvRow(int r) {
   }
 }
 
-// Keyboard controls:
-//   C = toggle command input mode
-//   r = restart playback (CSV mode)
-//   + / - = speed up / slow down playback (CSV mode)
+// Optional keyboard controls:
+//   r = restart playback
+//   l = loop (simple toggle)
+//   + / - = speed up / slow down playback (rows/sec)
+//   TAB = focus command input
 //   ENTER = send command
-//   BACKSPACE = delete character
+//   ESC = clear/unfocus command input
 void keyPressed() {
-  // 'C' or 'c' to toggle command input focus
-  if (key == 'c' || key == 'C') {
-    commandInputFocused = !commandInputFocused;
-    println("======================================");
-    println("KEY 'C' PRESSED - Command mode: " + (commandInputFocused ? "ON" : "OFF"));
-    println("======================================");
+  // TAB to focus command input
+  if (key == TAB) {
+    commandInputFocused = true;
     return;
   }
   
-  // Debug: print all key presses
-  if (commandInputFocused) {
-    println("Key pressed: '" + key + "' (code: " + int(key) + ")");
-  }
-  
-  // Handle paste (Ctrl+V or Cmd+V)
-  if (commandInputFocused && (keyCode == 86 && (key == CODED || key == 22))) {
-    // Check if Ctrl (Windows/Linux) or Cmd (Mac) is pressed
-    try {
-      Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-      String pastedText = (String) clipboard.getData(DataFlavor.stringFlavor);
-      if (pastedText != null) {
-        // Remove any newlines and carriage returns
-        pastedText = pastedText.replace("\n", "").replace("\r", "");
-        commandInput += pastedText;
-        println("Pasted: " + pastedText);
-        println("commandInput now = \"" + commandInput + "\" (length: " + commandInput.length() + ")");
-      }
-    } catch (Exception e) {
-      println("Paste failed: " + e.getMessage());
-    }
+  // ESC to clear/unfocus command input
+  if (key == ESC) {
+    commandInputFocused = false;
+    commandInput = "";
     return;
   }
   
@@ -480,19 +411,13 @@ void keyPressed() {
         commandHistory.append(commandInput);
         println("Sent command: " + commandInput);
         commandInput = "";
-      } else if (commandInput.length() > 0 && USE_CSV) {
-        println("Cannot send commands in CSV playback mode");
       }
-    } else if (key == BACKSPACE || key == DELETE || keyCode == BACKSPACE) {
+    } else if (key == BACKSPACE) {
       if (commandInput.length() > 0) {
         commandInput = commandInput.substring(0, commandInput.length() - 1);
-        println("Deleted char. New length: " + commandInput.length());
       }
-    } else if (key >= 32 && key < 127 && key != 'c' && key != 'C') { // Printable ASCII (except C)
+    } else if (key >= 32 && key < 127) { // Printable ASCII
       commandInput += key;
-      println("Added char: '" + key + "' - commandInput now = \"" + commandInput + "\" (length: " + commandInput.length() + ")");
-    } else {
-      println("Key not handled: key=" + key + " keyCode=" + keyCode);
     }
     return;
   }
@@ -512,10 +437,10 @@ void keyPressed() {
 }
 
 void mousePressed() {
-  // Check if clicked in command input area (bottom 140 pixels)
-  println("Mouse clicked at y=" + mouseY + ", height=" + height);
-  if (mouseY > height - 140) {
-    commandInputFocused = !commandInputFocused;
-    println("Command mode toggled: " + (commandInputFocused ? "ON" : "OFF"));
+  // Check if clicked in command input area
+  if (mouseY > height - 35 && mouseY < height - 10) {
+    commandInputFocused = true;
+  } else {
+    commandInputFocused = false;
   }
 }

@@ -84,3 +84,16 @@ static inline uint8_t twr_manager_get_target_count(void)
 {
     return twr_scheduler_get_target_count();
 }
+
+/**
+ * @brief Set the UWB ranging rate
+ * @param rate_hz Ranging rate in Hz (1-200)
+ * @return true if set successfully
+ */
+bool twr_manager_set_ranging_rate(uint16_t rate_hz);
+
+/**
+ * @brief Get the current UWB ranging rate
+ * @return Ranging rate in Hz
+ */
+uint16_t twr_manager_get_ranging_rate(void);
