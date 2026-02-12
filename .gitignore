@@ -44,6 +44,7 @@ rules.ninja
 # Editor/IDE
 *.code-workspace
 .idea/
+.settings/
 
 # OS cruft
 Thumbs.db
