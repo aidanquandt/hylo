@@ -58,7 +58,6 @@ set(MODULE_SOURCES
     modules/imu/imu.c
     modules/ota_config/ota_config.c
     modules/sensor_fusion/kalman/kalman_core.c
-    modules/sensor_fusion/outlier_rejection.c
     modules/sensor_fusion/sensor_fusion.c
     modules/twr/twr.c
     modules/twr/twr_engine/twr_algorithm.c

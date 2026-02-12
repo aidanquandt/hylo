@@ -16,7 +16,7 @@
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define RANGING_RATE_HZ_DEFAULT 50                      // Default ranging rate (Hz)
+#define RANGING_RATE_HZ_DEFAULT 100                      // Default ranging rate (Hz)
 #define RANGING_RATE_HZ_MIN 1                           // Minimum ranging rate (Hz)
 #define RANGING_RATE_HZ_MAX 200                         // Maximum ranging rate (Hz)
 #define INVALID_TARGET_ADDR 0x0000                      // Invalid/unset target address

@@ -11,7 +11,6 @@
 #include "uart_manager.h"
 #include "common.h"
 #include "kalman/kalman_core.h"
-#include "outlier_rejection.h"
 #include <math.h>
 
 /*---------------------------------------------------------------------------
@@ -19,10 +18,10 @@
  *---------------------------------------------------------------------------*/
 #define SENSOR_FUSION_QUEUE_SIZE 32U
 #define MIN_UPDATES_FOR_VALID 10
-#define RANGING_DEFAULT_STDDEV_M 0.15f
+#define RANGING_DEFAULT_STDDEV_M 0.20f  // Increased from 0.15 to trust individual measurements less
 #define MAX_VALID_POSITION_M 1000.0f
 #define CONFIDENCE_RAMP_UPDATES 100
-#define SENSOR_FUSION_TASK_PRIORITY (tskIDLE_PRIORITY + 2)
+#define SENSOR_FUSION_TASK_PRIORITY (4U)  // Priority 4: above UART(3), below UWB(5,6)
 #define SENSOR_FUSION_STACK_SIZE 2048
 
 /*---------------------------------------------------------------------------
@@ -69,8 +68,6 @@ STATIC struct
     volatile uint32_t overflows;
     volatile uint32_t max_depth;
     volatile uint32_t sequence;
-    volatile uint32_t ranging_rejected;     // UWB measurements rejected as outliers
-    volatile uint32_t ranging_accepted;     // UWB measurements accepted
 } stats = {0};
 
 /*---------------------------------------------------------------------------
@@ -98,43 +95,11 @@ STATIC void process_ranging_event(const sensor_event_t* event)
         .anchorId = (uint8_t)(ranging->anchor_addr & 0xFF)
     };
     
-    // Outlier rejection using innovation-based gating
-    float innovation, innovation_variance;
-    bool is_valid = outlier_validate_ranging(&kf_data, &d, &innovation, &innovation_variance);
-    
-    if (!is_valid)
-    {
-        stats.ranging_rejected++;
-        if (debug_prints_enabled)
-        {
-            float mahal = outlier_mahalanobis_distance(innovation, innovation_variance);
-            uart_manager_print("SF_OUTLIER: Rejected ranging from 0x%04X: "
-                             "innov=%.3f, var=%.3f, mahal=%.2f\r\n",
-                             ranging->anchor_addr, innovation, innovation_variance, mahal);
-        }
-        return;
-    }
-    
-    // Adaptive measurement noise based on innovation consistency
-    d.stdDev = outlier_adaptive_measurement_noise(RANGING_DEFAULT_STDDEV_M, 
-                                                   innovation, 
-                                                   innovation_variance);
-    
-    stats.ranging_accepted++;
-    
     // kalmanCoreAddProcessNoise(&kf_data, &kf_params, event->timestamp_ms);
     kalmanCoreUpdateWithDistance(&kf_data, &d);
     kalmanCoreFinalize(&kf_data);
     
     update_count++;
-
-    // DEBUG: Log every 10th update
-    if (debug_prints_enabled && (update_count % 10 == 0))
-    {
-        uart_manager_print("SF_DEBUG: Ranging stats - accepted:%lu rejected:%lu (%.1f%% reject)\r\n",
-                          (unsigned long)stats.ranging_accepted, (unsigned long)stats.ranging_rejected,
-                          100.0f * stats.ranging_rejected / (stats.ranging_accepted + stats.ranging_rejected + 1));
-    }
 }
 
 STATIC void process_imu_event(const sensor_event_t* event)
