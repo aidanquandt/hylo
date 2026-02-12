@@ -132,7 +132,7 @@ STATIC void process_ranging_event(const sensor_event_t* event)
     if (debug_prints_enabled && (update_count % 10 == 0))
     {
         uart_manager_print("SF_DEBUG: Ranging stats - accepted:%lu rejected:%lu (%.1f%% reject)\r\n",
-                          stats.ranging_accepted, stats.ranging_rejected,
+                          (unsigned long)stats.ranging_accepted, (unsigned long)stats.ranging_rejected,
                           100.0f * stats.ranging_rejected / (stats.ranging_accepted + stats.ranging_rejected + 1));
     }
 }
@@ -288,7 +288,7 @@ STATIC void sensor_fusion_update_position_estimate(void)
     {
         uart_manager_print("SF_DEBUG: valid=%d, updates=%lu (need %d), pos=(%.2f,%.2f,%.2f), noNaN=%d, reasonable=%d\r\n",
                           position_estimate.valid,
-                          update_count,
+                          (unsigned long)update_count,
                           MIN_UPDATES_FOR_VALID,
                           position_estimate.x,
                           position_estimate.y,
