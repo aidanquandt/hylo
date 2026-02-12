@@ -25,7 +25,7 @@ class Display:
         glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST)
         
         # Open the serial port for receiving IMU data
-        self.ser = serial.Serial('COM3', 115200, timeout=1)  # Update with your port and baud rate
+        self.ser = serial.Serial('COM10', 115200, timeout=1)  # Update with your port and baud rate
         
         # IMU data storage
         self.roll = 0.0
