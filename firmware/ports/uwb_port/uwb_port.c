@@ -425,8 +425,9 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev)
     dwt_txconfig_t txconfig = {.PGdly = DW3000_TX_PDELAY, .power = DW3000_TX_POWER};
     dwt_configuretxrf(&txconfig);
 
-    // Enable LEDs - will blink on TX/RX events for visual debugging
     dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
+
+    dwt_configeventcounters(1);
 
     if (dwt_rxenable(DWT_START_RX_IMMEDIATE) != DWT_SUCCESS)
     {
@@ -587,4 +588,10 @@ decaIrqStatus_t decamutexon(void)
 void decamutexoff(decaIrqStatus_t s)
 {
     platform_os_critical_exit((platform_os_critical_state_t)s);
+}
+
+void uwb_port_reset_event_counters(void)
+{
+    // Re-enabling event counters resets them to zero
+    dwt_configeventcounters(1);
 }
