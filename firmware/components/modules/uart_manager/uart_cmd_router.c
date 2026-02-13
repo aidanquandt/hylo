@@ -795,9 +795,47 @@ STATIC void uart_cmd_router_handle_twr_manager(const char* action, const char* t
             uart_manager_print("ERR: Unknown clear target. Use: targets or anchors\r\n");
         }
     }
+    else if (strcmp(action, "setrate") == 0)
+    {
+        if (strcmp(target, "ranging") == 0)
+        {
+            if (args == NULL)
+            {
+                uart_manager_print("ERR: Missing rate argument (Hz)\r\n");
+                uart_manager_print("Example: twrmgr.setrate.ranging 100\r\n");
+                return;
+            }
+            
+            uint16_t rate_hz = (uint16_t)atoi(args);
+            if (twr_manager_set_ranging_rate(rate_hz))
+            {
+                uart_manager_print("Ranging rate set to %u Hz\r\n", rate_hz);
+            }
+            else
+            {
+                uart_manager_print("ERR: Failed to set ranging rate (valid range: 1-200 Hz)\r\n");
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown setrate target. Use: ranging\r\n");
+        }
+    }
+    else if (strcmp(action, "getrate") == 0)
+    {
+        if (strcmp(target, "ranging") == 0)
+        {
+            uint16_t rate_hz = twr_manager_get_ranging_rate();
+            uart_manager_print("Current ranging rate: %u Hz\r\n", rate_hz);
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown getrate target. Use: ranging\r\n");
+        }
+    }
     else
     {
-        uart_manager_print("ERR: Unknown action. Use: req, get, add, remove, set, clear\r\n");
+        uart_manager_print("ERR: Unknown action. Use: req, get, add, remove, set, clear, setrate, getrate\r\n");
     }
 }
 
@@ -1255,8 +1293,6 @@ STATIC void uart_cmd_router_handle_system(const char* action, const char* target
 STATIC void uart_cmd_router_handle_sensor_fusion(const char* action, const char* target,
                                                  const char* args)
 {
-    (void)args;
-
     if (strcmp(action, "get") == 0)
     {
         if (strcmp(target, "debug") == 0)
@@ -1285,6 +1321,38 @@ STATIC void uart_cmd_router_handle_sensor_fusion(const char* action, const char*
         {
             bool active = sensor_fusion_is_active();
             uart_manager_print("Sensor Fusion: %s\r\n", active ? "ACTIVE" : "STOPPED");
+        }
+        else if (strcmp(target, "imu") == 0)
+        {
+            bool enabled = sensor_fusion_get_imu_enabled();
+            uart_manager_print("IMU integration: %s\r\n", enabled ? "ENABLED" : "DISABLED");
+        }
+        else if (strcmp(target, "noise") == 0)
+        {
+            float pos, vel, att;
+            sensor_fusion_get_process_noise(&pos, &vel, &att);
+            uart_manager_print("Process Noise:\r\n");
+            uart_manager_print("  Position: %.4f\r\n", pos);
+            uart_manager_print("  Velocity: %.4f\r\n", vel);
+            uart_manager_print("  Attitude: %.4f\r\n", att);
+        }
+        else if (strcmp(target, "config") == 0)
+        {
+            kalmanCoreParams_t params;
+            sensor_fusion_get_kalman_params(&params);
+            uart_manager_print("\r\nKalman Filter Configuration:\r\n");
+            uart_manager_print("Initial Variances:\r\n");
+            uart_manager_print("  Position XY: %.4f\r\n", params.stdDevInitialPosition_xy);
+            uart_manager_print("  Position Z: %.4f\r\n", params.stdDevInitialPosition_z);
+            uart_manager_print("  Velocity: %.4f\r\n", params.stdDevInitialVelocity);
+            uart_manager_print("  Attitude R/P: %.4f\r\n", params.stdDevInitialAttitude_rollpitch);
+            uart_manager_print("  Attitude Yaw: %.4f\r\n", params.stdDevInitialAttitude_yaw);
+            uart_manager_print("Process Noise:\r\n");
+            uart_manager_print("  Accel XY: %.4f\r\n", params.procNoiseAcc_xy);
+            uart_manager_print("  Accel Z: %.4f\r\n", params.procNoiseAcc_z);
+            uart_manager_print("  Velocity: %.4f\r\n", params.procNoiseVel);
+            uart_manager_print("  Position: %.4f\r\n", params.procNoisePos);
+            uart_manager_print("  Attitude: %.4f\r\n", params.procNoiseAtt);
         }
         else
         {
@@ -1336,6 +1404,60 @@ STATIC void uart_cmd_router_handle_sensor_fusion(const char* action, const char*
                 sensor_fusion_stop();
                 uart_manager_print("Sensor Fusion STOPPED\r\n");
             }
+        }
+        else if (strcmp(target, "imu") == 0)
+        {
+            if (args == NULL)
+            {
+                uart_manager_print("ERR: Missing argument (0=disable, 1=enable)\r\n");
+                return;
+            }
+            
+            int enable = atoi(args);
+            if (enable != 0 && enable != 1)
+            {
+                uart_manager_print("ERR: Invalid value. Use 0 (disable) or 1 (enable)\r\n");
+                return;
+            }
+            
+            sensor_fusion_enable_imu(enable != 0);
+            uart_manager_print("IMU integration %s\r\n", enable ? "ENABLED" : "DISABLED");
+        }
+        else if (strcmp(target, "noise") == 0)
+        {
+            if (args == NULL)
+            {
+                uart_manager_print("ERR: Missing arguments (pos vel att)\r\n");
+                uart_manager_print("Example: sf.set.noise 0.01 0.1 0.001\r\n");
+                return;
+            }
+            
+            char* end_ptr;
+            float pos = strtof(args, &end_ptr);
+            if (end_ptr == args)
+            {
+                uart_manager_print("ERR: Invalid position noise\r\n");
+                return;
+            }
+            
+            args = skip_whitespace(end_ptr);
+            float vel = strtof(args, &end_ptr);
+            if (end_ptr == args)
+            {
+                uart_manager_print("ERR: Invalid velocity noise\r\n");
+                return;
+            }
+            
+            args = skip_whitespace(end_ptr);
+            float att = strtof(args, &end_ptr);
+            if (end_ptr == args)
+            {
+                uart_manager_print("ERR: Invalid attitude noise\r\n");
+                return;
+            }
+            
+            sensor_fusion_set_process_noise(pos, vel, att);
+            uart_manager_print("Process noise updated: pos=%.4f, vel=%.4f, att=%.4f\r\n", pos, vel, att);
         }
         else
         {

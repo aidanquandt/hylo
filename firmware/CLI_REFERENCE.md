@@ -1,4 +1,4 @@
-# Aidan Commands Reference
+# Commands Reference
 
 ## Quick Start: Setup 4 Anchors
 
@@ -15,22 +15,22 @@ uwb_node.set.address 0x0002
 # Power on first anchor, then run:
 # ota_config.send.address 0x0001 0x0003
 ota_config.send.type 0x0003 1
-ota_config.send.position 0x0003 4.915 3.758 1.32
+ota_config.send.position 0x0003 0.025 0.832 1.129
 
 # Power on second anchor, then run:
 # ota_config.send.address 0x0001 0x0004
 ota_config.send.type 0x0004 1
-ota_config.send.position 0x0004 0.877 0.02 1.046
+ota_config.send.position 0x0004 4.01 0.783 1.744
 
 # Power on third anchor, then run:
 # ota_config.send.address 0x0001 0x0005
 ota_config.send.type 0x0005 1
-ota_config.send.position 0x0005 0.828 4.018 1.756
+ota_config.send.position 0x0005 0.451 4.17 1.606
 
 # Power on fourth anchor, then run:
 # ota_config.send.address 0x0001 0x0006
 ota_config.send.type 0x0006 1
-ota_config.send.position 0x0006 4.904 0.46 1.632
+ota_config.send.position 0x0006 4.775 4.17 2.264
 ```
 
 ### Step 3: Start Ranging
@@ -54,8 +54,8 @@ twrmgr.add.target 0x0004
 twrmgr.add.target 0x0005
 twrmgr.add.target 0x0006
 twrmgr.req.start
-
 sf.set.active 1
+
 sf.set.active 0
 ```
 

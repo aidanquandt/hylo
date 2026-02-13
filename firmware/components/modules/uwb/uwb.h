@@ -14,8 +14,8 @@ typedef enum
     UWB_STATE_OFF,
     UWB_STATE_INITIALIZATION,
     UWB_STATE_ACTIVE,
-    UWB_STATE_RETRY,    // Transient failure - will retry init
-    UWB_STATE_FAULTED   // Permanent failure - manual intervention needed
+    UWB_STATE_RETRY,  // Transient failure - will retry init
+    UWB_STATE_FAULTED // Permanent failure - manual intervention needed
 } uwb_state_e;
 
 typedef struct
@@ -52,7 +52,7 @@ void uwb_reset_rx_stats(void);
 uint32_t uwb_get_tx_queue_overflows(void);
 uint32_t uwb_get_rx_queue_overflows(void);
 uint32_t uwb_get_tx_timeouts(void);
-uint32_t uwb_get_tx_queue_depth(void);  // Number of messages waiting to be transmitted
+uint32_t uwb_get_tx_queue_depth(void); // Number of messages waiting to be transmitted
 bool uwb_is_ready(void);
 void uwb_start(void);
 void uwb_stop(void);
@@ -61,7 +61,6 @@ uint16_t uwb_get_address(void);
 uint16_t uwb_get_pan_id(void);
 bool uwb_soft_reset(void);
 uwb_send_result_t uwb_send_message(const uint8_t* data, uint16_t length, uint16_t dest_addr);
-uwb_dev_t* uwb_get_device(void);
 bool uwb_register_protocol_handler(uint8_t protocol_type, uwb_protocol_handler_t handler);
 void uwb_register_tx_complete_handler(uwb_tx_complete_handler_t handler);
 void uwb_unregister_protocol_handler(uint8_t protocol_type);

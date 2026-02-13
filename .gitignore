@@ -46,6 +46,9 @@ rules.ninja
 .settings/
 .vscode/
 
+# Processing IDE
+*.autosave
+
 # OS cruft
 Thumbs.db
 Desktop.ini

@@ -3,14 +3,14 @@
  *---------------------------------------------------------------------------*/
 #include "sensor_fusion.h"
 #include "FreeRTOS.h"
+#include "common.h"
 #include "counter.h"
 #include "error_handler.h"
 #include "feature_config.h"
+#include "kalman/kalman_core.h"
 #include "module.h"
 #include "queue.h"
 #include "uart_manager.h"
-#include "common.h"
-#include "kalman/kalman_core.h"
 #include <math.h>
 
 /*---------------------------------------------------------------------------
@@ -18,7 +18,7 @@
  *---------------------------------------------------------------------------*/
 #define SENSOR_FUSION_QUEUE_SIZE 32U
 #define MIN_UPDATES_FOR_VALID 10
-#define RANGING_DEFAULT_STDDEV_M 0.15f
+#define RANGING_DEFAULT_STDDEV_M 0.2f
 #define MAX_VALID_POSITION_M 1000.0f
 #define CONFIDENCE_RAMP_UPDATES 100
 #define SENSOR_FUSION_TASK_PRIORITY (tskIDLE_PRIORITY + 2)
@@ -57,8 +57,9 @@ STATIC bool fusion_active                         = false;
 STATIC bool debug_prints_enabled                  = false;
 STATIC kalmanCoreData_t kf_data;
 STATIC kalmanCoreParams_t kf_params;
-STATIC uint32_t update_count = 0;
+STATIC uint32_t update_count                  = 0;
 STATIC TaskHandle_t sensor_fusion_task_handle = NULL;
+STATIC bool imu_enabled                       = true; // Enable IMU by default
 
 STATIC struct
 {
@@ -75,57 +76,45 @@ STATIC struct
 STATIC void process_ranging_event(const sensor_event_t* event)
 {
     const sensor_ranging_data_t* ranging = &event->data.ranging;
-    
+
     if (!ranging->anchor_position_valid)
     {
         if (debug_prints_enabled)
         {
             uart_manager_print("SF_DEBUG: Ranging skipped - anchor position invalid\r\n");
         }
-        return;  // Cannot update without known anchor position
+        return; // Cannot update without known anchor position
     }
-    
-    distanceMeasurement_t d = {
-        .x = ranging->anchor_position.x,
-        .y = ranging->anchor_position.y,
-        .z = ranging->anchor_position.z,
-        .distance = ranging->distance_m,
-        .stdDev = RANGING_DEFAULT_STDDEV_M,
-        .anchorId = (uint8_t)(ranging->anchor_addr & 0xFF)
-    };
-    
-    // kalmanCoreAddProcessNoise(&kf_data, &kf_params, event->timestamp_ms);
+
+    distanceMeasurement_t d = {.x        = ranging->anchor_position.x,
+                               .y        = ranging->anchor_position.y,
+                               .z        = ranging->anchor_position.z,
+                               .distance = ranging->distance_m,
+                               .stdDev   = RANGING_DEFAULT_STDDEV_M,
+                               .anchorId = (uint8_t)(ranging->anchor_addr & 0xFF)};
+
     kalmanCoreUpdateWithDistance(&kf_data, &d);
     kalmanCoreFinalize(&kf_data);
-    
-    update_count++;
 
-    // DEBUG: Log every 10th update
-    if (debug_prints_enabled && (update_count % 10 == 0))
-    {
-        // uart_manager_print("SF_DEBUG: Processed ranging update #%lu from anchor 0x%04X\r\n",
-        //                   update_count, ranging->anchor_addr);
-    }
+    update_count++;
 }
 
 STATIC void process_imu_event(const sensor_event_t* event)
 {
     const sensor_imu_data_t* imu = &event->data.imu;
 
-    Axis3f acc = {
-        .x = imu->accel_x,
-        .y = imu->accel_y,
-        .z = imu->accel_z
-    };
-    
-    Axis3f gyro = {
-        .x = imu->gyro_x,
-        .y = imu->gyro_y,
-        .z = imu->gyro_z
-    };
-    
+    Axis3f acc = {.x = imu->accel_x, .y = imu->accel_y, .z = imu->accel_z};
+
+    Axis3f gyro = {.x = imu->gyro_x, .y = imu->gyro_y, .z = imu->gyro_z};
+
+    /* Predict state using IMU measurements */
     kalmanCorePredict(&kf_data, &kf_params, &acc, &gyro, event->timestamp_ms);
     kalmanCoreAddProcessNoise(&kf_data, &kf_params, event->timestamp_ms);
+
+    /* DISABLED: Gravity constraint - causing divergence issues */
+    /* TODO: Debug and re-enable after fixing Jacobian */
+    // kalmanCoreUpdateWithGravity(&kf_data, &acc, 1.0f);
+
     kalmanCoreFinalize(&kf_data);
 }
 
@@ -155,19 +144,13 @@ STATIC void sensor_fusion_init(void)
 
     kalmanCoreDefaultParams(&kf_params);
     kalmanCoreInit(&kf_data, &kf_params, xTaskGetTickCount());
-    
-    update_count = 0;
+
+    update_count       = 0;
     fusion_initialized = true;
-    
-    BaseType_t result = xTaskCreate(
-        sensor_fusion_task,
-        "sensor_fusion",
-        SENSOR_FUSION_STACK_SIZE,
-        NULL,
-        SENSOR_FUSION_TASK_PRIORITY,
-        &sensor_fusion_task_handle
-    );
-    
+
+    BaseType_t result = xTaskCreate(sensor_fusion_task, "sensor_fusion", SENSOR_FUSION_STACK_SIZE,
+                                    NULL, SENSOR_FUSION_TASK_PRIORITY, &sensor_fusion_task_handle);
+
     if (result != pdPASS)
     {
         error_handler_fatal("sensor_fusion", "Failed to create processing task");
@@ -178,7 +161,7 @@ STATIC void sensor_fusion_task(void* pvParameters)
 {
     (void)pvParameters;
     sensor_event_t event;
-    
+
     while (1)
     {
         // Block indefinitely waiting for sensor event (no timeout)
@@ -186,13 +169,13 @@ STATIC void sensor_fusion_task(void* pvParameters)
         if (xQueueReceive(sensor_queue, &event, portMAX_DELAY) == pdPASS)
         {
             stats.events_popped++;
-            
+
             // Discard events when sensor fusion is not active
             if (!fusion_active)
             {
                 continue;
             }
-            
+
             switch (event.type)
             {
                 case SENSOR_EVENT_RANGING:
@@ -200,14 +183,17 @@ STATIC void sensor_fusion_task(void* pvParameters)
                     break;
 
                 case SENSOR_EVENT_IMU:
-                    process_imu_event(&event);
+                    if (imu_enabled)
+                    {
+                        process_imu_event(&event);
+                    }
                     break;
 
                 default:
                     // Unknown event type - should never happen due to validation
                     break;
             }
-            
+
             // Update position estimate after each event
             sensor_fusion_update_position_estimate();
         }
@@ -220,48 +206,40 @@ STATIC void sensor_fusion_task(void* pvParameters)
 STATIC void sensor_fusion_update_position_estimate(void)
 {
     // Extract position from Kalman filter
-    kalmanCoreGetPosition(&kf_data, 
-                         &position_estimate.x, 
-                         &position_estimate.y, 
-                         &position_estimate.z);
-    
+    kalmanCoreGetPosition(&kf_data, &position_estimate.x, &position_estimate.y,
+                          &position_estimate.z);
+
     // Extract velocity from Kalman filter
-    kalmanCoreGetVelocity(&kf_data, 
-                         &position_estimate.vx, 
-                         &position_estimate.vy, 
-                         &position_estimate.vz);
-    
+    kalmanCoreGetVelocity(&kf_data, &position_estimate.vx, &position_estimate.vy,
+                          &position_estimate.vz);
+
     // Update timestamp
     position_estimate.timestamp_ms = xTaskGetTickCount();
-    
+
     // Check validity: need enough updates and reasonable position
-    bool valid_updates = (update_count >= MIN_UPDATES_FOR_VALID);
+    bool valid_updates  = (update_count >= MIN_UPDATES_FOR_VALID);
     bool reasonable_pos = (fabsf(position_estimate.x) < MAX_VALID_POSITION_M &&
-                          fabsf(position_estimate.y) < MAX_VALID_POSITION_M &&
-                          fabsf(position_estimate.z) < MAX_VALID_POSITION_M);
-    bool no_nans = (!isnan(position_estimate.x) && 
-                   !isnan(position_estimate.y) && 
-                   !isnan(position_estimate.z));
-    
+                           fabsf(position_estimate.y) < MAX_VALID_POSITION_M &&
+                           fabsf(position_estimate.z) < MAX_VALID_POSITION_M);
+    bool no_nans =
+        (!isnan(position_estimate.x) && !isnan(position_estimate.y) && !isnan(position_estimate.z));
+
     position_estimate.valid = valid_updates && reasonable_pos && no_nans;
 
     // DEBUG: Log why position is invalid
     if (debug_prints_enabled && !position_estimate.valid)
     {
-        uart_manager_print("SF_DEBUG: valid=%d, updates=%lu (need %d), pos=(%.2f,%.2f,%.2f), noNaN=%d, reasonable=%d\r\n",
-                          position_estimate.valid,
-                          update_count,
-                          MIN_UPDATES_FOR_VALID,
-                          position_estimate.x,
-                          position_estimate.y,
-                          position_estimate.z,
-                          no_nans,
-                          reasonable_pos);
+        uart_manager_print("SF_DEBUG: valid=%d, updates=%lu (need %d), pos=(%.2f,%.2f,%.2f), "
+                           "noNaN=%d, reasonable=%d\r\n",
+                           position_estimate.valid, (unsigned long)update_count,
+                           MIN_UPDATES_FOR_VALID, position_estimate.x, position_estimate.y,
+                           position_estimate.z, no_nans, reasonable_pos);
     }
-    
+
     // Simple confidence metric based on update count
-    position_estimate.confidence = (update_count < CONFIDENCE_RAMP_UPDATES) ? 
-                                   (float)update_count / (float)CONFIDENCE_RAMP_UPDATES : 1.0f;
+    position_estimate.confidence = (update_count < CONFIDENCE_RAMP_UPDATES)
+                                       ? (float)update_count / (float)CONFIDENCE_RAMP_UPDATES
+                                       : 1.0f;
 }
 
 /*---------------------------------------------------------------------------
@@ -387,13 +365,13 @@ void sensor_fusion_reset(void)
 
     // Reset Kalman filter to initial state
     kalmanCoreInit(&kf_data, &kf_params, xTaskGetTickCount());
-    
+
     // Reset position estimate validity
     taskENTER_CRITICAL();
     position_estimate.valid      = false;
     position_estimate.confidence = 0.0f;
     taskEXIT_CRITICAL();
-    
+
     // Reset update counter
     update_count = 0;
 }
@@ -402,9 +380,12 @@ void sensor_fusion_get_position_xyz(float* x, float* y, float* z)
 {
     if (x == NULL || y == NULL || z == NULL || !fusion_initialized)
     {
-        if (x) *x = 0.0f;
-        if (y) *y = 0.0f;
-        if (z) *z = 0.0f;
+        if (x)
+            *x = 0.0f;
+        if (y)
+            *y = 0.0f;
+        if (z)
+            *z = 0.0f;
         return;
     }
 
@@ -419,9 +400,12 @@ void sensor_fusion_get_velocity(float* vx, float* vy, float* vz)
 {
     if (vx == NULL || vy == NULL || vz == NULL || !fusion_initialized)
     {
-        if (vx) *vx = 0.0f;
-        if (vy) *vy = 0.0f;
-        if (vz) *vz = 0.0f;
+        if (vx)
+            *vx = 0.0f;
+        if (vy)
+            *vy = 0.0f;
+        if (vz)
+            *vz = 0.0f;
         return;
     }
 
@@ -436,9 +420,12 @@ void sensor_fusion_get_attitude(float* roll, float* pitch, float* yaw)
 {
     if (roll == NULL || pitch == NULL || yaw == NULL || !fusion_initialized)
     {
-        if (roll) *roll = 0.0f;
-        if (pitch) *pitch = 0.0f;
-        if (yaw) *yaw = 0.0f;
+        if (roll)
+            *roll = 0.0f;
+        if (pitch)
+            *pitch = 0.0f;
+        if (yaw)
+            *yaw = 0.0f;
         return;
     }
 
@@ -466,10 +453,10 @@ void sensor_fusion_start(void)
     {
         return;
     }
-    
+
     // Reset/clear all data when starting
     sensor_fusion_reset();
-    
+
     // Activate sensor fusion
     fusion_active = true;
 }
@@ -480,7 +467,7 @@ void sensor_fusion_stop(void)
     {
         return;
     }
-    
+
     // Deactivate sensor fusion (events will be discarded)
     fusion_active = false;
 }
@@ -500,6 +487,65 @@ bool sensor_fusion_get_debug_prints_enabled(void)
     return debug_prints_enabled;
 }
 
+void sensor_fusion_enable_imu(bool enable)
+{
+    imu_enabled = enable;
+    uart_manager_print("SF: IMU %s\r\n", enable ? "enabled" : "disabled");
+}
+
+bool sensor_fusion_get_imu_enabled(void)
+{
+    return imu_enabled;
+}
+
+void sensor_fusion_set_process_noise(float pos, float vel, float att)
+{
+    if (!fusion_initialized)
+    {
+        return;
+    }
+
+    kf_params.procNoisePos = pos;
+    kf_params.procNoiseVel = vel;
+    kf_params.procNoiseAtt = att;
+
+    uart_manager_print("SF: Process noise updated - pos=%.4f, vel=%.4f, att=%.4f\r\n", pos, vel,
+                       att);
+}
+
+void sensor_fusion_get_process_noise(float* pos, float* vel, float* att)
+{
+    if (!fusion_initialized || pos == NULL || vel == NULL || att == NULL)
+    {
+        return;
+    }
+
+    *pos = kf_params.procNoisePos;
+    *vel = kf_params.procNoiseVel;
+    *att = kf_params.procNoiseAtt;
+}
+
+void sensor_fusion_get_kalman_params(kalmanCoreParams_t* params)
+{
+    if (!fusion_initialized || params == NULL)
+    {
+        return;
+    }
+
+    *params = kf_params;
+}
+
+void sensor_fusion_set_kalman_params(const kalmanCoreParams_t* params)
+{
+    if (!fusion_initialized || params == NULL)
+    {
+        return;
+    }
+
+    kf_params = *params;
+    uart_manager_print("SF: Kalman parameters updated\r\n");
+}
+
 STATIC void sensor_fusion_process_10Hz(void)
 {
 #if FEATURE_PRINT_SENSOR_FUSION_LOCATION_ESTIMATE
@@ -513,10 +559,9 @@ STATIC void sensor_fusion_process_10Hz(void)
     {
         if (sensor_fusion_get_position(&pos))
         {
-            uart_manager_print("SF: x=%6.2f y=%6.2f z=%6.2f m | vx=%6.2f vy=%6.2f vz=%6.2f m/s | conf=%.2f\r\n",
-                            pos.x, pos.y, pos.z,
-                            pos.vx, pos.vy, pos.vz,
-                            pos.confidence);
+            uart_manager_print(
+                "SF: x=%6.2f y=%6.2f z=%6.2f m | vx=%6.2f vy=%6.2f vz=%6.2f m/s | conf=%.2f\r\n",
+                pos.x, pos.y, pos.z, pos.vx, pos.vy, pos.vz, pos.confidence);
         }
         else if (fusion_active)
         {

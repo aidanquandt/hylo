@@ -240,6 +240,8 @@ imu_port_status_t imu_port_configure_accel(imu_dev_t* dev, imu_accel_range_t ran
     config.cfg.acc.range    = (uint8_t)range;
     config.cfg.acc.odr      = (uint16_t)odr;
     config.cfg.acc.acc_mode = BMI3_ACC_MODE_NORMAL; // Enable accelerometer
+    config.cfg.acc.bwp      = BMI3_ACC_BW_ODR_QUARTER; // 50Hz cutoff @ 200Hz ODR
+    config.cfg.acc.avg_num  = BMI3_ACC_AVG4; // Average 4 samples for noise reduction
 
     rslt = bmi323_set_sensor_config(&config, 1, &dev->bmi_dev);
     if (rslt != BMI3_OK)
@@ -274,6 +276,8 @@ imu_port_status_t imu_port_configure_gyro(imu_dev_t* dev, imu_gyro_range_t range
     config.cfg.gyr.range    = (uint16_t)range;
     config.cfg.gyr.odr      = (uint16_t)odr;
     config.cfg.gyr.gyr_mode = BMI3_GYR_MODE_NORMAL; // Enable gyroscope
+    config.cfg.gyr.bwp      = BMI3_GYR_BW_ODR_QUARTER; // 50Hz cutoff @ 200Hz ODR
+    config.cfg.gyr.avg_num  = BMI3_GYR_AVG4; // Average 4 samples for noise reduction
 
     rslt = bmi323_set_sensor_config(&config, 1, &dev->bmi_dev);
     if (rslt != BMI3_OK)
