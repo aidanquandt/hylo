@@ -2,6 +2,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "imu.h"
+#include "FreeRTOS.h"
 #include "common.h"
 #include "counter.h"
 #include "error_handler.h"
@@ -10,8 +11,9 @@
 #include "platform_gpio.h"
 #include "sensor_fusion.h"
 #include "state_machine.h"
-#include "FreeRTOS.h"
 #include "task.h"
+#include "task_config.h"
+#include "watchdog.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -65,12 +67,13 @@ STATIC void imu_state_faulted_on_entry(uint16_t prevState);
  * Module Functions
  *---------------------------------------------------------------------------*/
 STATIC void imu_init(void);
-STATIC void imu_process_1kHz(void);
+STATIC void imu_create_tasks(void);
+STATIC void imu_task(void* argument);
 
 const module_S imu_module = {
     .module_name         = "imu",
     .module_init         = imu_init,
-    .module_process_1kHz = imu_process_1kHz,
+    .module_create_tasks = imu_create_tasks,
 };
 
 /*---------------------------------------------------------------------------
@@ -79,9 +82,9 @@ const module_S imu_module = {
 STATIC const state_s imu_states[] = {
     [IMU_STATE_STARTUP]        = {.process = NULL, .onEntry = NULL, .onExit = NULL},
     [IMU_STATE_INITIALIZATION] = {.process = NULL,
-                              .onEntry = imu_state_initialization_on_entry,
-                              .onExit  = NULL},
-    [IMU_STATE_ACTIVE]         = {.process = imu_state_active_process, .onEntry = NULL, .onExit = NULL},
+                                  .onEntry = imu_state_initialization_on_entry,
+                                  .onExit  = NULL},
+    [IMU_STATE_ACTIVE]  = {.process = imu_state_active_process, .onEntry = NULL, .onExit = NULL},
     [IMU_STATE_FAULTED] = {.process = NULL, .onEntry = imu_state_faulted_on_entry, .onExit = NULL}};
 
 STATIC state_machine_s imu_state_machine = {.prev_state      = IMU_STATE_STARTUP,
@@ -113,8 +116,7 @@ STATIC bool verify_chip_id(void)
 
     ctx.chip_id = imu_port_read_chip_id(imu_dev);
 
-    return (ctx.chip_id == IMU_EXPECTED_CHIP_ID_1 ||
-            ctx.chip_id == IMU_EXPECTED_CHIP_ID_2);
+    return (ctx.chip_id == IMU_EXPECTED_CHIP_ID_1 || ctx.chip_id == IMU_EXPECTED_CHIP_ID_2);
 }
 
 STATIC bool imu_read_accel_and_gyro(void)
@@ -129,7 +131,7 @@ STATIC bool imu_read_accel_and_gyro(void)
     vec3_t gyro_pre_transform;
 
     int result = imu_port_read_accel_and_gyro(imu_dev, &accel_pre_transform, &gyro_pre_transform);
-    
+
     if (result != IMU_PORT_SUCCESS)
     {
         imu_fault_code = FAULT_READ_FAILED;
@@ -138,7 +140,7 @@ STATIC bool imu_read_accel_and_gyro(void)
 
     imu_transform_accel(&accel_pre_transform, &ctx.data.accel);
     imu_transform_gyro(&gyro_pre_transform, &ctx.data.gyro);
-    
+
     return true;
 }
 
@@ -158,14 +160,14 @@ STATIC void imu_transform_accel(const vec3_t* accel_in, vec3_t* accel_out)
     // Identity mapping (sensor frame = body frame)
     accel_out->x = accel_in->z;
     accel_out->y = accel_in->y;
-    accel_out->z = -1*accel_in->x;
+    accel_out->z = -1 * accel_in->x;
 }
 
 STATIC void imu_transform_gyro(const vec3_t* gyro_in, vec3_t* gyro_out)
 {
     gyro_out->x = gyro_in->z;
     gyro_out->y = gyro_in->y;
-    gyro_out->z = -1*gyro_in->x;
+    gyro_out->z = -1 * gyro_in->x;
 }
 
 STATIC void imu_push_to_sensor_fusion(void)
@@ -194,10 +196,36 @@ STATIC void imu_init(void)
     // Initialization handled by state machine on first process call
 }
 
-STATIC void imu_process_1kHz(void)
+STATIC void imu_create_tasks(void)
 {
-    imu_state_machine_sample_inputs();
-    state_machine_periodic(&imu_state_machine);
+    BaseType_t result =
+        xTaskCreate(imu_task, "imu", TASK_STACK_MEDIUM, NULL, TASK_PRIORITY_IMU_PERIODIC, NULL);
+    if (result != pdPASS)
+    {
+        error_handler_fatal("imu", "Failed to create IMU task");
+    }
+}
+
+/**
+ * @brief IMU processing task - runs state machine at 1kHz
+ */
+STATIC void imu_task(void* argument)
+{
+    (void)argument;
+
+    TickType_t lastWake     = xTaskGetTickCount();
+    const TickType_t period = pdMS_TO_TICKS(1); // 1kHz = 1ms
+
+    watchdog_register_task(10); // Expect heartbeat every 10ms
+
+    for (;;)
+    {
+        imu_state_machine_sample_inputs();
+        state_machine_periodic(&imu_state_machine);
+
+        watchdog_heartbeat();
+        vTaskDelayUntil(&lastWake, period);
+    }
 }
 
 STATIC void imu_state_machine_sample_inputs(void)
@@ -252,7 +280,7 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
 {
     (void)prevState;
 
-    imu_fault_code = FAULT_NONE;
+    imu_fault_code   = FAULT_NONE;
     ctx.sample_count = 0;
 
     imu_dev = imu_port_init();
@@ -293,8 +321,8 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
 STATIC void imu_state_active_process(void)
 {
     static uint8_t prescaler_counter_accel_gyro = 0;
-    static uint16_t prescaler_counter_temp = 0;
-    
+    static uint16_t prescaler_counter_temp      = 0;
+
     if (counter_uint8_t(&prescaler_counter_accel_gyro, IMU_ACCEL_GYRO_PRESCALER))
     {
         if (imu_read_accel_and_gyro())

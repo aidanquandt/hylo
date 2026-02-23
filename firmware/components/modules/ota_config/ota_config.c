@@ -4,6 +4,7 @@
 #include "ota_config.h"
 #include "FreeRTOS.h"
 #include "backoff.h"
+#include "common.h"
 #include "error_handler.h"
 #include "module.h"
 #include "platform_gpio.h"
@@ -13,7 +14,7 @@
 #include "uwb.h"
 #include "uwb_node.h"
 #include "uwb_protocol_messages.h"
-#include "common.h"
+
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -91,8 +92,7 @@ extern const module_S ota_config_module;
 const module_S ota_config_module = {
     .module_name         = "ota_config",
     .module_init         = ota_config_module_init,
-    .module_process_1Hz  = NULL,
-    .module_process_10Hz = NULL,
+    .module_create_tasks = NULL,
 };
 
 /*---------------------------------------------------------------------------
@@ -195,8 +195,8 @@ STATIC void ota_config_handle_set_address(const uint8_t* data, uint16_t length, 
     uwb_set_address(msg->new_address, pan_id);
 
     error_handler_log(ERROR_SEVERITY_INFO, "ota_config",
-                      "Address changed: 0x%04X -> 0x%04X, PAN: 0x%04X", old_address, msg->new_address,
-                      pan_id);
+                      "Address changed: 0x%04X -> 0x%04X, PAN: 0x%04X", old_address,
+                      msg->new_address, pan_id);
 
     ota_config_send_response(src_addr, OTA_CONFIG_STATUS_SUCCESS, msg->header.sequence);
 }
@@ -439,10 +439,10 @@ STATIC void ota_config_free_slot(int8_t slot)
 
     if (xSemaphoreTake(pending_requests_mutex, portMAX_DELAY) == pdTRUE)
     {
-        pending_requests[slot].in_use = false;
-        pending_requests[slot].new_addr = 0;
-        pending_requests[slot].target_addr = 0;  // Clear to prevent stale address matching
-        pending_requests[slot].sequence = 0;      // Clear to prevent stale sequence matching
+        pending_requests[slot].in_use       = false;
+        pending_requests[slot].new_addr     = 0;
+        pending_requests[slot].target_addr  = 0; // Clear to prevent stale address matching
+        pending_requests[slot].sequence     = 0; // Clear to prevent stale sequence matching
         pending_requests[slot].waiting_task = NULL;
         xSemaphoreGive(pending_requests_mutex);
     }

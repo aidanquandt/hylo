@@ -1,13 +1,9 @@
 /*---------------------------------------------------------------------------
- * @file    uart_cmd_router.c
- * @brief   UART command router - parses commands and calls module APIs
- *---------------------------------------------------------------------------*/
-
-/*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
 #include "uart_cmd_router.h"
 #include "FreeRTOS.h"
+#include "common.h"
 #include "datalogger.h"
 #include "error_handler.h"
 #include "imu.h"
@@ -25,7 +21,6 @@
 #include "uwb.h"
 #include "uwb_node/uwb_node.h"
 #include "uwb_protocol_messages.h"
-#include "common.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -52,8 +47,7 @@ STATIC void uart_cmd_router_handle_stopwatch(const char* action, const char* tar
                                              const char* args);
 STATIC void uart_cmd_router_handle_ota_config(const char* action, const char* target,
                                               const char* args);
-STATIC void uart_cmd_router_handle_system(const char* action, const char* target,
-                                          const char* args);
+STATIC void uart_cmd_router_handle_system(const char* action, const char* target, const char* args);
 STATIC void uart_cmd_router_handle_sensor_fusion(const char* action, const char* target,
                                                  const char* args);
 
@@ -461,18 +455,20 @@ STATIC void uart_cmd_router_handle_uwb(const char* action, const char* target, c
         {
             uwb_rx_stats_t stats;
             uwb_get_rx_stats(&stats);
-            uart_manager_print("RX: %u received, %u filtered\r\n",
-                               (unsigned int)stats.received, (unsigned int)stats.filtered);
+            uart_manager_print("RX: %u received, %u filtered\r\n", (unsigned int)stats.received,
+                               (unsigned int)stats.filtered);
             uart_manager_print("Queue: TX overflows=%u, RX overflows=%u\r\n",
                                (unsigned int)uwb_get_tx_queue_overflows(),
                                (unsigned int)uwb_get_rx_queue_overflows());
-            
+
             uwb_port_statistics_t port_stats = uwb_port_get_statistics();
             uart_manager_print("Port Stats:\r\n");
             uart_manager_print("  rx_ok_count: %lu\r\n", (unsigned long)port_stats.rx_ok_count);
-            uart_manager_print("  rx_timeout_count: %lu\r\n", (unsigned long)port_stats.rx_timeout_count);
+            uart_manager_print("  rx_timeout_count: %lu\r\n",
+                               (unsigned long)port_stats.rx_timeout_count);
             uart_manager_print("  tx_done_count: %lu\r\n", (unsigned long)port_stats.tx_done_count);
-            uart_manager_print("  send_message_count: %lu\r\n", (unsigned long)port_stats.send_message_count);
+            uart_manager_print("  send_message_count: %lu\r\n",
+                               (unsigned long)port_stats.send_message_count);
             uart_manager_print("HW Diagnostic Counters:\r\n");
             uart_manager_print("  PHE (PHY header errors): %u\r\n", port_stats.PHE);
             uart_manager_print("  RSL (sync loss): %u\r\n", port_stats.RSL);
@@ -1232,8 +1228,7 @@ STATIC void uart_cmd_router_handle_twr(const char* action, const char* target, c
     }
 }
 
-STATIC void uart_cmd_router_handle_system(const char* action, const char* target,
-                                          const char* args)
+STATIC void uart_cmd_router_handle_system(const char* action, const char* target, const char* args)
 {
     (void)args;
 
@@ -1247,11 +1242,12 @@ STATIC void uart_cmd_router_handle_system(const char* action, const char* target
 
             uart_manager_print("\r\n");
             uart_manager_print("=== STM32 Unique ID ===\r\n");
-            uart_manager_print("Full UUID: %08lX-%08lX-%08lX\r\n",
-                               (unsigned long)word0, (unsigned long)word1, (unsigned long)word2);
+            uart_manager_print("Full UUID: %08lX-%08lX-%08lX\r\n", (unsigned long)word0,
+                               (unsigned long)word1, (unsigned long)word2);
             uart_manager_print("\r\n");
             uart_manager_print("Copy this line to config/device_mapping.c:\r\n");
-            uart_manager_print("{.uuid_word0 = 0x%08lX, .uuid_word1 = 0x%08lX, .uuid_word2 = 0x%08lX, .uwb_address = 0x????, .device_name = \"NAME\"},\r\n",
+            uart_manager_print("{.uuid_word0 = 0x%08lX, .uuid_word1 = 0x%08lX, .uuid_word2 = "
+                               "0x%08lX, .uwb_address = 0x????, .device_name = \"NAME\"},\r\n",
                                (unsigned long)word0, (unsigned long)word1, (unsigned long)word2);
             uart_manager_print("\r\n");
         }
@@ -1262,10 +1258,9 @@ STATIC void uart_cmd_router_handle_system(const char* action, const char* target
             {
                 uart_manager_print("\r\n");
                 uart_manager_print("=== Device Information ===\r\n");
-                uart_manager_print("UUID: %08lX-%08lX-%08lX\r\n",
-                                   (unsigned long)dev_info.uuid_word0,
-                                   (unsigned long)dev_info.uuid_word1,
-                                   (unsigned long)dev_info.uuid_word2);
+                uart_manager_print(
+                    "UUID: %08lX-%08lX-%08lX\r\n", (unsigned long)dev_info.uuid_word0,
+                    (unsigned long)dev_info.uuid_word1, (unsigned long)dev_info.uuid_word2);
                 uart_manager_print("Known Device: %s\r\n", dev_info.is_known_device ? "Yes" : "No");
                 if (dev_info.is_known_device)
                 {
@@ -1298,7 +1293,8 @@ STATIC void uart_cmd_router_handle_sensor_fusion(const char* action, const char*
         if (strcmp(target, "debug") == 0)
         {
             bool enabled = sensor_fusion_get_debug_prints_enabled();
-            uart_manager_print("Sensor Fusion debug prints: %s\r\n", enabled ? "ENABLED" : "DISABLED");
+            uart_manager_print("Sensor Fusion debug prints: %s\r\n",
+                               enabled ? "ENABLED" : "DISABLED");
         }
         else if (strcmp(target, "status") == 0)
         {
@@ -1368,16 +1364,17 @@ STATIC void uart_cmd_router_handle_sensor_fusion(const char* action, const char*
                 uart_manager_print("ERR: Missing argument (0=disable, 1=enable)\r\n");
                 return;
             }
-            
+
             int enable = atoi(args);
             if (enable != 0 && enable != 1)
             {
                 uart_manager_print("ERR: Invalid value. Use 0 (disable) or 1 (enable)\r\n");
                 return;
             }
-            
+
             sensor_fusion_enable_debug_prints(enable != 0);
-            uart_manager_print("Sensor Fusion debug prints %s\r\n", enable ? "ENABLED" : "DISABLED");
+            uart_manager_print("Sensor Fusion debug prints %s\r\n",
+                               enable ? "ENABLED" : "DISABLED");
         }
         else if (strcmp(target, "active") == 0)
         {
@@ -1386,14 +1383,14 @@ STATIC void uart_cmd_router_handle_sensor_fusion(const char* action, const char*
                 uart_manager_print("ERR: Missing argument (0=stop, 1=start)\r\n");
                 return;
             }
-            
+
             int enable = atoi(args);
             if (enable != 0 && enable != 1)
             {
                 uart_manager_print("ERR: Invalid value. Use 0 (stop) or 1 (start)\r\n");
                 return;
             }
-            
+
             if (enable)
             {
                 sensor_fusion_start();

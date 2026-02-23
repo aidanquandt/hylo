@@ -2,9 +2,8 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "error_handler.h"
-#include "common.h"
 #include "FreeRTOS.h"
-#include "feature_config.h"
+#include "common.h"
 #include "feature_config.h"
 #include "module.h"
 #include "platform_gpio.h"
@@ -12,6 +11,7 @@
 #include "semphr.h"
 #include "task.h"
 #include "uart_manager.h"
+
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -31,8 +31,9 @@ STATIC void error_handler_init(void);
  *---------------------------------------------------------------------------*/
 extern const module_S error_handler_module;
 const module_S error_handler_module = {
-    .module_name = "error",
-    .module_init = error_handler_init,
+    .module_name         = "error",
+    .module_init         = error_handler_init,
+    .module_create_tasks = NULL,
 };
 
 /*---------------------------------------------------------------------------
