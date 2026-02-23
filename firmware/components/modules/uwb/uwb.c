@@ -13,9 +13,11 @@
 #include "semphr.h"
 #include "state_machine.h"
 #include "task.h"
+#include "task_config.h"
 #include "uart_manager.h"
 #include "uwb_port.h"
 #include "uwb_protocol_messages.h"
+#include "watchdog.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -26,11 +28,10 @@
 #define DEFAULT_PAN_ID MAC_DEFAULT_PAN_ID
 #define MAX_PROTOCOL_HANDLERS (8U)
 #define UWB_RX_QUEUE_LENGTH (20U) // Increased for burst tolerance during TWR exchanges
-#define UWB_RX_TASK_PRIORITY (6U)
 #define UWB_RX_TASK_STACK_SIZE (768U)
 #define UWB_TX_QUEUE_LENGTH (16U)
-#define UWB_TX_TASK_PRIORITY (5U)
 #define UWB_TX_TASK_STACK_SIZE (512U)
+#define UWB_SM_TASK_STACK_SIZE (256U) // State machine task
 #define UWB_TX_TIMEOUT_MS (3U)
 #define UWB_TX_TIMEOUT_THRESHOLD (2U)
 #define UWB_TX_QUEUE_DEPTH_WARNING (8U)
@@ -159,27 +160,26 @@ STATIC bool uwb_is_transient_fault(uwb_fault_code_e fault);
  * Module Functions
  *---------------------------------------------------------------------------*/
 STATIC void uwb_init(void);
-STATIC void uwb_create_task(void);
-STATIC void uwb_process_100Hz(void);
+STATIC void uwb_create_tasks(void);
+STATIC void uwb_state_machine_task(void* argument);
 
 extern const module_S uwb_module;
 
 const module_S uwb_module = {
-    .module_name          = "uwb",
-    .module_init          = uwb_init,
-    .module_create_task   = uwb_create_task,
-    .module_process_100Hz = uwb_process_100Hz, // State machine for fault detection
+    .module_name         = "uwb",
+    .module_init         = uwb_init,
+    .module_create_tasks = uwb_create_tasks,
 };
 
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
 STATIC SemaphoreHandle_t uwb_hw_mutex = NULL;
-STATIC protocol_context_t protocol = {0};
-STATIC tx_context_t tx = {
-    .next_message_id = 1, // Start at 1, avoid 0
+STATIC protocol_context_t protocol    = {0};
+STATIC tx_context_t tx                = {
+                   .next_message_id = 1, // Start at 1, avoid 0
 };
-STATIC rx_context_t rx = {0};
+STATIC rx_context_t rx       = {0};
 STATIC state_context_t state = {
     .fault_code = FAULT_NONE,
 };
@@ -274,11 +274,11 @@ STATIC void uwb_init(void)
     xSemaphoreGive(uwb_hw_mutex);
 }
 
-STATIC void uwb_create_task(void)
+STATIC void uwb_create_tasks(void)
 {
     // Create high-priority RX task for deferred interrupt processing
     BaseType_t task_result = xTaskCreate(uwb_rx_task, "uwb_rx", UWB_RX_TASK_STACK_SIZE, NULL,
-                                         UWB_RX_TASK_PRIORITY, NULL);
+                                         TASK_PRIORITY_UWB_RX, NULL);
     if (task_result != pdPASS)
     {
         error_handler_fatal("uwb", "Failed to create RX task");
@@ -286,10 +286,18 @@ STATIC void uwb_create_task(void)
 
     // Create TX task for serialized transmission
     task_result = xTaskCreate(uwb_tx_task, "uwb_tx", UWB_TX_TASK_STACK_SIZE, NULL,
-                              UWB_TX_TASK_PRIORITY, &tx.task_handle);
+                              TASK_PRIORITY_UWB_TX, NULL);
     if (task_result != pdPASS)
     {
         error_handler_fatal("uwb", "Failed to create TX task");
+    }
+
+    // Create state machine task for fault detection
+    task_result = xTaskCreate(uwb_state_machine_task, "uwb_sm", UWB_SM_TASK_STACK_SIZE, NULL,
+                              TASK_PRIORITY_UWB_TX - 1, NULL); // Just below TX priority
+    if (task_result != pdPASS)
+    {
+        error_handler_fatal("uwb", "Failed to create state machine task");
     }
 
     // Auto-start UWB radio (critical system component)
@@ -303,10 +311,28 @@ STATIC void uwb_state_machine_sample_inputs(void)
     state.inputs.init_device_completed   = (uwb_dev != NULL);
 }
 
-STATIC void uwb_process_100Hz(void)
+/**
+ * @brief UWB state machine task - monitors and manages radio state
+ *
+ * Runs at 100Hz to detect faults and manage radio lifecycle.
+ */
+STATIC void uwb_state_machine_task(void* argument)
 {
-    uwb_state_machine_sample_inputs();
-    state_machine_periodic(&uwb_state_machine);
+    (void)argument;
+
+    TickType_t lastWake     = xTaskGetTickCount();
+    const TickType_t period = pdMS_TO_TICKS(10); // 100Hz = 10ms
+
+    watchdog_register_task(50); // Expect heartbeat every 50ms (5x period)
+
+    for (;;)
+    {
+        uwb_state_machine_sample_inputs();
+        state_machine_periodic(&uwb_state_machine);
+
+        watchdog_heartbeat();
+        vTaskDelayUntil(&lastWake, period);
+    }
 }
 
 STATIC uint16_t uwb_transition_logic(uint16_t currentState, uint32_t stateTimer)

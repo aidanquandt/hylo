@@ -1,13 +1,15 @@
 /*---------------------------------------------------------------------------
- * @file    uwb_node.c
- * @brief   UWB Node configuration and identity management implementation
+ * Includes
  *---------------------------------------------------------------------------*/
-
 #include "uwb_node.h"
+#include "FreeRTOS.h"
+#include "common.h"
 #include "error_handler.h"
 #include "module.h"
+#include "task.h"
+#include "task_config.h"
 #include "uwb.h"
-#include "common.h"
+#include "watchdog.h"
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -28,7 +30,8 @@ STATIC bool module_initialized = false;
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
 STATIC void uwb_node_module_init(void);
-STATIC void uwb_node_process_1Hz(void);
+STATIC void uwb_node_create_tasks(void);
+STATIC void uwb_node_task(void* argument);
 
 /*---------------------------------------------------------------------------
  * Module Registration
@@ -38,8 +41,7 @@ extern const module_S uwb_node_module;
 const module_S uwb_node_module = {
     .module_name         = "uwb_node",
     .module_init         = uwb_node_module_init,
-    .module_process_1Hz  = uwb_node_process_1Hz,
-    .module_process_10Hz = NULL,
+    .module_create_tasks = uwb_node_create_tasks,
 };
 
 /*---------------------------------------------------------------------------
@@ -56,11 +58,37 @@ STATIC void uwb_node_module_init(void)
     module_initialized         = true;
 }
 
-STATIC void uwb_node_process_1Hz(void)
+STATIC void uwb_node_create_tasks(void)
 {
-    if (module_initialized)
+    BaseType_t result = xTaskCreate(uwb_node_task, "uwb_node", TASK_STACK_SMALL, NULL,
+                                    TASK_PRIORITY_UWB_NODE, NULL);
+    if (result != pdPASS)
     {
-        uwb_node_config.uptime_seconds++;
+        error_handler_fatal("uwb_node", "Failed to create uwb_node task");
+    }
+}
+
+/**
+ * @brief UWB node task - manages node state at 1Hz
+ */
+STATIC void uwb_node_task(void* argument)
+{
+    (void)argument;
+
+    TickType_t lastWake     = xTaskGetTickCount();
+    const TickType_t period = pdMS_TO_TICKS(1000); // 1Hz = 1000ms
+
+    watchdog_register_task(2000); // Expect heartbeat every 2 seconds
+
+    for (;;)
+    {
+        if (module_initialized)
+        {
+            uwb_node_config.uptime_seconds++;
+        }
+
+        watchdog_heartbeat();
+        vTaskDelayUntil(&lastWake, period);
     }
 }
 

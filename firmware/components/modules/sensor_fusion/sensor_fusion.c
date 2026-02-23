@@ -10,7 +10,9 @@
 #include "kalman/kalman_core.h"
 #include "module.h"
 #include "queue.h"
+#include "task_config.h"
 #include "uart_manager.h"
+#include "watchdog.h"
 #include <math.h>
 
 /*---------------------------------------------------------------------------
@@ -21,7 +23,6 @@
 #define RANGING_DEFAULT_STDDEV_M 0.2f
 #define MAX_VALID_POSITION_M 1000.0f
 #define CONFIDENCE_RAMP_UPDATES 100
-#define SENSOR_FUSION_TASK_PRIORITY (tskIDLE_PRIORITY + 2)
 #define SENSOR_FUSION_STACK_SIZE 2048
 
 /*---------------------------------------------------------------------------
@@ -30,20 +31,20 @@
 STATIC void process_ranging_event(const sensor_event_t* event);
 STATIC void process_imu_event(const sensor_event_t* event);
 STATIC void sensor_fusion_init(void);
+STATIC void sensor_fusion_create_tasks(void);
 STATIC void sensor_fusion_task(void* pvParameters);
+STATIC void sensor_fusion_monitor_task(void* pvParameters);
 STATIC void sensor_fusion_update_position_estimate(void);
-STATIC void sensor_fusion_process_10Hz(void);
 
 /*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
-STATIC void sensor_fusion_init(void);
 extern const module_S sensor_fusion_module;
 
 const module_S sensor_fusion_module = {
     .module_name         = "sensor_fusion",
     .module_init         = sensor_fusion_init,
-    .module_process_10Hz = sensor_fusion_process_10Hz,
+    .module_create_tasks = sensor_fusion_create_tasks,
 };
 
 /*---------------------------------------------------------------------------
@@ -107,7 +108,6 @@ STATIC void process_imu_event(const sensor_event_t* event)
 
     Axis3f gyro = {.x = imu->gyro_x, .y = imu->gyro_y, .z = imu->gyro_z};
 
-    /* Predict state using IMU measurements */
     kalmanCorePredict(&kf_data, &kf_params, &acc, &gyro, event->timestamp_ms);
     kalmanCoreAddProcessNoise(&kf_data, &kf_params, event->timestamp_ms);
 
@@ -147,14 +147,27 @@ STATIC void sensor_fusion_init(void)
 
     update_count       = 0;
     fusion_initialized = true;
+}
 
-    BaseType_t result = xTaskCreate(sensor_fusion_task, "sensor_fusion", SENSOR_FUSION_STACK_SIZE,
-                                    NULL, SENSOR_FUSION_TASK_PRIORITY, &sensor_fusion_task_handle);
+STATIC void sensor_fusion_create_tasks(void)
+{
+    BaseType_t result = xTaskCreate(sensor_fusion_task, "sensor_fus", SENSOR_FUSION_STACK_SIZE,
+                                    NULL, TASK_PRIORITY_SENSOR_FUSION, &sensor_fusion_task_handle);
 
     if (result != pdPASS)
     {
         error_handler_fatal("sensor_fusion", "Failed to create processing task");
     }
+
+#if FEATURE_PRINT_SENSOR_FUSION_LOCATION_ESTIMATE
+    // Create optional 10Hz monitoring task for debug output
+    result = xTaskCreate(sensor_fusion_monitor_task, "sf_mon", TASK_STACK_SMALL, NULL,
+                         TASK_PRIORITY_SENSOR_FUSION, NULL);
+    if (result != pdPASS)
+    {
+        error_handler_fatal("sensor_fusion", "Failed to create monitor task");
+    }
+#endif
 }
 
 STATIC void sensor_fusion_task(void* pvParameters)
@@ -203,6 +216,42 @@ STATIC void sensor_fusion_task(void* pvParameters)
 /**
  * @brief Update the position estimate from Kalman filter state
  */
+/**
+ * @brief Optional monitoring task - prints position at 10Hz for debugging
+ */
+STATIC void sensor_fusion_monitor_task(void* pvParameters)
+{
+    (void)pvParameters;
+
+    TickType_t lastWake     = xTaskGetTickCount();
+    const TickType_t period = pdMS_TO_TICKS(100); // 10Hz = 100ms
+
+    watchdog_register_task(200); // Expect heartbeat every 200ms
+
+    for (;;)
+    {
+#if FEATURE_PRINT_SENSOR_FUSION_LOCATION_ESTIMATE
+        if (fusion_initialized && debug_prints_enabled)
+        {
+            sensor_fusion_position_t pos;
+            if (sensor_fusion_get_position(&pos))
+            {
+                uart_manager_print("SF: x=%6.2f y=%6.2f z=%6.2f m | vx=%6.2f vy=%6.2f vz=%6.2f m/s "
+                                   "| conf=%.2f\r\n",
+                                   pos.x, pos.y, pos.z, pos.vx, pos.vy, pos.vz, pos.confidence);
+            }
+            else if (fusion_active)
+            {
+                uart_manager_print("SF: Position estimate invalid\r\n");
+            }
+        }
+#endif
+
+        watchdog_heartbeat();
+        vTaskDelayUntil(&lastWake, period);
+    }
+}
+
 STATIC void sensor_fusion_update_position_estimate(void)
 {
     // Extract position from Kalman filter
@@ -544,29 +593,4 @@ void sensor_fusion_set_kalman_params(const kalmanCoreParams_t* params)
 
     kf_params = *params;
     uart_manager_print("SF: Kalman parameters updated\r\n");
-}
-
-STATIC void sensor_fusion_process_10Hz(void)
-{
-#if FEATURE_PRINT_SENSOR_FUSION_LOCATION_ESTIMATE
-    if (!fusion_initialized)
-    {
-        return;
-    }
-
-    sensor_fusion_position_t pos;
-    if (debug_prints_enabled)
-    {
-        if (sensor_fusion_get_position(&pos))
-        {
-            uart_manager_print(
-                "SF: x=%6.2f y=%6.2f z=%6.2f m | vx=%6.2f vy=%6.2f vz=%6.2f m/s | conf=%.2f\r\n",
-                pos.x, pos.y, pos.z, pos.vx, pos.vy, pos.vz, pos.confidence);
-        }
-        else if (fusion_active)
-        {
-            uart_manager_print("SF: Position estimate invalid\r\n");
-        }
-    }
-#endif
 }

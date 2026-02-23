@@ -4,6 +4,7 @@
 #include "twr_manager.h"
 #include "../twr/twr_engine/twr_types.h"          // For twr_result_t
 #include "../twr/twr_roles/initiator/initiator.h" // Direct initiator interface
+#include "FreeRTOS.h"
 #include "backoff.h"
 #include "common.h"
 #include "error_handler.h"
@@ -11,7 +12,11 @@
 #include "module.h"
 #include "sensor_fusion.h"
 #include "state_machine.h"
+#include "task.h"
+#include "task_config.h"
 #include "twr_scheduler/twr_scheduler.h"
+#include "watchdog.h"
+
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -68,14 +73,15 @@ STATIC void twr_manager_try_start_ranging(void);
  * Module Functions
  *---------------------------------------------------------------------------*/
 STATIC void twr_manager_init(void);
-STATIC void twr_manager_process_1kHz(void);
+STATIC void twr_manager_create_tasks(void);
+STATIC void twr_manager_task(void* argument);
 
 extern const module_S twr_manager_module;
 
 const module_S twr_manager_module = {
     .module_name         = "twr_manager",
     .module_init         = twr_manager_init,
-    .module_process_1kHz = twr_manager_process_1kHz,
+    .module_create_tasks = twr_manager_create_tasks,
 };
 
 /*---------------------------------------------------------------------------
@@ -213,9 +219,35 @@ STATIC void twr_manager_init(void)
     twr_manager_state_machine.states          = states;
 }
 
-STATIC void twr_manager_process_1kHz(void)
+STATIC void twr_manager_create_tasks(void)
 {
-    state_machine_periodic(&twr_manager_state_machine);
+    BaseType_t result = xTaskCreate(twr_manager_task, "twr_mgr", TASK_STACK_MEDIUM, NULL,
+                                    TASK_PRIORITY_TWR_MANAGER, NULL);
+    if (result != pdPASS)
+    {
+        error_handler_fatal("twr_manager", "Failed to create TWR manager task");
+    }
+}
+
+/**
+ * @brief TWR manager task - runs state machine at 1kHz
+ */
+STATIC void twr_manager_task(void* argument)
+{
+    (void)argument;
+
+    TickType_t lastWake     = xTaskGetTickCount();
+    const TickType_t period = pdMS_TO_TICKS(1); // 1kHz = 1ms
+
+    watchdog_register_task(10); // Expect heartbeat every 10ms
+
+    for (;;)
+    {
+        state_machine_periodic(&twr_manager_state_machine);
+
+        watchdog_heartbeat();
+        vTaskDelayUntil(&lastWake, period);
+    }
 }
 
 STATIC uint16_t twr_manager_transition_logic(uint16_t current_state, uint32_t state_timer)

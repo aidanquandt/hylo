@@ -9,13 +9,14 @@
 #include "main.h"
 #include "module.h"
 #include "task.h"
+#include "task_config.h"
 #include "uart_manager.h"
+#include "watchdog.h"
 
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
 #define MAX_NUM_TASKS 20U
-#define DEADLINE_MISS_STARTUP_GRACE_PERIOD_S 5U
 #define HEAP_LOW_MEMORY_THRESHOLD_BYTES 1024U
 
 /*---------------------------------------------------------------------------
@@ -24,16 +25,17 @@
 STATIC void datalogger_monitor_rtos_usage(void);
 STATIC void datalogger_monitor_uart_health(void);
 STATIC void datalogger_monitor_heap_usage(void);
-STATIC void datalogger_monitor_deadline_misses(void);
-STATIC void datalogger_process_1Hz(void);
+STATIC void datalogger_create_tasks(void);
+STATIC void datalogger_task(void* argument);
 
 /*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
 extern const module_S datalogger_module;
 const module_S datalogger_module = {
-    .module_name        = "datalogger",
-    .module_process_1Hz = datalogger_process_1Hz,
+    .module_name         = "datalogger",
+    .module_init         = NULL,
+    .module_create_tasks = datalogger_create_tasks,
 };
 
 /*---------------------------------------------------------------------------
@@ -116,49 +118,37 @@ STATIC void datalogger_monitor_rtos_usage(void)
     prev_total_runtime = total_runtime;
 }
 
-STATIC void datalogger_monitor_deadline_misses(void)
+STATIC void datalogger_create_tasks(void)
 {
-    STATIC uint32_t prev_miss_count[NUM_MODULES] = {0};
-    STATIC uint32_t startup_counter              = 0;
-
-    // Skip reporting for first 5 seconds to allow modules to initialize
-    if (startup_counter < DEADLINE_MISS_STARTUP_GRACE_PERIOD_S)
+    BaseType_t result = xTaskCreate(datalogger_task, "datalogger", TASK_STACK_MEDIUM, NULL,
+                                    TASK_PRIORITY_DATALOGGER, NULL);
+    if (result != pdPASS)
     {
-        startup_counter++;
-        // Initialize baseline after grace period
-        if (startup_counter == DEADLINE_MISS_STARTUP_GRACE_PERIOD_S)
-        {
-            for (modules_E module = (modules_E)0U; module < NUM_MODULES; module++)
-            {
-                prev_miss_count[module] = app_get_deadline_miss_count(module);
-            }
-        }
-        return;
-    }
-
-    for (modules_E module = (modules_E)0U; module < NUM_MODULES; module++)
-    {
-        deadline_stats_t stats;
-        app_get_deadline_stats(module, &stats);
-
-        if (stats.miss_count > prev_miss_count[module])
-        {
-            uint32_t new_misses = stats.miss_count - prev_miss_count[module];
-            error_handler_log(ERROR_SEVERITY_WARNING, "timing",
-                              "%s: %u miss(es), deadline=%ums, worst_latency=%ums\n",
-                              modules[module]->module_name, (unsigned int)new_misses,
-                              (unsigned int)stats.period_ms, (unsigned int)stats.worst_latency_ms);
-            prev_miss_count[module] = stats.miss_count;
-        }
+        error_handler_fatal("datalogger", "Failed to create datalogger task");
     }
 }
 
-STATIC void datalogger_process_1Hz(void)
+/**
+ * @brief Datalogger task - monitors system health at 1Hz
+ */
+STATIC void datalogger_task(void* argument)
 {
-    datalogger_monitor_rtos_usage();
-    datalogger_monitor_uart_health();
-    datalogger_monitor_heap_usage();
-    datalogger_monitor_deadline_misses();
+    (void)argument;
+
+    TickType_t lastWake     = xTaskGetTickCount();
+    const TickType_t period = pdMS_TO_TICKS(1000); // 1Hz = 1000ms
+
+    watchdog_register_task(2000); // Expect heartbeat every 2 seconds
+
+    for (;;)
+    {
+        datalogger_monitor_rtos_usage();
+        datalogger_monitor_uart_health();
+        datalogger_monitor_heap_usage();
+
+        watchdog_heartbeat();
+        vTaskDelayUntil(&lastWake, period);
+    }
 }
 
 STATIC void datalogger_monitor_heap_usage(void)
