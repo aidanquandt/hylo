@@ -286,7 +286,7 @@ STATIC void uwb_create_tasks(void)
 
     // Create TX task for serialized transmission
     task_result = xTaskCreate(uwb_tx_task, "uwb_tx", UWB_TX_TASK_STACK_SIZE, NULL,
-                              TASK_PRIORITY_UWB_TX, NULL);
+                              TASK_PRIORITY_UWB_TX, &tx.task_handle);
     if (task_result != pdPASS)
     {
         error_handler_fatal("uwb", "Failed to create TX task");
