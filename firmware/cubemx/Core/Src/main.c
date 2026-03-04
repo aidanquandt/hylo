@@ -110,10 +110,13 @@ int main(void)
   MX_UART4_Init();
   MX_USART3_UART_Init();
   MX_IWDG1_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-  
+
+  HAL_TIM_Base_Start_IT(&htim2);  /* 64-bit system time: overflow ISR extends to uint64_t */
+
   // NOTE: IWDG starts here (~8s timeout). Watchdog module will refresh it after RTOS starts.
-  
+
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -253,6 +256,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   if (htim->Instance == TIM6)
   {
     HAL_IncTick();
+  }
+  if (htim->Instance == TIM2)
+  {
+    platform_timer_on_overflow();
   }
   /* USER CODE BEGIN Callback 1 */
 

@@ -9,11 +9,13 @@
 #include "imu_port.h"
 #include "module.h"
 #include "platform_gpio.h"
+#include "platform_timer.h"
 #include "sensor_fusion.h"
 #include "state_machine.h"
 #include "task.h"
 #include "task_config.h"
 #include "watchdog.h"
+
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -173,7 +175,7 @@ STATIC void imu_transform_gyro(const vec3_t* gyro_in, vec3_t* gyro_out)
 STATIC void imu_push_to_sensor_fusion(void)
 {
     sensor_event_t event = {.type         = SENSOR_EVENT_IMU,
-                            .timestamp_ms = xTaskGetTickCount(),
+                            .timestamp_ms = platform_get_time_ms(),
                             .sequence     = ctx.sample_count,
                             .data.imu     = {.accel_x = ctx.data.accel.x,
                                              .accel_y = ctx.data.accel.y,

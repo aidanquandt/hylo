@@ -9,6 +9,7 @@
 #include "feature_config.h"
 #include "kalman/kalman_core.h"
 #include "module.h"
+#include "platform_timer.h"
 #include "queue.h"
 #include "task_config.h"
 #include "uart_manager.h"
@@ -143,7 +144,7 @@ STATIC void sensor_fusion_init(void)
     position_estimate.valid        = false;
 
     kalmanCoreDefaultParams(&kf_params);
-    kalmanCoreInit(&kf_data, &kf_params, xTaskGetTickCount());
+    kalmanCoreInit(&kf_data, &kf_params, platform_get_time_ms());
 
     update_count       = 0;
     fusion_initialized = true;
@@ -223,7 +224,7 @@ STATIC void sensor_fusion_monitor_task(void* pvParameters)
 {
     (void)pvParameters;
 
-    TickType_t lastWake     = xTaskGetTickCount();
+    TickType_t lastWake     = platform_get_time_ms();
     const TickType_t period = pdMS_TO_TICKS(100); // 10Hz = 100ms
 
     watchdog_register_task(200); // Expect heartbeat every 200ms
@@ -263,7 +264,7 @@ STATIC void sensor_fusion_update_position_estimate(void)
                           &position_estimate.vz);
 
     // Update timestamp
-    position_estimate.timestamp_ms = xTaskGetTickCount();
+    position_estimate.timestamp_ms = platform_get_time_ms();
 
     // Check validity: need enough updates and reasonable position
     bool valid_updates  = (update_count >= MIN_UPDATES_FOR_VALID);
@@ -413,7 +414,7 @@ void sensor_fusion_reset(void)
     xQueueReset(sensor_queue);
 
     // Reset Kalman filter to initial state
-    kalmanCoreInit(&kf_data, &kf_params, xTaskGetTickCount());
+    kalmanCoreInit(&kf_data, &kf_params, platform_get_time_ms());
 
     // Reset position estimate validity
     taskENTER_CRITICAL();
