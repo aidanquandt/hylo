@@ -6,7 +6,7 @@
             "request": "launch",
             "name": "Debug (OpenOCD)",
             "cwd": "${workspaceFolder}",
-            "executable": "${workspaceFolder}/build/arm-gcc-debug/cubemx/cubemx.elf",
+            "executable": "${workspaceFolder}/build/arm-gcc-debug/hwconfig/stm32_hwrev_0/stm32_hwrev_0.elf",
             "servertype": "openocd",
             "device": "STM32H723xG",
             "configFiles": [
@@ -22,7 +22,7 @@
             "request": "attach",
             "name": "Attach (OpenOCD)",
             "cwd": "${workspaceFolder}",
-            "executable": "${workspaceFolder}/build/arm-gcc-debug/cubemx/cubemx.elf",
+            "executable": "${workspaceFolder}/build/arm-gcc-debug/hwconfig/stm32_hwrev_0/stm32_hwrev_0.elf",
             "servertype": "openocd",
             "device": "STM32H723xG",
             "configFiles": [

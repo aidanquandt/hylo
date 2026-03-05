@@ -31,7 +31,7 @@ add_link_options(-Wl,--gc-sections)
 
 # ---- Subdirs in dependency order (low → high) ----
 add_subdirectory(config)                 # device/board configurations
-add_subdirectory(cubemx)                 # produces the 'cubemx' executable/elf
+add_subdirectory(hwconfig/stm32_hwrev_0)     # produces the 'stm32_hwrev_0' executable/elf
 add_subdirectory(platform)               # HAL wrappers (lib)
 add_subdirectory(lib)                    # utility libraries (counter, etc.)
 add_subdirectory(third_party/dwt_uwb_driver)   # vendor UWB driver -> 'uwb_driver'
@@ -40,7 +40,7 @@ add_subdirectory(ports)                  # port layers -> 'ports' (includes uwb_
 add_subdirectory(src)                    # app logic (lib)
 
 # Link order matters: higher-level depends on lower-level
-target_link_libraries(cubemx
+target_link_libraries(stm32_hwrev_0
     components        # app
     ports             # port layers (uwb_port, imu_port)
     uwb_driver        # vendor UWB driver (DW3000-specific implementation)
@@ -50,6 +50,6 @@ target_link_libraries(cubemx
 )
 
 # ---- Linker script ----
-target_link_options(cubemx PRIVATE
-    -T${CMAKE_SOURCE_DIR}/cubemx/STM32H723XG_FLASH.ld
+target_link_options(stm32_hwrev_0 PRIVATE
+    -T${CMAKE_SOURCE_DIR}/hwconfig/stm32_hwrev_0/STM32H723XG_FLASH.ld
 )
