@@ -1,0 +1,17 @@
+# Line endings: LF everywhere (matches .editorconfig).
+# .editorconfig = editor behavior; .gitattributes = Git behavior; keep both in sync.
+* text=auto eol=lf
+*.{c,h,md,sh,py,json,yml,yaml,cmake} text eol=lf
+CMakeLists.txt text eol=lf
+
+# Binary files: no line-ending conversion
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.elf binary
+*.bin binary
+*.hex binary
+*.map binary
