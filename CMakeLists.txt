@@ -43,6 +43,10 @@ else()
     add_subdirectory(hwconfig/stm32_hwrev_0)
     set(HWCONFIG_TARGET stm32_hwrev_0)
 endif()
+
+# Preprocessor flag for firmware: #if (HWREV == 0) or #if (HWREV == 1)
+add_compile_definitions(HWREV=${HW_REV})
+
 add_subdirectory(platform)               # HAL wrappers (lib)
 add_subdirectory(lib)                    # utility libraries (counter, etc.)
 add_subdirectory(third_party/dwt_uwb_driver)   # vendor UWB driver -> 'uwb_driver'
