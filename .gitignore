@@ -11,9 +11,9 @@ CMakeFiles/
 cmake_install.cmake
 install_manifest.txt
 compile_commands.json
-Makefile
 build.ninja
 rules.ninja
+**/build/Makefile
 
 # Compiled binaries and libraries
 *.exe
@@ -44,7 +44,6 @@ rules.ninja
 # Editor/IDE
 .idea/
 .settings/
-.vscode/
 
 # Processing IDE
 *.autosave
