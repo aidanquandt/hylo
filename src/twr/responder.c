@@ -3,9 +3,9 @@
  * @brief   TWR Responder implementation
  *---------------------------------------------------------------------------*/
 #include "responder.h"
-#include "../twr.h"
-#include "../twr_engine/twr_algorithm.h"
-#include "../twr_engine/twr_state_machine.h"
+#include "twr.h"
+#include "twr_algorithm.h"
+#include "twr_state_machine.h"
 #include "FreeRTOS.h"
 #include "error_handler.h"
 #include "stopwatch.h"

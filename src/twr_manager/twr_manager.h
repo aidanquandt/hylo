@@ -4,7 +4,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "common.h"
-#include "twr_scheduler/twr_scheduler.h"
+#include "twr_scheduler.h"
 
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
