@@ -10,10 +10,14 @@ PRESET_RELEASE := arm-gcc-release
 .PHONY: host host-help host-monitor host-enable-streaming host-visualization
 
 all build debug:
-	cmake --preset=$(PRESET_DEBUG) && cmake --build --preset=$(PRESET_DEBUG)
+	@if [ -z "$(REV)" ]; then echo "Error: REV must be specified (0 or 1). Use: make build REV=0 or make build REV=1"; exit 1; fi
+	@if [ "$(REV)" != "0" ] && [ "$(REV)" != "1" ]; then echo "Error: REV must be 0 or 1 (got: $(REV))"; exit 1; fi
+	cmake --preset=$(PRESET_DEBUG) -DHW_REV=$(REV) && cmake --build --preset=$(PRESET_DEBUG)
 
 release:
-	cmake --preset=$(PRESET_RELEASE) && cmake --build --preset=$(PRESET_RELEASE)
+	@if [ -z "$(REV)" ]; then echo "Error: REV must be specified (0 or 1). Use: make release REV=0 or make release REV=1"; exit 1; fi
+	@if [ "$(REV)" != "0" ] && [ "$(REV)" != "1" ]; then echo "Error: REV must be 0 or 1 (got: $(REV))"; exit 1; fi
+	cmake --preset=$(PRESET_RELEASE) -DHW_REV=$(REV) && cmake --build --preset=$(PRESET_RELEASE)
 
 clean: clean-debug clean-release
 
@@ -37,10 +41,9 @@ help:
 	@echo "Hylo build (from repo root)"
 	@echo ""
 	@echo "Firmware:"
-	@echo "  make [all]       Build (debug)"
-	@echo "  make debug       Same as make"
-	@echo "  make release    Build release"
-	@echo "  make clean      Clean debug and release build dirs"
+	@echo "  make build REV=0 or make build REV=1  Build (REV required)"
+	@echo "  make release REV=0 or make release REV=1  Release build (REV required)"
+	@echo "  make clean       Clean debug and release build dirs"
 	@echo "  make rebuild    Clean debug then build"
 	@echo "  make distclean  Remove build/ entirely"
 	@echo "  make flash      Flash via OpenOCD (ST-Link); builds first if no build"

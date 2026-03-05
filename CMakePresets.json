@@ -11,10 +11,10 @@
       "displayName": "ARM GCC Debug (Ninja)",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/arm-gcc-debug",
-      "toolchainFile": "${sourceDir}/cubemx/cmake/gcc-arm-none-eabi.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "HW_REV": "0"
       }
     },
     {
@@ -22,10 +22,10 @@
       "displayName": "ARM GCC Release (Ninja)",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/arm-gcc-release",
-      "toolchainFile": "${sourceDir}/cubemx/cmake/gcc-arm-none-eabi.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "HW_REV": "0"
       }
     }
   ],

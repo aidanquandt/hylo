@@ -1,4 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
+
+# HW revision: 0 = Nucleo (stm32_hwrev_0), 1 = custom PCB (stm32_hwrev_1). Pass -DHW_REV=1 for rev1.
+set(HW_REV "0" CACHE STRING "HW revision: 0 or 1")
+set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/hwconfig/stm32_hwrev_${HW_REV}/cmake/gcc-arm-none-eabi.cmake")
+
 project(hylo
     VERSION 1.0.0
     DESCRIPTION "Hylo UWB Firmware"
@@ -31,7 +36,13 @@ add_link_options(-Wl,--gc-sections)
 
 # ---- Subdirs in dependency order (low → high) ----
 add_subdirectory(config)                 # device/board configurations
-add_subdirectory(cubemx)                 # produces the 'cubemx' executable/elf
+if(HW_REV STREQUAL "1")
+    add_subdirectory(hwconfig/stm32_hwrev_1)
+    set(HWCONFIG_TARGET stm32_hwrev_1)
+else()
+    add_subdirectory(hwconfig/stm32_hwrev_0)
+    set(HWCONFIG_TARGET stm32_hwrev_0)
+endif()
 add_subdirectory(platform)               # HAL wrappers (lib)
 add_subdirectory(lib)                    # utility libraries (counter, etc.)
 add_subdirectory(third_party/dwt_uwb_driver)   # vendor UWB driver -> 'uwb_driver'
@@ -40,7 +51,7 @@ add_subdirectory(ports)                  # port layers -> 'ports' (includes uwb_
 add_subdirectory(src)                    # app logic (lib)
 
 # Link order matters: higher-level depends on lower-level
-target_link_libraries(cubemx
+target_link_libraries(${HWCONFIG_TARGET}
     components        # app
     ports             # port layers (uwb_port, imu_port)
     uwb_driver        # vendor UWB driver (DW3000-specific implementation)
@@ -50,6 +61,6 @@ target_link_libraries(cubemx
 )
 
 # ---- Linker script ----
-target_link_options(cubemx PRIVATE
-    -T${CMAKE_SOURCE_DIR}/cubemx/STM32H723XG_FLASH.ld
+target_link_options(${HWCONFIG_TARGET} PRIVATE
+    -T${CMAKE_SOURCE_DIR}/hwconfig/${HWCONFIG_TARGET}/STM32H723XG_FLASH.ld
 )
