@@ -2,7 +2,7 @@
 
 UWB firmware (STM32H723) and host tooling. Build from repo root.
 
-**Layout:** `cubemx/`, `platform/`, `lib/`, `config/`, `ports/`, `components/`, `common/`, `third_party/` (firmware) · `host/`, `testing/` (tools and test data) · `scripts/` (build, flash, check-deps).
+**Layout:** `cubemx/`, `platform/`, `lib/`, `config/`, `ports/`, `src/`, `common/`, `third_party/` (firmware) · `tools/` (scripts, host tooling) · `testing/` (test data).
 
 ## Build
 

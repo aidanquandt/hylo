@@ -6,7 +6,7 @@
  * @details Responds to ranging requests in the TWR protocol
  *---------------------------------------------------------------------------*/
 
-#include "../twr_engine/twr_state_machine.h"
+#include "twr_state_machine.h"
 #include "common.h"
 
 /*---------------------------------------------------------------------------

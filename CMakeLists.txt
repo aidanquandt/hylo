@@ -37,7 +37,7 @@ add_subdirectory(lib)                    # utility libraries (counter, etc.)
 add_subdirectory(third_party/dwt_uwb_driver)   # vendor UWB driver -> 'uwb_driver'
 add_subdirectory(third_party/bmi323)     # vendor IMU sensor API -> 'bmi323_api'
 add_subdirectory(ports)                  # port layers -> 'ports' (includes uwb_port, imu_port)
-add_subdirectory(components)             # app logic (lib)
+add_subdirectory(src)                    # app logic (lib)
 
 # Link order matters: higher-level depends on lower-level
 target_link_libraries(cubemx

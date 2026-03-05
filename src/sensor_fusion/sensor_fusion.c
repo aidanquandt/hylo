@@ -7,7 +7,7 @@
 #include "counter.h"
 #include "error_handler.h"
 #include "feature_config.h"
-#include "kalman/kalman_core.h"
+#include "kalman_core.h"
 #include "module.h"
 #include "platform_timer.h"
 #include "queue.h"

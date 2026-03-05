@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build from repo root. Usage: ./scripts/build.sh [debug|release]
+# Build from repo root. Usage: ./tools/scripts/build.sh [debug|release]
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

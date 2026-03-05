@@ -43,10 +43,10 @@ help:
 	@echo "  make clean      Clean debug and release build dirs"
 	@echo "  make rebuild    Clean debug then build"
 	@echo "  make distclean  Remove build/ entirely"
-	@echo "  make flash      Build debug + flash via OpenOCD (ST-Link)"
+	@echo "  make flash      Flash via OpenOCD (ST-Link); builds first if no build"
 	@echo "  make check-deps Verify cmake, ninja, arm-none-eabi-gcc"
 	@echo ""
-	@echo "Host tools (Python; scripts use COM10 by default):"
+	@echo "Host tools (Python; in tools/host; scripts use COM10 by default):"
 	@echo "  make host-help   List host targets"
 	@echo "  make host-monitor        Serial monitor"
 	@echo "  make host-enable-streaming  Enable IMU streaming on device"
@@ -57,19 +57,19 @@ help:
 # Host tools (run from repo root; require Python + pyserial, optional: pygame, PyOpenGL)
 host host-help:
 	@echo "Host targets: host-monitor, host-enable-streaming, host-visualization"
-	@echo "Run from repo root. Edit scripts in host/serial and host/visualization to change COM port."
+	@echo "Run from repo root. Edit scripts in tools/host/serial and tools/host/visualization to change COM port."
 
 host-monitor:
-	cd host/serial && python monitor_serial.py
+	cd tools/host/serial && python monitor_serial.py
 
 host-enable-streaming:
-	cd host/serial && python enable_streaming.py
+	cd tools/host/serial && python enable_streaming.py
 
 host-visualization:
-	cd host/visualization && python attitude.py
+	cd tools/host/visualization && python attitude.py
 
 check-deps:
-	@bash scripts/check_deps.sh
+	@bash tools/scripts/check_deps.sh
 
 flash:
-	@bash scripts/flash.sh
+	@bash tools/scripts/flash.sh

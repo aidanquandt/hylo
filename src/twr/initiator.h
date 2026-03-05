@@ -6,7 +6,7 @@
  * @details Initiates ranging transactions in the TWR protocol
  *---------------------------------------------------------------------------*/
 
-#include "../twr_engine/twr_types.h"
+#include "twr_types.h"
 #include "common.h"
 
 /*---------------------------------------------------------------------------

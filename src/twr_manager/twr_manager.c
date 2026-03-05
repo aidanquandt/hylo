@@ -2,8 +2,8 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "twr_manager.h"
-#include "../twr/twr_engine/twr_types.h"          // For twr_result_t
-#include "../twr/twr_roles/initiator/initiator.h" // Direct initiator interface
+#include "twr_types.h"     // For twr_result_t (from twr)
+#include "initiator.h"     // Direct initiator interface (from twr)
 #include "FreeRTOS.h"
 #include "backoff.h"
 #include "common.h"
@@ -14,7 +14,7 @@
 #include "state_machine.h"
 #include "task.h"
 #include "task_config.h"
-#include "twr_scheduler/twr_scheduler.h"
+#include "twr_scheduler.h"
 #include "watchdog.h"
 
 
