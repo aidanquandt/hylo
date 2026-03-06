@@ -25,22 +25,15 @@ typedef enum
     NUM_MODULES
 } modules_E;
 
-/**
- * Module interface
- *
- * Each module provides:
- * - module_name: Human-readable name for logging/debugging
- * - module_init: Pre-RTOS initialization (hardware setup, default state)
- * - module_create_tasks: Post-RTOS task creation (NULL if no tasks needed)
- *
- * Modules create their own FreeRTOS tasks as needed. Task priorities are
- * defined in common/task_config.h for system-wide visibility.
- */
 typedef struct
 {
     const char* module_name;
     void (*module_init)(void);
-    void (*module_create_tasks)(void);
+    void (*module_create_task)(void);
+    void (*module_process_1Hz)(void);
+    void (*module_process_10Hz)(void);
+    void (*module_process_100Hz)(void);
+    void (*module_process_1kHz)(void);
 } module_S;
 
 /*---------------------------------------------------------------------------

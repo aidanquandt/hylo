@@ -7,35 +7,27 @@
 #include "feature_config.h"
 #include "module.h"
 #include "platform_watchdog.h"
-#include "semphr.h"
 #include "task.h"
-#include "task_config.h"
-#include <string.h>
 
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
 #define WATCHDOG_CHECK_RATE_MS 1000U // Check heartbeats every 1 second
-#define MAX_MONITORED_TASKS 16       // Maximum tasks we can monitor
+#define PRIORITY_WATCHDOG_TASK 0     // Lowest priority - only runs if all others can run
+#define TASK_STACK_SMALL 256
 
-/*---------------------------------------------------------------------------
- * Types
- *---------------------------------------------------------------------------*/
-typedef struct
-{
-    TaskHandle_t task_handle;
-    const char* task_name;
-    uint32_t expected_period_ms;
-    TickType_t last_heartbeat_tick;
-    bool registered;
-} monitored_task_t;
+// Heartbeat bitmask - one bit per task rate
+#define HEARTBEAT_1KHZ_BIT (1U << 0)
+#define HEARTBEAT_100HZ_BIT (1U << 1)
+#define HEARTBEAT_10HZ_BIT (1U << 2)
+#define HEARTBEAT_1HZ_BIT (1U << 3)
+#define HEARTBEAT_ALL_BITS                                                                         \
+    (HEARTBEAT_1KHZ_BIT | HEARTBEAT_100HZ_BIT | HEARTBEAT_10HZ_BIT | HEARTBEAT_1HZ_BIT)
 
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-STATIC monitored_task_t monitored_tasks[MAX_MONITORED_TASKS] = {0};
-STATIC uint32_t num_monitored_tasks                          = 0;
-STATIC SemaphoreHandle_t watchdog_mutex                      = NULL;
+STATIC volatile uint32_t task_heartbeats = 0; // Bitmask of which tasks have run since last check
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -46,14 +38,22 @@ STATIC void watchdog_task(void* argument);
  * Module Functions
  *---------------------------------------------------------------------------*/
 STATIC void watchdog_init(void);
-STATIC void watchdog_create_tasks(void);
+STATIC void watchdog_create_task(void);
+STATIC void watchdog_process_1khz(void);
+STATIC void watchdog_process_100hz(void);
+STATIC void watchdog_process_10hz(void);
+STATIC void watchdog_process_1hz(void);
 
 extern const module_S watchdog_module;
 
 const module_S watchdog_module = {
-    .module_name         = "watchdog",
-    .module_init         = watchdog_init,
-    .module_create_tasks = watchdog_create_tasks,
+    .module_name          = "watchdog",
+    .module_init          = watchdog_init,
+    .module_create_task   = watchdog_create_task,
+    .module_process_1Hz   = watchdog_process_1hz,
+    .module_process_10Hz  = watchdog_process_10hz,
+    .module_process_100Hz = watchdog_process_100hz,
+    .module_process_1kHz  = watchdog_process_1khz,
 };
 
 /*---------------------------------------------------------------------------
@@ -73,39 +73,11 @@ STATIC void watchdog_task(void* argument)
     {
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(WATCHDOG_CHECK_RATE_MS));
 
-        bool all_tasks_healthy  = true;
-        TickType_t current_tick = xTaskGetTickCount();
+        uint32_t current_heartbeats = task_heartbeats;
+        task_heartbeats             = 0; // Clear for next check
 
-        // Check all monitored tasks
-        xSemaphoreTake(watchdog_mutex, portMAX_DELAY);
-
-        for (uint32_t i = 0; i < num_monitored_tasks; i++)
-        {
-            if (!monitored_tasks[i].registered)
-            {
-                continue;
-            }
-
-            TickType_t elapsed     = current_tick - monitored_tasks[i].last_heartbeat_tick;
-            TickType_t max_allowed = pdMS_TO_TICKS(monitored_tasks[i].expected_period_ms) +
-                                     pdMS_TO_TICKS(WATCHDOG_CHECK_RATE_MS);
-
-            if (elapsed > max_allowed)
-            {
-                error_handler_log(
-                    ERROR_SEVERITY_FATAL, "watchdog",
-                    "Task '%s' missed heartbeat! Elapsed: %lu ms (max: %lu ms) - system will reset",
-                    monitored_tasks[i].task_name, (unsigned long)(elapsed * portTICK_PERIOD_MS),
-                    (unsigned long)(monitored_tasks[i].expected_period_ms +
-                                    WATCHDOG_CHECK_RATE_MS));
-                all_tasks_healthy = false;
-            }
-        }
-
-        xSemaphoreGive(watchdog_mutex);
-
-        // Only refresh hardware watchdog if all tasks are healthy
-        if (all_tasks_healthy)
+        // Only refresh if all tasks are alive
+        if (current_heartbeats == HEARTBEAT_ALL_BITS)
         {
 #if FEATURE_WATCHDOG_ENABLE_IWDG
             platform_watchdog_refresh();
@@ -113,85 +85,48 @@ STATIC void watchdog_task(void* argument)
         }
         else
         {
-            // Don't refresh - system will reset via hardware watchdog in ~8s
-            // Stay in loop to continue logging (if possible)
+            // Task failure - DON'T refresh, log failure, system will reset in ~8s
+            error_handler_log(
+                ERROR_SEVERITY_FATAL, "watchdog",
+                "Task failure! Heartbeats: 0x%02X (expected 0x%02X) - system will reset",
+                (unsigned int)current_heartbeats, (unsigned int)HEARTBEAT_ALL_BITS);
+            // Stay in loop without refreshing until IWDG resets system
         }
     }
 }
 
 STATIC void watchdog_init(void)
 {
-    // Create mutex for thread-safe access to monitored tasks
-    watchdog_mutex = xSemaphoreCreateMutex();
-    if (watchdog_mutex == NULL)
-    {
-        error_handler_fatal("watchdog", "Failed to create mutex");
-    }
+    // Module initialization (called before RTOS starts)
+    // Nothing to do here - watchdog task will init IWDG
 }
 
-STATIC void watchdog_create_tasks(void)
+STATIC void watchdog_create_task(void)
 {
     BaseType_t result = xTaskCreate(watchdog_task, "watchdog", TASK_STACK_SMALL, NULL,
-                                    TASK_PRIORITY_WATCHDOG, NULL);
+                                    PRIORITY_WATCHDOG_TASK, NULL);
     if (result != pdPASS)
     {
         error_handler_fatal("watchdog", "Failed to create watchdog task");
     }
 }
 
-/*---------------------------------------------------------------------------
- * Public Function Implementations
- *---------------------------------------------------------------------------*/
-void watchdog_register_task(uint32_t expected_period_ms)
+STATIC void watchdog_process_1khz(void)
 {
-    TaskHandle_t current_task = xTaskGetCurrentTaskHandle();
-    const char* task_name     = pcTaskGetName(current_task);
-
-    xSemaphoreTake(watchdog_mutex, portMAX_DELAY);
-
-    if (num_monitored_tasks >= MAX_MONITORED_TASKS)
-    {
-        xSemaphoreGive(watchdog_mutex);
-        error_handler_fatal("watchdog", "Too many monitored tasks (max: %d)", MAX_MONITORED_TASKS);
-        return;
-    }
-
-    // Check if already registered
-    for (uint32_t i = 0; i < num_monitored_tasks; i++)
-    {
-        if (monitored_tasks[i].task_handle == current_task)
-        {
-            xSemaphoreGive(watchdog_mutex);
-            return; // Already registered
-        }
-    }
-
-    // Register new task
-    monitored_tasks[num_monitored_tasks].task_handle         = current_task;
-    monitored_tasks[num_monitored_tasks].task_name           = task_name;
-    monitored_tasks[num_monitored_tasks].expected_period_ms  = expected_period_ms;
-    monitored_tasks[num_monitored_tasks].last_heartbeat_tick = xTaskGetTickCount();
-    monitored_tasks[num_monitored_tasks].registered          = true;
-    num_monitored_tasks++;
-
-    xSemaphoreGive(watchdog_mutex);
+    task_heartbeats |= HEARTBEAT_1KHZ_BIT;
 }
 
-void watchdog_heartbeat(void)
+STATIC void watchdog_process_100hz(void)
 {
-    TaskHandle_t current_task = xTaskGetCurrentTaskHandle();
+    task_heartbeats |= HEARTBEAT_100HZ_BIT;
+}
 
-    xSemaphoreTake(watchdog_mutex, portMAX_DELAY);
+STATIC void watchdog_process_10hz(void)
+{
+    task_heartbeats |= HEARTBEAT_10HZ_BIT;
+}
 
-    // Find and update heartbeat for current task
-    for (uint32_t i = 0; i < num_monitored_tasks; i++)
-    {
-        if (monitored_tasks[i].task_handle == current_task && monitored_tasks[i].registered)
-        {
-            monitored_tasks[i].last_heartbeat_tick = xTaskGetTickCount();
-            break;
-        }
-    }
-
-    xSemaphoreGive(watchdog_mutex);
+STATIC void watchdog_process_1hz(void)
+{
+    task_heartbeats |= HEARTBEAT_1HZ_BIT;
 }

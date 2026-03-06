@@ -8,14 +8,12 @@
 #include "feature_config.h"
 #include "module.h"
 #include "task.h"
-#include "task_config.h"
 #include "twr_state_machine.h" // For twr_process
 #include "initiator.h"
 #include "responder.h"
 #include "uwb.h"
 #include "uwb_node.h"
 #include "uwb_protocol_messages.h"
-#include "watchdog.h"
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -24,8 +22,7 @@ STATIC void twr_protocol_handler(const uint8_t* data, uint16_t length, uint16_t 
                                  uint64_t rx_timestamp);
 STATIC void twr_tx_complete_handler(uint32_t message_id, uint64_t tx_timestamp);
 STATIC void twr_module_init(void);
-STATIC void twr_create_tasks(void);
-STATIC void twr_task(void* argument);
+STATIC void twr_process_1kHz(void);
 
 /*---------------------------------------------------------------------------
  * Module Functions
@@ -35,7 +32,11 @@ extern const module_S twr_module;
 const module_S twr_module = {
     .module_name         = "twr",
     .module_init         = twr_module_init,
-    .module_create_tasks = twr_create_tasks,
+    .module_create_task  = NULL,
+    .module_process_1Hz   = NULL,
+    .module_process_10Hz  = NULL,
+    .module_process_100Hz = NULL,
+    .module_process_1kHz  = twr_process_1kHz,
 };
 
 /*---------------------------------------------------------------------------
@@ -65,49 +66,22 @@ STATIC void twr_module_init(void)
     // Note: Auto-start is deferred to twr_process_1kHz() to ensure UWB is ready
 }
 
-STATIC void twr_create_tasks(void)
+STATIC void twr_process_1kHz(void)
 {
-    BaseType_t result =
-        xTaskCreate(twr_task, "twr", TASK_STACK_MEDIUM, NULL, TASK_PRIORITY_TWR, NULL);
-    if (result != pdPASS)
+    STATIC bool auto_start_completed = false;
+    if (!auto_start_completed && uwb_is_ready())
     {
-        error_handler_fatal("twr", "Failed to create TWR task");
-    }
-}
-
-/**
- * @brief TWR processing task - runs state machines at 1kHz
- */
-STATIC void twr_task(void* argument)
-{
-    (void)argument;
-
-    TickType_t lastWake     = xTaskGetTickCount();
-    const TickType_t period = pdMS_TO_TICKS(1); // 1kHz = 1ms
-
-    watchdog_register_task(10); // Expect heartbeat every 10ms
-
-    bool auto_start_completed = false;
-
-    for (;;)
-    {
-        if (!auto_start_completed && uwb_is_ready())
+        // Start responder listening
+        if (!responder_start())
         {
-            // Start responder listening
-            if (!responder_start())
-            {
-                error_handler_log(ERROR_SEVERITY_ERROR, "twr", "Responder auto-start failed");
-            }
-            auto_start_completed = true;
+            error_handler_log(ERROR_SEVERITY_ERROR, "twr", "Responder auto-start failed");
         }
-
-        // Always process both state machines - nodes can do both roles
-        twr_state_machine_process(&initiator_twr_ctx);
-        twr_state_machine_process(&responder_twr_ctx);
-
-        watchdog_heartbeat();
-        vTaskDelayUntil(&lastWake, period);
+        auto_start_completed = true;
     }
+
+    // Always process both state machines - nodes can do both roles
+    twr_state_machine_process(&initiator_twr_ctx);
+    twr_state_machine_process(&responder_twr_ctx);
 }
 
 STATIC void twr_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr,

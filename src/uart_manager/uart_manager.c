@@ -12,11 +12,8 @@
 #include "platform_uart.h"
 #include "queue.h"
 #include "task.h"
-#include "task_config.h"
 #include "uart_cmd_router.h"
 #include "uwb.h"
-#include "watchdog.h"
-
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -24,7 +21,7 @@
 #define UART_TX_QUEUE_SIZE 32U
 #define UART_TX_MSG_MAX_LENGTH 256U
 #define UART_TASK_STACK_SIZE 512U
-#define UART_RX_TASK_STACK_SIZE 256U
+#define UART_TASK_PRIORITY (3U) // Medium priority (below UWB RX=6, above ranging=4)
 #define UART_PRINT_BUFFER_SIZE 256U
 #define UART_RX_BUFFER_SIZE 256U
 #define UART_CMD_MAX_LENGTH 128U
@@ -49,14 +46,19 @@ typedef struct
  * Module Functions
  *---------------------------------------------------------------------------*/
 STATIC void uart_manager_init(void);
-STATIC void uart_manager_create_tasks(void);
+STATIC void uart_manager_create_task(void);
+STATIC void uart_manager_process_100Hz(void);
 
 extern const module_S uart_manager_module;
 
 const module_S uart_manager_module = {
-    .module_name         = "uart_manager",
-    .module_init         = uart_manager_init,
-    .module_create_tasks = uart_manager_create_tasks,
+    .module_name          = "uart_manager",
+    .module_init          = uart_manager_init,
+    .module_create_task   = uart_manager_create_task,
+    .module_process_1Hz   = NULL,
+    .module_process_10Hz   = NULL,
+    .module_process_100Hz = uart_manager_process_100Hz,
+    .module_process_1kHz  = NULL,
 };
 
 /*---------------------------------------------------------------------------
@@ -84,7 +86,6 @@ STATIC volatile bool in_error_handler_call = false;
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
 STATIC void uart_tx_task(void* argument);
-STATIC void uart_rx_task(void* argument);
 STATIC bool is_in_isr_context(void);
 STATIC bool uart_manager_queue_message(const uint8_t* data, uint16_t length, bool from_isr,
                                        uint32_t timeout_ms);
@@ -216,27 +217,22 @@ STATIC void uart_manager_default_cmd_handler(const char* cmd, uint16_t length)
     }
 }
 
-STATIC void uart_manager_create_tasks(void)
+STATIC void uart_manager_create_task(void)
 {
     // Create dedicated transmit task
-    BaseType_t task_result = xTaskCreate(uart_tx_task, "uart_tx", UART_TASK_STACK_SIZE, NULL,
-                                         TASK_PRIORITY_UART_TX, &uart_tx_task_handle);
+    BaseType_t task_result = xTaskCreate(uart_tx_task, "UART_TX", UART_TASK_STACK_SIZE, NULL,
+                                         UART_TASK_PRIORITY, &uart_tx_task_handle);
     if (task_result != pdPASS)
     {
         in_error_handler_call = true;
         error_handler_fatal("uart_manager", "Failed to create UART TX task");
         in_error_handler_call = false;
     }
+}
 
-    // Create RX processing task (polls DMA buffer at 100Hz)
-    task_result = xTaskCreate(uart_rx_task, "uart_rx", UART_RX_TASK_STACK_SIZE, NULL,
-                              TASK_PRIORITY_UART_TX, NULL);
-    if (task_result != pdPASS)
-    {
-        in_error_handler_call = true;
-        error_handler_fatal("uart_manager", "Failed to create UART RX task");
-        in_error_handler_call = false;
-    }
+STATIC void uart_manager_process_100Hz(void)
+{
+    uart_manager_process_rx_buffer();
 }
 
 STATIC bool uart_manager_queue_message(const uint8_t* data, uint16_t length, bool from_isr,
@@ -457,24 +453,6 @@ STATIC void uart_manager_process_rx_buffer(void)
 
         // Move to next character (circular)
         last_checked_pos = (last_checked_pos + 1) % UART_RX_BUFFER_SIZE;
-    }
-}
-
-STATIC void uart_rx_task(void* argument)
-{
-    (void)argument;
-
-    TickType_t lastWake     = xTaskGetTickCount();
-    const TickType_t period = pdMS_TO_TICKS(10); // 100Hz = 10ms
-
-    watchdog_register_task(50); // Expect heartbeat every 50ms
-
-    for (;;)
-    {
-        uart_manager_process_rx_buffer();
-
-        watchdog_heartbeat();
-        vTaskDelayUntil(&lastWake, period);
     }
 }
 

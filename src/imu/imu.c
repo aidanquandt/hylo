@@ -13,8 +13,6 @@
 #include "sensor_fusion.h"
 #include "state_machine.h"
 #include "task.h"
-#include "task_config.h"
-#include "watchdog.h"
 
 
 /*---------------------------------------------------------------------------
@@ -69,13 +67,16 @@ STATIC void imu_state_faulted_on_entry(uint16_t prevState);
  * Module Functions
  *---------------------------------------------------------------------------*/
 STATIC void imu_init(void);
-STATIC void imu_create_tasks(void);
-STATIC void imu_task(void* argument);
+STATIC void imu_process_1kHz(void);
 
 const module_S imu_module = {
     .module_name         = "imu",
     .module_init         = imu_init,
-    .module_create_tasks = imu_create_tasks,
+    .module_create_task  = NULL,
+    .module_process_1Hz   = NULL,
+    .module_process_10Hz  = NULL,
+    .module_process_100Hz = NULL,
+    .module_process_1kHz  = imu_process_1kHz,
 };
 
 /*---------------------------------------------------------------------------
@@ -198,36 +199,10 @@ STATIC void imu_init(void)
     // Initialization handled by state machine on first process call
 }
 
-STATIC void imu_create_tasks(void)
+STATIC void imu_process_1kHz(void)
 {
-    BaseType_t result =
-        xTaskCreate(imu_task, "imu", TASK_STACK_MEDIUM, NULL, TASK_PRIORITY_IMU_PERIODIC, NULL);
-    if (result != pdPASS)
-    {
-        error_handler_fatal("imu", "Failed to create IMU task");
-    }
-}
-
-/**
- * @brief IMU processing task - runs state machine at 1kHz
- */
-STATIC void imu_task(void* argument)
-{
-    (void)argument;
-
-    TickType_t lastWake     = xTaskGetTickCount();
-    const TickType_t period = pdMS_TO_TICKS(1); // 1kHz = 1ms
-
-    watchdog_register_task(10); // Expect heartbeat every 10ms
-
-    for (;;)
-    {
-        imu_state_machine_sample_inputs();
-        state_machine_periodic(&imu_state_machine);
-
-        watchdog_heartbeat();
-        vTaskDelayUntil(&lastWake, period);
-    }
+    imu_state_machine_sample_inputs();
+    state_machine_periodic(&imu_state_machine);
 }
 
 STATIC void imu_state_machine_sample_inputs(void)

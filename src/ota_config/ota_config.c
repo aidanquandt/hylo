@@ -90,9 +90,13 @@ STATIC void ota_config_init_message_header(protocol_header_t* header, uint8_t ms
 extern const module_S ota_config_module;
 
 const module_S ota_config_module = {
-    .module_name         = "ota_config",
-    .module_init         = ota_config_module_init,
-    .module_create_tasks = NULL,
+    .module_name          = "ota_config",
+    .module_init          = ota_config_module_init,
+    .module_create_task   = NULL,
+    .module_process_1Hz   = NULL,
+    .module_process_10Hz  = NULL,
+    .module_process_100Hz = NULL,
+    .module_process_1kHz  = NULL,
 };
 
 /*---------------------------------------------------------------------------

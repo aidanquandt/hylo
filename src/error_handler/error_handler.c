@@ -31,9 +31,13 @@ STATIC void error_handler_init(void);
  *---------------------------------------------------------------------------*/
 extern const module_S error_handler_module;
 const module_S error_handler_module = {
-    .module_name         = "error",
-    .module_init         = error_handler_init,
-    .module_create_tasks = NULL,
+    .module_name          = "error",
+    .module_init          = error_handler_init,
+    .module_create_task   = NULL,
+    .module_process_1Hz   = NULL,
+    .module_process_10Hz  = NULL,
+    .module_process_100Hz = NULL,
+    .module_process_1kHz  = NULL,
 };
 
 /*---------------------------------------------------------------------------
