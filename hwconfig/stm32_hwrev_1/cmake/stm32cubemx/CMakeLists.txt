@@ -22,6 +22,9 @@ set(MX_Include_Dirs
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/FatFs/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/CMSIS/Device/ST/STM32H7xx/Include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/CMSIS/Include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/PrivateInclude/
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Include/
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Include
 )
 
 # STM32CubeMX generated application sources
@@ -51,7 +54,6 @@ set(STM32_Drivers_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/system_stm32h7xx.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim_ex.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_cortex.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_rcc.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_rcc_ex.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_flash.c
@@ -63,6 +65,7 @@ set(STM32_Drivers_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_mdma.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pwr.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pwr_ex.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_cortex.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_i2c.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_i2c_ex.c
@@ -94,6 +97,37 @@ set(FreeRTOS_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F/port.c
 )
+set(CMSIS-DSP_Src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/BasicMathFunctions/BasicMathFunctions.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/QuaternionMathFunctions/QuaternionMathFunctions.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/BayesFunctions/BayesFunctions.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/CommonTables/CommonTables.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/ComplexMathFunctions/ComplexMathFunctions.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/ControllerFunctions/ControllerFunctions.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/DistanceFunctions/DistanceFunctions.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/FastMathFunctions/FastMathFunctions.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/FilteringFunctions/FilteringFunctions.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/MatrixFunctions/MatrixFunctions.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/StatisticsFunctions/StatisticsFunctions.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/SupportFunctions/SupportFunctions.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/SVMFunctions/SVMFunctions.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/TransformFunctions/TransformFunctions.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/InterpolationFunctions/InterpolationFunctions.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/WindowFunctions/WindowFunctions.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/BasicMathFunctions/BasicMathFunctionsF16.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/ComplexMathFunctions/ComplexMathFunctionsF16.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/FilteringFunctions/FilteringFunctionsF16.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/CommonTables/CommonTablesF16.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/TransformFunctions/TransformFunctionsF16.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/MatrixFunctions/MatrixFunctionsF16.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/InterpolationFunctions/InterpolationFunctionsF16.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/StatisticsFunctions/StatisticsFunctionsF16.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/SupportFunctions/SupportFunctionsF16.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/FastMathFunctions/FastMathFunctionsF16.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/DistanceFunctions/DistanceFunctionsF16.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/BayesFunctions/BayesFunctionsF16.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/ARM_CMSIS/Source/SVMFunctions/SVMFunctionsF16.c
+)
 set(FatFs_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/FatFs/src/diskio.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/Third_Party/FatFs/src/ff.c
@@ -109,7 +143,7 @@ set(MX_LINK_DIRS
 set(MX_LINK_LIBS 
     STM32_Drivers
     ${TOOLCHAIN_LINK_LIBRARIES}
-    FreeRTOS	FatFs	
+    FreeRTOS	CMSIS-DSP	FatFs	
 )
 # Interface library for includes and symbols
 add_library(stm32cubemx INTERFACE)
@@ -126,6 +160,11 @@ target_link_libraries(STM32_Drivers PUBLIC stm32cubemx)
 add_library(FreeRTOS OBJECT)
 target_sources(FreeRTOS PRIVATE ${FreeRTOS_Src})
 target_link_libraries(FreeRTOS PUBLIC stm32cubemx)
+
+# Create CMSIS-DSP static library
+add_library(CMSIS-DSP OBJECT)
+target_sources(CMSIS-DSP PRIVATE ${CMSIS-DSP_Src})
+target_link_libraries(CMSIS-DSP PUBLIC stm32cubemx)
 
 # Create FatFs static library
 add_library(FatFs OBJECT)
