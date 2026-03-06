@@ -29,8 +29,14 @@ extern SPI_HandleTypeDef hspi1;
 extern SPI_HandleTypeDef hspi5;
 
 STATIC const spi_cs_map_t cs_map[] = {
+#if (HWREV == 0)
     [PLATFORM_SPI_CS_UWB] = {SPI1_CSn_GPIO_Port, SPI1_CSn_Pin, &hspi1},
+
     [PLATFORM_SPI_CS_IMU] = {SPI5_CSn_GPIO_Port, SPI5_CSn_Pin, &hspi5},
+#else
+    [PLATFORM_SPI_CS_UWB] = {NULL, 0, NULL},
+    [PLATFORM_SPI_CS_IMU] = {NULL, 0, NULL},
+#endif
 };
 
 /*---------------------------------------------------------------------------
