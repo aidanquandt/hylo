@@ -760,7 +760,7 @@ STATIC void wifi_state_active_on_entry(uint16_t prevState)
     // Clear TCP closed flag
     tcp_closed_detected = false;
     
-    uart_manager_print("[WiFi] Transparent mode streaming active\r\n");
+    uart_manager_print("[WiFi] Transparent mode active - entering settling period\r\n");
 }
 
 STATIC void wifi_state_active_process(void)
@@ -768,17 +768,23 @@ STATIC void wifi_state_active_process(void)
     // Persistent rolling window for detecting ESP messages like "CLOSED"
     static char detect_window[128] = {0};
     static size_t detect_used = 0;
+    static bool settling_complete = false;
 
-    // Example telemetry send
-    static uint32_t send_counter = 0;
-    send_counter++;
-
-    if (send_counter % 10 == 0) {
-        const char *msg = "hello\r\n";
-        wifi_uart_transmit_blocking((uint8_t*)msg, (uint16_t)strlen(msg));
+    // Give ESP8266 500ms to settle into transparent mode and clear buffers
+    if (!settling_complete) {
+        if (wifi_state_machine.timer < MS_TO_10HZ_TICKS(500)) {
+            // Still draining during settling period
+            uint8_t dump[256];
+            while (xStreamBufferReceive(rxStream, dump, sizeof(dump), 0) > 0) {}
+            return;
+        }
+        settling_complete = true;
+        uart_manager_print("[WiFi] Settling complete - ready for data\r\n");
     }
-    // const char *msg = "hello\r\n";
-    // wifi_uart_transmit_blocking((uint8_t*)msg, (uint16_t)strlen(msg));
+
+    // Send telemetry periodically (10Hz)
+    const char *msg = "hello\r\n";
+    wifi_uart_transmit_blocking((uint8_t*)msg, (uint16_t)strlen(msg));
 
     uint8_t rx_buf[256];
     size_t rx_len = xStreamBufferReceive(rxStream, rx_buf, sizeof(rx_buf), 0);
@@ -823,11 +829,30 @@ STATIC void wifi_state_active_process(void)
     // Process server data (commands, configs, etc)
     // -------------------------------------------------
 
-    // Avoid printing raw binary as string
-    uart_manager_print("[WiFi] Rx %u bytes\r\n", (unsigned)rx_len);
+    // Null-terminate for string operations
+    if (rx_len < sizeof(rx_buf)) {
+        rx_buf[rx_len] = '\0';
+    } else {
+        rx_buf[sizeof(rx_buf) - 1] = '\0';
+    }
 
-    // Example: forward to command parser
-    // command_parser_process(rx_buf, rx_len);
+    // Filter out ESP8266-specific control tokens that appear during mode transitions
+    const char *data_str = (char*)rx_buf;
+    
+    // Skip if it's just ESP8266 control messages
+    if (strcmp(data_str, "OK") == 0 || 
+        strcmp(data_str, ">") == 0 ||
+        strcmp(data_str, "SEND OK") == 0 ||
+        strstr(data_str, "STATUS:") != NULL ||
+        strstr(data_str, "CIPSTATUS") != NULL) {
+        // Silently ignore ESP8266 control tokens
+        return;
+    }
+
+    // Print actual OTA commands to PuTTY
+    if (strlen(data_str) > 0) {
+        uart_manager_print("[OTA CMD] Received: %s\r\n", data_str);
+    }
 }
 
 STATIC void wifi_state_faulted_on_entry(uint16_t prevState)
