@@ -18,9 +18,9 @@
 #include "wifi_config.h"
 #include "stream_buffer.h"
 #include "queue.h"
+#include "common.h"
 #include "feature_config.h"
-#include <string.h>
-#include <stdio.h>
+#include "wifi_ota_parser.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -192,7 +192,7 @@ STATIC void wifi_init(void)
     // Create stream buffer for RX data (DMA ISR -> State machine)
     rxStream = xStreamBufferCreate(512, 1);
     configASSERT(rxStream != NULL);
-
+    ota_parser_init();
     wifi_rx_init();
 }
 
@@ -814,7 +814,7 @@ STATIC void wifi_state_active_process(void)
     // Detect TCP CLOSED from ESP8266
     // -------------------------------------------------
 
-    if (strstr(detect_window, "CLOSED")) {
+    if (strstr(detect_window, "+++")) {
         uart_manager_print("[WiFi] Detected TCP CLOSED\r\n");
 
         tcp_closed_detected = true;
@@ -826,33 +826,13 @@ STATIC void wifi_state_active_process(void)
     }
 
     // -------------------------------------------------
-    // Process server data (commands, configs, etc)
+    // Feed bytes to OTA parser
     // -------------------------------------------------
-
-    // Null-terminate for string operations
-    if (rx_len < sizeof(rx_buf)) {
-        rx_buf[rx_len] = '\0';
-    } else {
-        rx_buf[sizeof(rx_buf) - 1] = '\0';
+    for (size_t i = 0; i < rx_len; i++) {
+        ota_parser_process_byte(rx_buf[i]);
     }
 
-    // Filter out ESP8266-specific control tokens that appear during mode transitions
-    const char *data_str = (char*)rx_buf;
-    
-    // Skip if it's just ESP8266 control messages
-    if (strcmp(data_str, "OK") == 0 || 
-        strcmp(data_str, ">") == 0 ||
-        strcmp(data_str, "SEND OK") == 0 ||
-        strstr(data_str, "STATUS:") != NULL ||
-        strstr(data_str, "CIPSTATUS") != NULL) {
-        // Silently ignore ESP8266 control tokens
-        return;
-    }
 
-    // Print actual OTA commands to PuTTY
-    if (strlen(data_str) > 0) {
-        uart_manager_print("[OTA CMD] Received: %s\r\n", data_str);
-    }
 }
 
 STATIC void wifi_state_faulted_on_entry(uint16_t prevState)

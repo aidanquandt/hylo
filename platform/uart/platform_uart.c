@@ -148,8 +148,6 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
     if (huart == &huart2) {
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-        //SCB_InvalidateDCache_by_Addr((uint32_t*)rx_dma_buf, size);
-
         // Push bytes into stream buffer (DMA → Task)
         xStreamBufferSendFromISR(rxStream, rx_dma_buf, size, &xHigherPriorityTaskWoken);
 

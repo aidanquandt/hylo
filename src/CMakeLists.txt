@@ -65,5 +65,6 @@ set(MODULE_SOURCES
     uwb_node/uwb_node.c
     watchdog/watchdog.c
     wifi/wifi.c
+    wifi/wifi_ota_parser.c
 )
 add_component_module(modules "${MODULE_SOURCES}")

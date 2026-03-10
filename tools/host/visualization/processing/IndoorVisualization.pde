@@ -1,0 +1,521 @@
+import processing.serial.*;
+import java.awt.Toolkit;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.DataFlavor;
+
+// =====================
+// Toggle data source
+// =====================
+boolean USE_CSV = false;  // <-- set false to use Serial again
+
+// Serial communication
+Serial myPort;
+String inString = "";
+
+// ==== CSV PLAYBACK ADDITIONS ====
+Table csv;
+int csvRow = 0;
+int csvFps = 30;          // how fast you "play" the log (rows/sec)
+int lastStepMillis = 0;   // timing for stepping rows
+// ================================
+
+// Base station positions (x, y) in meters (set to null if unused)
+float[] base0 = {4.915, 3.758};
+float[] base1 = {0.877, 0.02};
+float[] base2 = {0.828, 4.018};
+float[] base3 = {4.904, 0.46};
+float[] base4 = null;
+float[] base5 = null;
+float[] base6 = null;
+float[] base7 = null;
+
+// Put base stations in array (null for unused stations)
+float[][] baseStations = {base0, base1, base2, base3, base4, base5, base6, base7};
+
+// Visualization bounds (in meters)
+float minX = -0.5;
+float maxX = 6;
+float minY = -0.5;
+float maxY = 4.5;
+
+// Current data
+float tagX = 0;
+float tagY = 0;
+float tagXFiltered = 0;
+float tagYFiltered = 0;
+float[] distances = new float[8];
+boolean dataReceived = false;
+
+// Command input
+String commandInput = "";
+boolean commandInputFocused = false;
+StringList commandHistory = new StringList();
+int maxHistoryLines = 5;
+
+// Colors for base stations
+color[] baseColors = {
+  color(255, 0, 0),    // Red
+  color(0, 255, 0),    // Green
+  color(0, 0, 255),    // Blue
+  color(255, 255, 0),  // Yellow
+  color(255, 0, 255),  // Magenta
+  color(0, 255, 255),  // Cyan
+  color(255, 128, 0),  // Orange
+  color(128, 0, 255)   // Purple
+};
+
+void setup() {
+  size(1600, 900);
+  background(0);
+
+  if (!USE_CSV) {
+    println("Available serial ports:");
+    printArray(Serial.list());
+
+    // NOTE: You hard-coded COM9 already; keep it if that's correct.
+    try {
+      myPort = new Serial(this, "COM6", 115200);
+      myPort.bufferUntil('\n');
+      println("Successfully opened COM6 at 115200 baud");
+    } catch (Exception e) {
+      println("ERROR: Could not open COM6");
+      println(e.getMessage());
+      println("Make sure PuTTY is closed and COM6 is available");
+    }
+  } else {
+    // ==== CSV PLAYBACK ADDITIONS ====
+    // Put your CSV in the sketch's data/ folder and name it "log.csv"
+    // It can have a header or no header; both are supported below.
+    csv = loadTable("log.csv", "header");
+    if (csv == null || csv.getRowCount() == 0) {
+      // If no header, try without the "header" option
+      csv = loadTable("log.csv");
+    }
+    if (csv == null || csv.getRowCount() == 0) {
+      println("ERROR: log.csv not found or empty. Put it in the sketch's data/ folder.");
+      exit();
+    }
+
+    frameRate(60);
+    csvRow = 0;
+    lastStepMillis = millis();
+    // Prime first row
+    loadFromCsvRow(csvRow);
+    dataReceived = true;
+    // ================================
+  }
+}
+
+void draw() {
+  background(0);
+
+  // ==== CSV PLAYBACK ADDITIONS ====
+  if (USE_CSV) {
+    stepCsvPlayback();
+  }
+  // ================================
+
+  drawCoordinateSystem();
+
+  if (dataReceived) {
+    for (int i = 0; i < baseStations.length; i++) {
+      if (baseStations[i] != null) {
+        drawBaseStation(i, baseStations[i][0], baseStations[i][1], distances[i]);
+      }
+    }
+
+    drawTagPosition(tagX, tagY, "RAW", color(255, 100, 100));
+    drawTagPosition(tagXFiltered, tagYFiltered, "FILTERED", color(100, 255, 100));
+  }
+
+  drawLegend();
+  drawCommandInput();
+}
+
+void drawCoordinateSystem() {
+  stroke(50);
+  strokeWeight(1);
+  for (float x = minX; x <= maxX; x += 0.5) {
+    float screenX = map(x, minX, maxX, 50, width - 50);
+    line(screenX, 50, screenX, height - 50);
+  }
+  for (float y = minY; y <= maxY; y += 0.5) {
+    float screenY = map(y, minY, maxY, height - 50, 50);
+    line(50, screenY, width - 50, screenY);
+  }
+  stroke(100);
+  strokeWeight(2);
+  float originX = map(0, minX, maxX, 50, width - 50);
+  float originY = map(0, minY, maxY, height - 50, 50);
+  line(originX, 50, originX, height - 50);
+  line(50, originY, width - 50, originY);
+
+  fill(255);
+  textAlign(CENTER);
+  text("X (meters)", width/2, height - 20);
+  pushMatrix();
+  translate(20, height/2);
+  rotate(-PI/2);
+  text("Y (meters)", 0, 0);
+  popMatrix();
+}
+
+void drawBaseStation(int index, float x, float y, float distance) {
+  float screenX = map(x, minX, maxX, 50, width - 50);
+  float screenY = map(y, minY, maxY, height - 50, 50);
+
+  if (distance > 0) {
+    stroke(baseColors[index]);
+    strokeWeight(1);
+    fill(baseColors[index], 30);
+    float radius = map(distance, 0, maxX - minX, 0, width - 100);
+    ellipse(screenX, screenY, radius*2, radius*2);
+  }
+
+  stroke(baseColors[index]);
+  strokeWeight(3);
+  fill(baseColors[index]);
+  ellipse(screenX, screenY, 12, 12);
+
+  fill(255);
+  textAlign(CENTER);
+  text("B" + index, screenX, screenY - 15);
+
+  if (distance > 0) {
+    text(nf(distance, 1, 2) + "m", screenX, screenY + 25);
+  }
+}
+
+void drawTagPosition(float x, float y, String label, color c) {
+  float screenX = map(x, minX, maxX, 50, width - 50);
+  float screenY = map(y, minY, maxY, height - 50, 50);
+  stroke(c);
+  strokeWeight(2);
+  fill(c);
+  ellipse(screenX, screenY, 12, 12);
+  line(screenX - 8, screenY, screenX + 8, screenY);
+  line(screenX, screenY - 8, screenX, screenY + 8);
+  fill(c);
+  textAlign(CENTER);
+  text(label, screenX, screenY - 15);
+  text("(" + nf(x, 1, 2) + ", " + nf(y, 1, 2) + ")", screenX, screenY + 25);
+}
+
+void drawLegend() {
+  fill(255);
+  textAlign(LEFT);
+  text("Legend:", 10, 20);
+  int y = 40;
+  for (int i = 0; i < baseStations.length; i++) {
+    if (baseStations[i] != null) {
+      fill(baseColors[i]);
+      ellipse(25, y, 8, 8);
+      fill(255);
+      text("Base Station " + i, 35, y+5);
+      y += 20;
+    }
+  }
+  fill(255, 100, 100);
+  ellipse(25, y, 8, 8);
+  fill(255);
+  text("Raw Position", 35, y+5);
+  y += 20;
+  fill(100, 255, 100);
+  ellipse(25, y, 8, 8);
+  fill(255);
+  text("Filtered Position", 35, y+5);
+}
+
+void drawCommandInput() {
+  // Draw command input area at bottom - make it more visible
+  if (commandInputFocused) {
+    fill(0, 100, 0, 230);  // Green background when active
+  } else {
+    fill(40, 40, 40, 200);  // Gray background when inactive
+  }
+  rect(0, height - 140, width, 140);
+  
+  // Status text
+  fill(commandInputFocused ? color(0, 255, 0) : color(200));
+  textAlign(CENTER);
+  textSize(16);
+  text(commandInputFocused ? "COMMAND MODE: ON" : "COMMAND MODE: OFF (Press C to activate)", width/2, height - 120);
+  
+  // Command history
+  fill(200);
+  textAlign(LEFT);
+  textSize(11);
+  int histY = height - 100;
+  for (int i = max(0, commandHistory.size() - maxHistoryLines); i < commandHistory.size(); i++) {
+    text("> " + commandHistory.get(i), 10, histY);
+    histY += 15;
+  }
+  
+  // Show what you're typing in large text above the input box
+  if (commandInputFocused && commandInput.length() > 0) {
+    fill(255, 255, 0);  // Bright yellow
+    textSize(28);
+    textAlign(LEFT);
+    text("> " + commandInput, 20, height - 65);
+  }
+  
+  // Input box with more visible border - larger box
+  
+  // Draw border
+  if (commandInputFocused) {
+    stroke(0, 255, 0);
+    strokeWeight(4);
+  } else {
+    stroke(150);
+    strokeWeight(2);
+  }
+  fill(0);  // Pure black background
+  rect(10, height - 50, width - 20, 40);
+  noStroke();
+  
+  // Draw text with maximum visibility
+  textAlign(LEFT, CENTER);  // Center vertically
+  textSize(24);  // Larger text
+  
+  // Build display string
+  String displayText = "> " + commandInput;
+  if (commandInputFocused && (millis() / 500) % 2 == 0) {
+    displayText += "|";
+  }
+  
+  // Draw the text in the center of the input box
+  fill(255, 255, 0);  // Bright yellow
+  text(displayText, 20, height - 30);
+  
+  // Debug: show length of command
+  if (commandInputFocused) {
+    fill(0, 255, 0);
+    textSize(12);
+    textAlign(RIGHT);
+    text("chars: " + commandInput.length(), width - 20, height - 30);
+  }
+  textAlign(LEFT);  // Reset
+  
+  // Instructions
+  fill(commandInputFocused ? color(255, 255, 0) : color(150));
+  textSize(11);
+  textAlign(CENTER);
+  text("Press 'C' to toggle | ENTER to send | BACKSPACE to delete | CTRL+V to paste | Click to activate", width/2, height - 5);
+  textAlign(LEFT);
+}
+
+// =====================
+// Serial parsing (unchanged)
+// =====================
+void serialEvent(Serial myPort) {
+  if (USE_CSV) return; // ignore serial when using CSV
+
+  inString = myPort.readStringUntil('\n');
+  if (inString == null) return;
+
+  inString = trim(inString);
+  
+  // Debug: print every line received
+  println("Received: " + inString);
+
+  // Only parse sensor-fusion lines
+  if (!inString.startsWith("SF:")) return;
+  
+  println("Parsing SF line...");
+
+  try {
+    float x = extractFloatAfter(inString, "x=");
+    float y = extractFloatAfter(inString, "y=");
+
+    // Optional: you can also grab these later if you want
+    // float z   = extractFloatAfter(inString, "z=");
+    // float vx  = extractFloatAfter(inString, "vx=");
+    // float vy  = extractFloatAfter(inString, "vy=");
+    // float conf= extractFloatAfter(inString, "conf=");
+
+    tagX = x;
+    tagY = y;
+
+    // If you don't have separate filtered values, just mirror raw
+    tagXFiltered = x;
+    tagYFiltered = y;
+
+    // You are not using distances from this message format
+    for (int i = 0; i < 8; i++) distances[i] = 0;
+
+    dataReceived = true;
+    println("Successfully parsed: x=" + x + " y=" + y);
+  } catch (Exception e) {
+    println("Parse error (SF line): " + inString);
+    e.printStackTrace();
+  }
+}
+
+float extractFloatAfter(String s, String key) {
+  int start = s.indexOf(key);
+  if (start < 0) throw new RuntimeException("Missing key: " + key);
+
+  start += key.length(); // move past "x=" or "y=" etc.
+  
+  // Skip any leading whitespace after the key
+  while (start < s.length() && s.charAt(start) == ' ') {
+    start++;
+  }
+
+  // Find the end of the number: space, pipe, or end-of-string
+  int endSpace = s.indexOf(' ', start);
+  int endPipe  = s.indexOf('|', start);
+
+  int end;
+  if (endSpace < 0 && endPipe < 0) end = s.length();
+  else if (endSpace < 0) end = endPipe;
+  else if (endPipe < 0) end = endSpace;
+  else end = min(endSpace, endPipe);
+
+  String num = s.substring(start, end).trim();
+
+  // In case something like "0.00m" ever sneaks in, strip non-number tail safely
+  // (keeps digits, sign, decimal, exponent)
+  num = num.replaceAll("[^0-9eE+\\-\\.]", "");
+
+  return float(num);
+}
+
+// =====================
+// CSV playback helpers
+// =====================
+void stepCsvPlayback() {
+  int interval = int(1000.0 / max(1, csvFps));
+  if (millis() - lastStepMillis < interval) return;
+  lastStepMillis = millis();
+
+  csvRow++;
+  if (csvRow >= csv.getRowCount()) {
+    csvRow = csv.getRowCount() - 1; // stop at end (or loop if you want)
+    return;
+  }
+  loadFromCsvRow(csvRow);
+  dataReceived = true;
+}
+
+void loadFromCsvRow(int r) {
+  // Supports BOTH:
+  //  A) Header CSV with columns: x,y,x_filtered,y_filtered,d0..d7
+  //  B) No-header CSV with 12 columns in the same order as serial
+
+  TableRow row = csv.getRow(r);
+
+  if (row != null && csv.getColumnCount() > 0 && csv.getColumnTitle(0) != null) {
+    // Try header names first
+    try {
+      tagX = row.getFloat("x= ");
+      tagY = row.getFloat("y");
+      tagXFiltered = row.getFloat("x_filtered");
+      tagYFiltered = row.getFloat("y_filtered");
+      for (int i = 0; i < 8; i++) {
+        distances[i] = row.getFloat("d" + i);
+      }
+      return;
+    } catch (Exception e) {
+      // fall through to index-based
+    }
+  }
+
+  // Index-based fallback (no header)
+  tagX = row.getFloat(0);
+  tagY = row.getFloat(1);
+  tagXFiltered = row.getFloat(2);
+  tagYFiltered = row.getFloat(3);
+  for (int i = 0; i < 8; i++) {
+    distances[i] = row.getFloat(4 + i);
+  }
+}
+
+// Keyboard controls:
+//   C = toggle command input mode
+//   r = restart playback (CSV mode)
+//   + / - = speed up / slow down playback (CSV mode)
+//   ENTER = send command
+//   BACKSPACE = delete character
+void keyPressed() {
+  // 'C' or 'c' to toggle command input focus
+  if (key == 'c' || key == 'C') {
+    commandInputFocused = !commandInputFocused;
+    println("======================================");
+    println("KEY 'C' PRESSED - Command mode: " + (commandInputFocused ? "ON" : "OFF"));
+    println("======================================");
+    return;
+  }
+  
+  // Debug: print all key presses
+  if (commandInputFocused) {
+    println("Key pressed: '" + key + "' (code: " + int(key) + ")");
+  }
+  
+  // Handle paste (Ctrl+V or Cmd+V)
+  if (commandInputFocused && (keyCode == 86 && (key == CODED || key == 22))) {
+    // Check if Ctrl (Windows/Linux) or Cmd (Mac) is pressed
+    try {
+      Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+      String pastedText = (String) clipboard.getData(DataFlavor.stringFlavor);
+      if (pastedText != null) {
+        // Remove any newlines and carriage returns
+        pastedText = pastedText.replace("\n", "").replace("\r", "");
+        commandInput += pastedText;
+        println("Pasted: " + pastedText);
+        println("commandInput now = \"" + commandInput + "\" (length: " + commandInput.length() + ")");
+      }
+    } catch (Exception e) {
+      println("Paste failed: " + e.getMessage());
+    }
+    return;
+  }
+  
+  // Handle command input when focused
+  if (commandInputFocused) {
+    if (key == ENTER || key == RETURN) {
+      // Send command
+      if (commandInput.length() > 0 && !USE_CSV && myPort != null) {
+        myPort.write(commandInput + "\r\n");
+        commandHistory.append(commandInput);
+        println("Sent command: " + commandInput);
+        commandInput = "";
+      } else if (commandInput.length() > 0 && USE_CSV) {
+        println("Cannot send commands in CSV playback mode");
+      }
+    } else if (key == BACKSPACE || key == DELETE || keyCode == BACKSPACE) {
+      if (commandInput.length() > 0) {
+        commandInput = commandInput.substring(0, commandInput.length() - 1);
+        println("Deleted char. New length: " + commandInput.length());
+      }
+    } else if (key >= 32 && key < 127 && key != 'c' && key != 'C') { // Printable ASCII (except C)
+      commandInput += key;
+      println("Added char: '" + key + "' - commandInput now = \"" + commandInput + "\" (length: " + commandInput.length() + ")");
+    } else {
+      println("Key not handled: key=" + key + " keyCode=" + keyCode);
+    }
+    return;
+  }
+  
+  // CSV playback controls (only when not in command input mode)
+  if (USE_CSV) {
+    if (key == 'r' || key == 'R') {
+      csvRow = 0;
+      lastStepMillis = millis();
+      loadFromCsvRow(csvRow);
+    } else if (key == '+' || key == '=') {
+      csvFps = min(500, csvFps + 10);
+    } else if (key == '-') {
+      csvFps = max(1, csvFps - 10);
+    }
+  }
+}
+
+void mousePressed() {
+  // Check if clicked in command input area (bottom 140 pixels)
+  println("Mouse clicked at y=" + mouseY + ", height=" + height);
+  if (mouseY > height - 140) {
+    commandInputFocused = !commandInputFocused;
+    println("Command mode toggled: " + (commandInputFocused ? "ON" : "OFF"));
+  }
+}
