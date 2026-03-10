@@ -24,7 +24,10 @@ typedef enum
 platform_uart_status_E platform_uart_transmit_blocking(const uint8_t* data, size_t length);
 platform_uart_status_E platform_uart_transmit_dma(const uint8_t* data, size_t length);
 void platform_uart_register_tx_task(TaskHandle_t task_handle);
-platform_uart_status_E platform_uart_receive(UART_HandleTypeDef* huart, uint8_t* data,
-                                             size_t length);
+platform_uart_status_E platform_uart_receive(UART_HandleTypeDef* huart, uint8_t* data,size_t length);
+
+platform_uart_status_E wifi_uart_transmit_blocking(const uint8_t* data, size_t length);
+void wifi_rx_init(void);
+
 platform_uart_status_E platform_uart_start_rx_dma(uint8_t* buffer, uint16_t size);
 uint16_t platform_uart_get_rx_dma_position(void);

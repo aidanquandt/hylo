@@ -18,3 +18,6 @@
 
 /* Auto-configure UWB address from device UUID mapping table */
 #define FEATURE_AUTO_CONFIGURE_ADDRESS_FROM_UUID (1U)
+
+/* WiFi telemetry module (ESP8266) */
+#define FEATURE_WIFI_MODULE (1U)

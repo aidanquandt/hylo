@@ -1,0 +1,14 @@
+/*---------------------------------------------------------------------------
+ * @file    wifi_config.h.example
+ * @brief   WiFi credentials template - Copy to wifi_config.h and fill in
+ *---------------------------------------------------------------------------*/
+
+#pragma once
+
+// WiFi network credentials
+#define WIFI_SSID "YourNetworkName"
+#define WIFI_PASS "YourPassword"
+
+// TCP server configuration
+#define WIFI_HOST "192.168.1.100"  // Your PC's IP address
+#define WIFI_PORT 5000

@@ -29,6 +29,7 @@ target_include_directories(components_inc INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/uwb
     ${CMAKE_CURRENT_SOURCE_DIR}/uwb_node
     ${CMAKE_CURRENT_SOURCE_DIR}/watchdog
+    ${CMAKE_CURRENT_SOURCE_DIR}/wifi
 )
 
 function(add_component_module MODULE_NAME SOURCES)
@@ -63,5 +64,6 @@ set(MODULE_SOURCES
     uwb/uwb.c
     uwb_node/uwb_node.c
     watchdog/watchdog.c
+    wifi/wifi.c
 )
 add_component_module(modules "${MODULE_SOURCES}")
