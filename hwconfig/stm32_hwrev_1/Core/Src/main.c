@@ -19,10 +19,9 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
-#include "fatfs.h"
+#include "dma.h"
 #include "i2c.h"
 #include "iwdg.h"
-#include "sdmmc.h"
 #include "spi.h"
 #include "tim.h"
 #include "usart.h"
@@ -30,7 +29,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "app.h"
+#include "platform_os.h"
+#include "platform_timer.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -94,26 +95,24 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+  platform_os_init();
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_I2C5_Init();
-  MX_SDMMC2_SD_Init();
-  MX_SPI1_Init();
   MX_SPI2_Init();
   MX_SPI4_Init();
   MX_UART7_Init();
   MX_UART8_Init();
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
-  MX_FATFS_Init();
   MX_TIM2_Init();
   MX_TIM5_Init();
   MX_IWDG1_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_TIM_Base_Start_IT(&htim2);  /* 64-bit system time: overflow ISR extends to uint64_t */
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -259,9 +258,12 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
+  // SAFETY: Blink LED rapidly to indicate error, allows debugger to connect
   __disable_irq();
   while (1)
   {
+    HAL_GPIO_TogglePin(LED1_GPIO_Port, LED1_Pin);
+    for (volatile int i = 0; i < 200000; i++);  // ~200ms delay
   }
   /* USER CODE END Error_Handler_Debug */
 }

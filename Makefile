@@ -46,7 +46,7 @@ help:
 	@echo "  make clean       Clean debug and release build dirs"
 	@echo "  make rebuild    Clean debug then build"
 	@echo "  make distclean  Remove build/ entirely"
-	@echo "  make flash      Flash via OpenOCD (ST-Link); builds first if no build"
+	@echo "  make flash REV=0 or make flash REV=1  Flash via OpenOCD (ST-Link); builds first if no build"
 	@echo "  make check-deps Verify cmake, ninja, arm-none-eabi-gcc"
 	@echo ""
 	@echo "Host tools (Python; in tools/host; scripts use COM10 by default):"
@@ -75,4 +75,6 @@ check-deps:
 	@bash tools/scripts/check_deps.sh
 
 flash:
-	@bash tools/scripts/flash.sh
+	@if [ -z "$(REV)" ]; then echo "Error: REV must be specified (0 or 1). Use: make flash REV=0 or make flash REV=1"; exit 1; fi
+	@if [ "$(REV)" != "0" ] && [ "$(REV)" != "1" ]; then echo "Error: REV must be 0 or 1 (got: $(REV))"; exit 1; fi
+	@bash tools/scripts/flash.sh $(REV)

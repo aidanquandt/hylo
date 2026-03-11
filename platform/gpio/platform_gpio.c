@@ -74,7 +74,7 @@ platform_gpio_state_t platform_gpio_read_pin(platform_gpio_pin_t pin)
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-#if (HWREV == 0)
+#if (HWREV == 0 || HWREV == 1)
     if (GPIO_Pin == UWB_IRQ_Pin)
     {
         platform_gpio_uwb_irq_callback();

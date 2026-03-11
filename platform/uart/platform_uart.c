@@ -18,15 +18,24 @@
 extern UART_HandleTypeDef huart2;
 extern DMA_HandleTypeDef hdma_usart2_rx;
 
+#if (HWREV == 0)
 extern UART_HandleTypeDef huart4;
 extern UART_HandleTypeDef huart3;
-
-#if FEATURE_USE_USART3
-#define PLATFORM_UART_PRINT (&huart3)
-#define PLATFORM_UART_RX (&huart3)
 #else
-#define PLATFORM_UART_PRINT (&huart4)
-#define PLATFORM_UART_RX (&huart4)
+extern UART_HandleTypeDef huart1;
+#endif
+
+#if (HWREV == 0)
+    #if FEATURE_USE_USART3
+    #define PLATFORM_UART_PRINT (&huart3)
+    #define PLATFORM_UART_RX (&huart3)
+    #else
+    #define PLATFORM_UART_PRINT (&huart4)
+    #define PLATFORM_UART_RX (&huart4)
+    #endif
+#else
+    #define PLATFORM_UART_PRINT (&huart1)
+    #define PLATFORM_UART_RX (&huart1)
 #endif
 
 StreamBufferHandle_t rxStream = NULL;
