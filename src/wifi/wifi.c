@@ -1,21 +1,20 @@
 /*---------------------------------------------------------------------------
  * @file    wifi.c
- * @brief   WiFi telemetry module for IMU data transmission via ESP8266
+ * @brief   WiFi telemetry module for data transmission via ESP8266
  *---------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
 #include "wifi.h"
+#include "wifi_config.h"
 #include "imu.h"
 #include "module.h"
 #include "uart_manager.h"
-#include "uart_cmd_router.h"
 #include "platform_uart.h"
 #include "state_machine.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#include "wifi_config.h"
 #include "stream_buffer.h"
 #include "queue.h"
 #include "common.h"
@@ -102,6 +101,9 @@ STATIC void wifi_state_wait_cipmux_process(void);//new
 STATIC void wifi_start_command(const char *cmd);
 STATIC void wifi_check_response(const char *expected_token, uint32_t timeout_ms);
 
+// Telemetry transmission
+STATIC void wifi_transmit_telemetry_queue(void);
+
 
 /*---------------------------------------------------------------------------
  * Module Functions
@@ -182,6 +184,17 @@ STATIC const char *PASS = WIFI_PASS;
 STATIC const char *HOST = WIFI_HOST;
 STATIC const uint16_t PORT = WIFI_PORT;
 
+// Telemetry queue
+#define TELEMETRY_QUEUE_SIZE 16U
+STATIC QueueHandle_t telemetry_queue = NULL;
+STATIC struct
+{
+    volatile uint32_t events_pushed;
+    volatile uint32_t events_dropped;
+    volatile uint32_t events_transmitted;
+    volatile uint32_t sequence;
+} telemetry_stats = {0};
+
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
@@ -192,6 +205,16 @@ STATIC void wifi_init(void)
     // Create stream buffer for RX data (DMA ISR -> State machine)
     rxStream = xStreamBufferCreate(512, 1);
     configASSERT(rxStream != NULL);
+    
+    // Create telemetry queue
+    telemetry_queue = xQueueCreate(TELEMETRY_QUEUE_SIZE, sizeof(telemetry_event_t));
+    configASSERT(telemetry_queue != NULL);
+    
+    telemetry_stats.events_pushed = 0;
+    telemetry_stats.events_dropped = 0;
+    telemetry_stats.events_transmitted = 0;
+    telemetry_stats.sequence = 0;
+    
     ota_parser_init();
     wifi_rx_init();
 }
@@ -779,12 +802,14 @@ STATIC void wifi_state_active_process(void)
             return;
         }
         settling_complete = true;
-        uart_manager_print("[WiFi] Settling complete - ready for data\r\n");
     }
 
-    // Send telemetry periodically (10Hz)
-    const char *msg = "hello\r\n";
-    wifi_uart_transmit_blocking((uint8_t*)msg, (uint16_t)strlen(msg));
+    // Transmit telemetry from queue
+    wifi_transmit_telemetry_queue();
+
+    // -------------------------------------------------
+    // Process incoming data (OTA commands)
+    // -------------------------------------------------
 
     uint8_t rx_buf[256];
     size_t rx_len = xStreamBufferReceive(rxStream, rx_buf, sizeof(rx_buf), 0);
@@ -839,6 +864,74 @@ STATIC void wifi_state_faulted_on_entry(uint16_t prevState)
 {
     (void)prevState;
     uart_manager_print("[WiFi] WiFi module FAULTED\r\n");
+}
+
+/**
+ * @brief Transmit telemetry events from queue to WiFi
+ * @note Called from wifi_state_active_process() at 10Hz
+ */
+STATIC void wifi_transmit_telemetry_queue(void)
+{
+    telemetry_event_t telem;
+    char tx_buf[256];
+    
+    // Drain telemetry queue and transmit (non-blocking)
+    while (xQueueReceive(telemetry_queue, &telem, 0) == pdPASS)
+    {
+        int len = 0;
+        
+        switch (telem.type)
+        {
+            case TELEMETRY_EVENT_RANGING:
+                len = snprintf(tx_buf, sizeof(tx_buf),
+                    "RANGE,%.3f,%.1f,%u,%.2f,%.2f,%.2f,%d\r\n",
+                    telem.data.ranging.distance_m,
+                    telem.data.ranging.rssi_dbm,
+                    telem.data.ranging.anchor_addr,
+                    telem.data.ranging.anchor_position.x,
+                    telem.data.ranging.anchor_position.y,
+                    telem.data.ranging.anchor_position.z,
+                    telem.data.ranging.anchor_position_valid ? 1 : 0);
+                break;
+                
+            case TELEMETRY_EVENT_SENSOR_EVENT:
+                if (telem.data.sensor_event.type == SENSOR_EVENT_IMU)
+                {
+                    len = snprintf(tx_buf, sizeof(tx_buf),
+                        "IMU,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f\r\n",
+                        telem.data.sensor_event.data.imu.accel_x,
+                        telem.data.sensor_event.data.imu.accel_y,
+                        telem.data.sensor_event.data.imu.accel_z,
+                        telem.data.sensor_event.data.imu.gyro_x,
+                        telem.data.sensor_event.data.imu.gyro_y,
+                        telem.data.sensor_event.data.imu.gyro_z,
+                        telem.data.sensor_event.data.imu.temp_c);
+                }
+                break;
+                
+            case TELEMETRY_EVENT_POSITION:
+                len = snprintf(tx_buf, sizeof(tx_buf),
+                    "POS,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.2f,%d\r\n",
+                    telem.data.position.x,
+                    telem.data.position.y,
+                    telem.data.position.z,
+                    telem.data.position.vx,
+                    telem.data.position.vy,
+                    telem.data.position.vz,
+                    telem.data.position.confidence,
+                    telem.data.position.valid ? 1 : 0);
+                break;
+                
+            default:
+                continue; // Skip unknown types
+        }
+        
+        if (len > 0 && len < (int)sizeof(tx_buf))
+        {
+            wifi_uart_transmit_blocking((uint8_t*)tx_buf, (uint16_t)len);
+            telemetry_stats.events_transmitted++;
+        }
+    }
 }
 
 // Non-blocking command helpers
@@ -929,6 +1022,57 @@ STATIC void wifi_check_response(const char *expected_token, uint32_t timeout_ms)
         state_inputs.fault_present = true;
         return;
     }
+}
+
+/*---------------------------------------------------------------------------
+ * Public Function Implementations
+ *---------------------------------------------------------------------------*/
+
+wifi_telemetry_status_e wifi_push_telemetry(const telemetry_event_t* event)
+{
+    if (event == NULL)
+    {
+        return WIFI_TELEMETRY_ERROR_NULL_PTR;
+    }
+
+    if (telemetry_queue == NULL)
+    {
+        return WIFI_TELEMETRY_ERROR_NOT_INITIALIZED;
+    }
+
+    if (event->type >= NUM_TELEMETRY_EVENT_TYPES)
+    {
+        return WIFI_TELEMETRY_ERROR_INVALID_TYPE;
+    }
+
+    // Only accept data when in ACTIVE state
+    if (wifi_state_machine.curr_state != STATE_ACTIVE)
+    {
+        return WIFI_TELEMETRY_ERROR_NOT_CONNECTED;
+    }
+
+    telemetry_event_t queued_event = *event;
+
+    taskENTER_CRITICAL();
+    queued_event.sequence = telemetry_stats.sequence++;
+    taskEXIT_CRITICAL();
+
+    BaseType_t result = xQueueSend(telemetry_queue, &queued_event, 0);
+
+    if (result == pdPASS)
+    {
+        telemetry_stats.events_pushed++;
+        return WIFI_TELEMETRY_SUCCESS;
+    }
+
+    // Queue full - drop the event (non-blocking)
+    telemetry_stats.events_dropped++;
+    return WIFI_TELEMETRY_ERROR_QUEUE_FULL;
+}
+
+bool wifi_telemetry_is_ready(void)
+{
+    return (telemetry_queue != NULL && wifi_state_machine.curr_state == STATE_ACTIVE);
 }
 
 
