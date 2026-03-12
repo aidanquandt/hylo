@@ -2,6 +2,10 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "imu.h"
+/* Suppress -Wtype-limits when IMU_NUM_DEVICES is 0 (loop condition i < 0 is always false for uint8_t i). */
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wtype-limits"
+#endif
 #include "FreeRTOS.h"
 #include "common.h"
 #include "counter.h"
@@ -94,13 +98,15 @@ STATIC volatile uint8_t imu_ctx_current_index = 0U;
 /* Shared startup delay: all IMUs transition STARTUP -> INITIALIZATION when this reaches threshold */
 STATIC uint32_t g_startup_delay_ticks = 0U;
 
-/* Per-IMU contexts */
-STATIC imu_ctx_t imu_ctxs[IMU_NUM_DEVICES];
+/* Per-IMU contexts (sized by IMU_MAX_DEVICES to avoid zero-length array when IMU_NUM_DEVICES is 0). */
+STATIC imu_ctx_t imu_ctxs[IMU_MAX_DEVICES];
 
-/* Aggregate output for sensor fusion and public API (averaged over active IMUs) */
-STATIC imu_data_t    aggregate_data     = {0};
-STATIC uint32_t     aggregate_sample_count = 0U;
-STATIC uint8_t      first_active_chip_id   = 0U;
+/* Aggregate output for sensor fusion and public API: mean of accel/gyro/temp over all
+ * IMUs currently in ACTIVE state. first_active_chip_id is the chip_id of the first
+ * active IMU in the aggregation order (for backward-compatible status reporting). */
+STATIC imu_data_t    aggregate_data        = {0};
+STATIC uint32_t      aggregate_sample_count = 0U;
+STATIC uint8_t       first_active_chip_id   = 0U;
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -133,7 +139,11 @@ STATIC void imu_aggregate_and_push(void)
     uint8_t count    = 0;
     bool   first     = true;
 
-    for (unsigned i = 0; i < (unsigned)IMU_PORT_NUM_DEVICES; i++)
+    if (IMU_NUM_DEVICES == 0U)
+    {
+        return;
+    }
+    for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
     {
         imu_ctx_t* c = &imu_ctxs[i];
         if (!c->active || c->state_machine.curr_state != IMU_STATE_ACTIVE)
@@ -319,7 +329,7 @@ STATIC void imu_state_faulted_on_entry(uint16_t prevState)
     }
 
     error_handler_log(ERROR_SEVERITY_ERROR, "imu", "IMU %u: %s (code=%u)", idx, fault_str,
-                      (unsigned)ctx->fault_code);
+                      (uint8_t)ctx->fault_code);
 }
 
 STATIC imu_state_e imu_get_overall_state(void)
@@ -328,7 +338,11 @@ STATIC imu_state_e imu_get_overall_state(void)
     bool any_init    = false;
     bool any_active  = false;
 
-    for (unsigned i = 0; i < (unsigned)IMU_PORT_NUM_DEVICES; i++)
+    if (IMU_NUM_DEVICES == 0U)
+    {
+        return IMU_STATE_FAULTED;
+    }
+    for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
     {
         uint16_t s = imu_ctxs[i].state_machine.curr_state;
         switch (s)
@@ -362,7 +376,8 @@ STATIC imu_state_e imu_get_overall_state(void)
 
 STATIC void imu_init(void)
 {
-    for (uint8_t i = 0; i < IMU_NUM_DEVICES; i++)
+    /* Initialize all slots to a known state (avoids uninitialized read when IMU_NUM_DEVICES is 0). */
+    for (uint8_t i = 0; i < (uint8_t)IMU_MAX_DEVICES; i++)
     {
         imu_ctx_t* ctx = &imu_ctxs[i];
         memset(ctx, 0, sizeof(*ctx));
@@ -377,15 +392,23 @@ STATIC void imu_init(void)
 
 STATIC void imu_process_1kHz(void)
 {
-    if (g_startup_delay_ticks < STARTUP_DELAY_MS)
+    if (IMU_NUM_DEVICES == 0U)
     {
-        g_startup_delay_ticks++;
+        return;
     }
 
-    for (unsigned i = 0; i < (unsigned)IMU_PORT_NUM_DEVICES; i++)
+    if (IMU_NUM_DEVICES > 0U)
     {
-        imu_ctx_current_index = (uint8_t)i;
-        state_machine_periodic(&imu_ctxs[i].state_machine);
+        if (g_startup_delay_ticks < STARTUP_DELAY_MS)
+        {
+            g_startup_delay_ticks++;
+        }
+
+        for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
+        {
+            imu_ctx_current_index = i;
+            state_machine_periodic(&imu_ctxs[i].state_machine);
+        }
     }
 
     /* Aggregate and push at 200 Hz; read temperatures at 1 Hz */
@@ -423,17 +446,21 @@ STATIC void imu_process_1kHz(void)
 
     if (counter_uint16_t(&prescaler_temp, IMU_TEMPERATURE_PRESCALER))
     {
-        for (unsigned i = 0; i < (unsigned)IMU_PORT_NUM_DEVICES; i++)
+        if (IMU_NUM_DEVICES > 0U)
         {
-            imu_ctx_t* c = &imu_ctxs[i];
-            if (!c->active || c->dev == NULL)
+            for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
             {
-                continue;
-            }
-            float t = imu_port_read_temperature(c->dev);
-            if (t != 0.0f)
-            {
-                c->raw_data.temperature = t;
+                imu_ctx_t* c = &imu_ctxs[i];
+                if (!c->active || c->dev == NULL)
+                {
+                    continue;
+                }
+                float t = imu_port_read_temperature(c->dev);
+                /* Only update on success; 0.0f is used by port to indicate read failure. */
+                if (t != 0.0f)
+                {
+                    c->raw_data.temperature = t;
+                }
             }
         }
         imu_aggregate_and_push();
@@ -443,6 +470,7 @@ STATIC void imu_process_1kHz(void)
 /*---------------------------------------------------------------------------
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
+/* Returns true if at least one active IMU accepted soft reset (any-success semantics). */
 bool imu_soft_reset(void)
 {
     if (imu_get_overall_state() != IMU_STATE_ACTIVE)
@@ -451,14 +479,17 @@ bool imu_soft_reset(void)
     }
 
     bool any_ok = false;
-    for (unsigned i = 0; i < (unsigned)IMU_PORT_NUM_DEVICES; i++)
+    if (IMU_NUM_DEVICES > 0U)
     {
-        imu_ctx_t* c = &imu_ctxs[i];
-        if (c->active && c->dev != NULL)
+        for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
         {
-            if (imu_port_soft_reset(c->dev) == IMU_PORT_SUCCESS)
+            imu_ctx_t* c = &imu_ctxs[i];
+            if (c->active && c->dev != NULL)
             {
-                any_ok = true;
+                if (imu_port_soft_reset(c->dev) == IMU_PORT_SUCCESS)
+                {
+                    any_ok = true;
+                }
             }
         }
     }
@@ -467,7 +498,7 @@ bool imu_soft_reset(void)
 
 imu_state_e imu_get_state(imu_device_e device)
 {
-    if ((unsigned)device >= IMU_NUM_DEVICES || (unsigned)device >= (unsigned)IMU_PORT_NUM_DEVICES)
+    if ((uint8_t)device >= (uint8_t)IMU_MAX_DEVICES || IMU_NUM_DEVICES == 0U)
     {
         return IMU_STATE_FAULTED;
     }
@@ -482,14 +513,17 @@ void imu_get_status(imu_status_t* status)
     }
 
     status->state   = imu_get_overall_state();
-    status->chip_id = first_active_chip_id; /* First active IMU for backward compat */
+    status->chip_id = first_active_chip_id; /* First active IMU at last aggregation; 0 if none */
     status->fault_code = 0U;
-    for (unsigned i = 0; i < (unsigned)IMU_PORT_NUM_DEVICES; i++)
+    if (IMU_NUM_DEVICES > 0U)
     {
-        if (imu_ctxs[i].state_machine.curr_state == IMU_STATE_FAULTED)
+        for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
         {
-            status->fault_code = (uint32_t)imu_ctxs[i].fault_code;
-            break;
+            if (imu_ctxs[i].state_machine.curr_state == IMU_STATE_FAULTED)
+            {
+                status->fault_code = (uint32_t)imu_ctxs[i].fault_code;
+                break;
+            }
         }
     }
 }
@@ -529,8 +563,7 @@ bool imu_get_gyro(vec3_t* gyro)
 
 bool imu_get_temp(imu_device_e device, float* temp)
 {
-    if (temp == NULL || (unsigned)device >= IMU_NUM_DEVICES ||
-        (unsigned)device >= (unsigned)IMU_PORT_NUM_DEVICES)
+    if (temp == NULL || (uint8_t)device >= (uint8_t)IMU_MAX_DEVICES || IMU_NUM_DEVICES == 0U)
     {
         return false;
     }
@@ -546,8 +579,7 @@ bool imu_get_temp(imu_device_e device, float* temp)
 
 bool imu_get_individual_data(imu_device_e device, imu_data_t* data)
 {
-    if (data == NULL || (unsigned)device >= IMU_NUM_DEVICES ||
-        (unsigned)device >= (unsigned)IMU_PORT_NUM_DEVICES)
+    if (data == NULL || (uint8_t)device >= (uint8_t)IMU_MAX_DEVICES || IMU_NUM_DEVICES == 0U)
     {
         return false;
     }
@@ -563,17 +595,20 @@ bool imu_get_individual_data(imu_device_e device, imu_data_t* data)
 
 uint8_t imu_get_device_count(void)
 {
-    return (uint8_t)IMU_PORT_NUM_DEVICES;
+    return (uint8_t)IMU_NUM_DEVICES;
 }
 
 uint8_t imu_get_active_count(void)
 {
     uint8_t n = 0;
-    for (unsigned i = 0; i < (unsigned)IMU_PORT_NUM_DEVICES; i++)
+    if (IMU_NUM_DEVICES > 0U)
     {
-        if (imu_ctxs[i].active && imu_ctxs[i].state_machine.curr_state == IMU_STATE_ACTIVE)
+        for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
         {
-            n++;
+            if (imu_ctxs[i].active && imu_ctxs[i].state_machine.curr_state == IMU_STATE_ACTIVE)
+            {
+                n++;
+            }
         }
     }
     return n;

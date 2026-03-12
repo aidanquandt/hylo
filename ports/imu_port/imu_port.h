@@ -17,24 +17,22 @@ typedef struct imu_dev_s imu_dev_t;
  *---------------------------------------------------------------------------*/
 #define IMU_PORT_CS_PIN PLATFORM_SPI_CS_IMU
 
-/* Number of IMU devices on this board: 0 (HWREV 0) or 4 (HWREV 1). Use for init/run loops. */
-#if FEATURE_IMUS_POPULATED
-#define IMU_PORT_NUM_DEVICES (4U)
-#else
-#define IMU_PORT_NUM_DEVICES (0U)
-#endif
-
 /*---------------------------------------------------------------------------
  * Typedefs
  *---------------------------------------------------------------------------*/
 typedef enum
 {
+#if FEATURE_IMUS_POPULATED
     IMU_DEVICE_0 = 0,
     IMU_DEVICE_1,
     IMU_DEVICE_2,
     IMU_DEVICE_3,
-    IMU_NUM_DEVICES /* last: use for array size and iteration bound */
+#endif
+    IMU_NUM_DEVICES /* last: 0 or 4; use for iteration and bounds */
 } imu_device_e;
+
+/* Max devices for static array sizing (avoids zero-length arrays when IMU_NUM_DEVICES is 0). */
+#define IMU_MAX_DEVICES (4U)
 
 typedef enum
 {

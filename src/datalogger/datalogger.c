@@ -133,6 +133,7 @@ STATIC void datalogger_monitor_deadline_misses(void)
         // Initialize baseline after grace period
         if (startup_counter == DEADLINE_MISS_STARTUP_GRACE_PERIOD_S)
         {
+            /* Establish baseline; worst_latency is also reset here (per-module). */
             for (modules_E module = (modules_E)0U; module < NUM_MODULES; module++)
             {
                 prev_miss_count[module] = app_get_deadline_miss_count(module);

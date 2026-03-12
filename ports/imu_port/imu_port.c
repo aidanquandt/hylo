@@ -33,9 +33,9 @@ STATIC bool validate_odr(imu_odr_t odr);
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-STATIC struct imu_dev_s imu_devices[IMU_NUM_DEVICES];
+STATIC struct imu_dev_s imu_devices[IMU_MAX_DEVICES];
 
-STATIC const platform_spi_cs_E imu_cs_pins[IMU_NUM_DEVICES] = {
+STATIC const platform_spi_cs_E imu_cs_pins[IMU_MAX_DEVICES] = {
     PLATFORM_SPI_CS_IMU_0,
     PLATFORM_SPI_CS_IMU_1,
     PLATFORM_SPI_CS_IMU_2,
@@ -48,7 +48,7 @@ STATIC const platform_spi_cs_E imu_cs_pins[IMU_NUM_DEVICES] = {
 
 imu_dev_t* imu_port_init(imu_device_e device)
 {
-    if (IMU_PORT_NUM_DEVICES == 0U || (unsigned)device >= IMU_NUM_DEVICES)
+    if (IMU_NUM_DEVICES == 0U || (uint8_t)device >= (uint8_t)IMU_MAX_DEVICES)
     {
         return NULL;
     }
