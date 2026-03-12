@@ -1,8 +1,9 @@
 /* USER CODE BEGIN Header */
 /**
   ******************************************************************************
-  * @file           : fatfs_platform.h
-  * @brief          : fatfs_platform header file
+  * @file    dma.h
+  * @brief   This file contains all the function prototypes for
+  *          the dma.c file
   ******************************************************************************
   * @attention
   *
@@ -14,14 +15,38 @@
   * If no LICENSE file comes with this software, it is provided AS-IS.
   *
   ******************************************************************************
-*/
+  */
 /* USER CODE END Header */
+/* Define to prevent recursive inclusion -------------------------------------*/
+#ifndef __DMA_H__
+#define __DMA_H__
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Includes ------------------------------------------------------------------*/
-#include "stm32h7xx_hal.h"
-/* Defines ------------------------------------------------------------------*/
-#define SD_PRESENT               ((uint8_t)0x01)  /* also in bsp_driver_sd.h */
-#define SD_NOT_PRESENT           ((uint8_t)0x00)  /* also in bsp_driver_sd.h */
-#define SD_DETECT_PIN         GPIO_PIN_13
-#define SD_DETECT_GPIO_PORT   GPIOG
-/* Prototypes ---------------------------------------------------------------*/
-uint8_t	BSP_PlatformIsDetected(void);
+#include "main.h"
+
+/* DMA memory to memory transfer handles -------------------------------------*/
+
+/* USER CODE BEGIN Includes */
+
+/* USER CODE END Includes */
+
+/* USER CODE BEGIN Private defines */
+
+/* USER CODE END Private defines */
+
+void MX_DMA_Init(void);
+
+/* USER CODE BEGIN Prototypes */
+
+/* USER CODE END Prototypes */
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* __DMA_H__ */
+

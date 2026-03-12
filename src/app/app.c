@@ -18,6 +18,7 @@
 #include "uart_cmd_router.h"
 #include "uart_manager.h"
 #include "uwb.h"
+#include "wifi.h"
 
 /*---------------------------------------------------------------------------
  * Defines

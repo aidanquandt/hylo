@@ -13,6 +13,7 @@
 #include "uwb.h"
 #include "uwb_node.h"
 #include "watchdog.h"
+#include "wifi.h"
 
 /*---------------------------------------------------------------------------
  * Public variables
@@ -28,6 +29,7 @@ extern const module_S uwb_node_module;
 extern const module_S ota_config_module;
 extern const module_S twr_module;
 extern const module_S twr_manager_module;
+extern const module_S wifi_module;
 
 const module_S* const modules[NUM_MODULES] = {
     [UART_MANAGER_MODULE]  = &uart_manager_module,
@@ -40,5 +42,6 @@ const module_S* const modules[NUM_MODULES] = {
     [OTA_CONFIG_MODULE]    = &ota_config_module,
     [TWR_MODULE]           = &twr_module,
     [TWR_MANAGER_MODULE]   = &twr_manager_module,
+    [WIFI_MODULE]          = &wifi_module,
     [WATCHDOG_MODULE]      = &watchdog_module, // Last - monitors all others
 };

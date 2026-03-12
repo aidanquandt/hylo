@@ -5,6 +5,9 @@
 #include "FreeRTOS.h"
 #include "feature_config.h"
 #include "task.h"
+#include "stream_buffer.h"
+#include "queue.h"
+#include <stdio.h>
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -12,16 +15,27 @@
 #define UART_TX_TIMEOUT_MS 100U
 #define UART_RX_TIMEOUT_MS 100U
 
-extern UART_HandleTypeDef huart4;
+#if (HWREV == 0)
 extern UART_HandleTypeDef huart3;
-
-#if FEATURE_USE_USART3
 #define PLATFORM_UART_PRINT (&huart3)
 #define PLATFORM_UART_RX (&huart3)
-#else
-#define PLATFORM_UART_PRINT (&huart4)
-#define PLATFORM_UART_RX (&huart4)
+#elif (HWREV == 1)
+extern UART_HandleTypeDef huart1;
+#define PLATFORM_UART_PRINT (&huart1)
+#define PLATFORM_UART_RX (&huart1)
 #endif
+
+extern UART_HandleTypeDef huart2;
+extern DMA_HandleTypeDef hdma_usart2_rx;
+
+#define WIFI_UART (&huart2)
+#define WIFI_UART_DMA_RX (&hdma_usart2_rx)
+
+StreamBufferHandle_t rxStream = NULL;
+// DMA buffer in D2 SRAM (non-cacheable region on STM32H7)
+// Use section attribute to place in SRAM2/D2 domain
+__attribute__((section(".dma_buffer"))) __attribute__((aligned(32)))
+uint8_t rx_dma_buf[128] = {0};
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -121,6 +135,63 @@ platform_uart_status_E platform_uart_transmit_dma(const uint8_t* data, size_t le
     else if (status == HAL_BUSY)
     {
         return PLATFORM_UART_BUSY;
+    }
+    else
+    {
+        return PLATFORM_UART_ERROR;
+    }
+}
+
+/*---------------------------------------------------------------------------
+ * WIFI
+ *---------------------------------------------------------------------------*/
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
+{
+    if (huart == WIFI_UART) {
+        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+        // Push bytes into stream buffer (DMA → Task)
+        xStreamBufferSendFromISR(rxStream, rx_dma_buf, size, &xHigherPriorityTaskWoken);
+
+        // Re-arm DMA reception
+        HAL_UARTEx_ReceiveToIdle_DMA(WIFI_UART, rx_dma_buf, sizeof(rx_dma_buf));
+        __HAL_DMA_DISABLE_IT(WIFI_UART_DMA_RX, DMA_IT_HT);
+
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+	if (huart == WIFI_UART) {
+		HAL_UARTEx_ReceiveToIdle_DMA(WIFI_UART, rx_dma_buf, sizeof(rx_dma_buf));
+        __HAL_DMA_DISABLE_IT(WIFI_UART_DMA_RX, DMA_IT_HT);
+    }
+}
+
+void wifi_rx_init(void)
+{
+    HAL_UARTEx_ReceiveToIdle_DMA(WIFI_UART, rx_dma_buf, sizeof(rx_dma_buf));
+    __HAL_DMA_DISABLE_IT(WIFI_UART_DMA_RX, DMA_IT_HT);
+}
+
+platform_uart_status_E wifi_uart_transmit_blocking(const uint8_t* data, size_t length)
+{
+    if (data == NULL || length == 0U)
+    {
+        return PLATFORM_UART_ERROR;
+    }
+
+    HAL_StatusTypeDef status =
+        HAL_UART_Transmit(WIFI_UART, (uint8_t*)data, length, UART_TX_TIMEOUT_MS);
+
+    if (status == HAL_OK)
+    {
+        return PLATFORM_UART_SUCCESS;
+    }
+    else if (status == HAL_TIMEOUT)
+    {
+        return PLATFORM_UART_TIMEOUT;
     }
     else
     {

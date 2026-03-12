@@ -25,7 +25,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "app.h"
+#include "tim.h"
+//#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -72,13 +74,26 @@ unsigned long getRunTimeCounterValue(void);
 /* Functions needed when configGENERATE_RUN_TIME_STATS is on */
 __weak void configureTimerForRunTimeStats(void)
 {
-
+  HAL_TIM_Base_Start(&htim5);
 }
 
 __weak unsigned long getRunTimeCounterValue(void)
 {
-return 0;
+  return TIM5->CNT;
 }
+
+/* Stack overflow hook */
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char* pcTaskName)
+{
+    /* This function will be called if a stack overflow is detected */
+    /* Halt execution for debugging */
+    (void)xTask;
+    (void)pcTaskName;
+    taskDISABLE_INTERRUPTS();
+    for (;;)
+        ;
+}
+
 /* USER CODE END 1 */
 
 /**
@@ -132,10 +147,8 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN StartDefaultTask */
   /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  (void)(argument);
+  app_init();
   /* USER CODE END StartDefaultTask */
 }
 

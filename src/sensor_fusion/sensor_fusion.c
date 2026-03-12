@@ -13,6 +13,7 @@
 #include "queue.h"
 #include "task.h"
 #include "uart_manager.h"
+#include "wifi.h"
 #include <math.h>
 
 /*---------------------------------------------------------------------------
@@ -35,6 +36,11 @@ STATIC void sensor_fusion_init(void);
 STATIC void sensor_fusion_task(void* pvParameters);
 STATIC void sensor_fusion_process_10Hz(void);
 STATIC void sensor_fusion_update_position_estimate(void);
+
+// Telemetry helpers (WIFI)
+STATIC void send_ranging_telemetry(const sensor_ranging_data_t* ranging, uint32_t timestamp_ms);
+STATIC void send_imu_telemetry(const sensor_event_t* event);
+STATIC void send_position_telemetry(const sensor_fusion_position_t* position);
 
 /*---------------------------------------------------------------------------
  * Module Functions
@@ -102,6 +108,7 @@ STATIC void process_ranging_event(const sensor_event_t* event)
     kalmanCoreFinalize(&kf_data);
 
     update_count++;
+
 }
 
 STATIC void process_imu_event(const sensor_event_t* event)
@@ -120,6 +127,7 @@ STATIC void process_imu_event(const sensor_event_t* event)
     // kalmanCoreUpdateWithGravity(&kf_data, &acc, 1.0f);
 
     kalmanCoreFinalize(&kf_data);
+    
 }
 
 STATIC void sensor_fusion_init(void)
@@ -173,6 +181,16 @@ STATIC void sensor_fusion_task(void* pvParameters)
         if (xQueueReceive(sensor_queue, &event, portMAX_DELAY) == pdPASS)
         {
             stats.events_popped++;
+
+            // Send telemetry over WIFI even when fusion is inactive (for monitoring raw data)
+            if (event.type == SENSOR_EVENT_IMU && imu_enabled)
+            {
+                send_imu_telemetry(&event);
+            }
+            else if (event.type == SENSOR_EVENT_RANGING)
+            {
+                send_ranging_telemetry(&event.data.ranging, event.timestamp_ms);
+            }
 
             // Discard events when sensor fusion is not active
             if (!fusion_active)
@@ -269,6 +287,77 @@ STATIC void sensor_fusion_update_position_estimate(void)
     position_estimate.confidence = (update_count < CONFIDENCE_RAMP_UPDATES)
                                        ? (float)update_count / (float)CONFIDENCE_RAMP_UPDATES
                                        : 1.0f;
+    
+    // Send position estimate to WiFi telemetry
+    send_position_telemetry(&position_estimate);
+}
+
+/*---------------------------------------------------------------------------
+ * Telemetry Helper Functions
+ *---------------------------------------------------------------------------*/
+
+/**
+ * @brief Send ranging telemetry to WiFi (non-blocking)
+ */
+STATIC void send_ranging_telemetry(const sensor_ranging_data_t* ranging, uint32_t timestamp_ms)
+{
+    if (!wifi_telemetry_is_ready())
+    {
+        return;
+    }
+    
+    telemetry_event_t telem = {
+        .type = TELEMETRY_EVENT_RANGING,
+        .timestamp_ms = timestamp_ms,
+        .data.ranging = *ranging
+    };
+    wifi_push_telemetry(&telem);
+}
+
+/**
+ * @brief Send IMU telemetry to WiFi (decimated to 10Hz)
+ */
+STATIC void send_imu_telemetry(const sensor_event_t* event)
+{
+    // IMU runs at 200Hz, so only send every 20th sample to avoid flooding
+    static uint8_t imu_decimation_counter = 0;
+
+    if (counter_uint8_t(&imu_decimation_counter, 20))
+    {
+        if (wifi_telemetry_is_ready())
+        {
+            telemetry_event_t telem = {
+                .type = TELEMETRY_EVENT_SENSOR_EVENT,
+                .timestamp_ms = event->timestamp_ms,
+                .data.sensor_event = *event
+            };
+            wifi_push_telemetry(&telem);
+        }
+    }
+}
+
+/**
+ * @brief Send position estimate telemetry to WiFi (throttled to 10Hz)
+ */
+STATIC void send_position_telemetry(const sensor_fusion_position_t* position)
+{
+    static uint32_t last_position_send = 0;
+    uint32_t now = platform_get_time_ms();
+    
+    // Throttle to max 10 Hz and only send when valid
+    if (position->valid && (now - last_position_send) >= 100)
+    {
+        if (wifi_telemetry_is_ready())
+        {
+            telemetry_event_t telem = {
+                .type = TELEMETRY_EVENT_POSITION,
+                .timestamp_ms = position->timestamp_ms,
+                .data.position = *position
+            };
+            wifi_push_telemetry(&telem);
+            last_position_send = now;
+        }
+    }
 }
 
 /*---------------------------------------------------------------------------
