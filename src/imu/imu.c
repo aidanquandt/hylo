@@ -2,6 +2,10 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "imu.h"
+/* Suppress -Wtype-limits when IMU_NUM_DEVICES is 0 (loop condition i < 0 is always false for uint8_t i). */
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wtype-limits"
+#endif
 #include "FreeRTOS.h"
 #include "common.h"
 #include "counter.h"
@@ -33,35 +37,33 @@
 typedef enum
 {
     FAULT_NONE = 0,
-    FAULT_INIT_NULL_DEV,
     FAULT_PROBE_FAILED,
-    FAULT_CHIP_ID_INVALID,
-    FAULT_ACCEL_CONFIG_FAILED,
-    FAULT_GYRO_CONFIG_FAILED,
     FAULT_READ_FAILED
 } imu_fault_code_e;
 
+/* Per-IMU context: device, state machine, and per-device state */
 typedef struct
 {
-    imu_data_t data;       // Public sensor data (accel, gyro, temperature)
-    uint8_t chip_id;       // Chip ID from device
-    uint32_t sample_count; // Total samples pushed to sensor fusion
+    imu_dev_t*         dev;
+    bool               active;
+    imu_data_t         raw_data;
+    uint8_t            chip_id;
+    imu_fault_code_e   fault_code;
+    state_machine_s    state_machine;
 } imu_ctx_t;
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
-STATIC bool verify_chip_id(void);
-STATIC bool imu_read_accel_and_gyro(void);
-STATIC void imu_read_temperature(void);
-STATIC void imu_push_to_sensor_fusion(void);
+STATIC bool imu_read_single(imu_ctx_t* ctx);
+STATIC void imu_aggregate_and_push(void);
 STATIC void imu_transform_accel(const vec3_t* accel_in, vec3_t* accel_out);
 STATIC void imu_transform_gyro(const vec3_t* gyro_in, vec3_t* gyro_out);
-STATIC void imu_state_machine_sample_inputs(void);
 STATIC uint16_t imu_transition_logic(uint16_t currentState, uint32_t stateTimer);
 STATIC void imu_state_initialization_on_entry(uint16_t prevState);
 STATIC void imu_state_active_process(void);
 STATIC void imu_state_faulted_on_entry(uint16_t prevState);
+STATIC imu_state_e imu_get_overall_state(void);
 
 /*---------------------------------------------------------------------------
  * Module Functions
@@ -90,141 +92,125 @@ STATIC const state_s imu_states[] = {
     [IMU_STATE_ACTIVE]  = {.process = imu_state_active_process, .onEntry = NULL, .onExit = NULL},
     [IMU_STATE_FAULTED] = {.process = NULL, .onEntry = imu_state_faulted_on_entry, .onExit = NULL}};
 
-STATIC state_machine_s imu_state_machine = {.prev_state      = IMU_STATE_STARTUP,
-                                            .curr_state      = IMU_STATE_STARTUP,
-                                            .next_state      = IMU_STATE_STARTUP,
-                                            .timer           = 0,
-                                            .transitionLogic = imu_transition_logic,
-                                            .states          = imu_states};
+/* Current context index used by state machine callbacks (set before state_machine_periodic) */
+STATIC volatile uint8_t imu_ctx_current_index = 0U;
 
-STATIC imu_dev_t* imu_dev              = NULL;
-STATIC imu_ctx_t ctx                   = {0};
-STATIC imu_fault_code_e imu_fault_code = FAULT_NONE;
+/* Shared startup delay: all IMUs transition STARTUP -> INITIALIZATION when this reaches threshold */
+STATIC uint32_t g_startup_delay_ticks = 0U;
+
+/* Per-IMU contexts (sized by IMU_MAX_DEVICES to avoid zero-length array when IMU_NUM_DEVICES is 0). */
+STATIC imu_ctx_t imu_ctxs[IMU_MAX_DEVICES];
+
+/* Aggregate output for sensor fusion and public API: mean of accel/gyro/temp over all
+ * IMUs currently in ACTIVE state. first_active_chip_id is the chip_id of the first
+ * active IMU in the aggregation order (for backward-compatible status reporting). */
+STATIC imu_data_t    aggregate_data        = {0};
+STATIC uint32_t      aggregate_sample_count = 0U;
+STATIC uint8_t       first_active_chip_id   = 0U;
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
-STATIC bool verify_chip_id(void)
+STATIC bool imu_read_single(imu_ctx_t* ctx)
 {
-    if (imu_dev == NULL)
+    if (ctx == NULL || !ctx->active || ctx->dev == NULL)
     {
         return false;
     }
 
-    int ret = imu_port_check_device_id(imu_dev);
-    if (ret != IMU_PORT_SUCCESS)
+    vec3_t raw_accel = {0.0f, 0.0f, 0.0f};
+    vec3_t raw_gyro  = {0.0f, 0.0f, 0.0f};
+
+    if (imu_port_read_accel_and_gyro(ctx->dev, &raw_accel, &raw_gyro) != IMU_PORT_SUCCESS)
     {
         return false;
     }
 
-    ctx.chip_id = imu_port_read_chip_id(imu_dev);
-
-    return (ctx.chip_id == IMU_EXPECTED_CHIP_ID_1 || ctx.chip_id == IMU_EXPECTED_CHIP_ID_2);
-}
-
-STATIC bool imu_read_accel_and_gyro(void)
-{
-    if (imu_dev == NULL)
-    {
-        imu_fault_code = FAULT_READ_FAILED;
-        return false;
-    }
-
-    vec3_t accel_pre_transform;
-    vec3_t gyro_pre_transform;
-
-    int result = imu_port_read_accel_and_gyro(imu_dev, &accel_pre_transform, &gyro_pre_transform);
-
-    if (result != IMU_PORT_SUCCESS)
-    {
-        imu_fault_code = FAULT_READ_FAILED;
-        return false;
-    }
-
-    imu_transform_accel(&accel_pre_transform, &ctx.data.accel);
-    imu_transform_gyro(&gyro_pre_transform, &ctx.data.gyro);
-
+    imu_transform_accel(&raw_accel, &ctx->raw_data.accel);
+    imu_transform_gyro(&raw_gyro, &ctx->raw_data.gyro);
     return true;
 }
 
-STATIC void imu_read_temperature(void)
+STATIC void imu_aggregate_and_push(void)
 {
-    if (imu_dev == NULL)
+    vec3_t accel_sum = {0.0f, 0.0f, 0.0f};
+    vec3_t gyro_sum  = {0.0f, 0.0f, 0.0f};
+    float  temp_sum  = 0.0f;
+    uint8_t count    = 0;
+    bool   first     = true;
+
+    if (IMU_NUM_DEVICES == 0U)
     {
-        imu_fault_code = FAULT_READ_FAILED;
+        return;
+    }
+    for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
+    {
+        imu_ctx_t* c = &imu_ctxs[i];
+        if (!c->active || c->state_machine.curr_state != IMU_STATE_ACTIVE)
+        {
+            continue;
+        }
+        accel_sum.x += c->raw_data.accel.x;
+        accel_sum.y += c->raw_data.accel.y;
+        accel_sum.z += c->raw_data.accel.z;
+        gyro_sum.x  += c->raw_data.gyro.x;
+        gyro_sum.y  += c->raw_data.gyro.y;
+        gyro_sum.z  += c->raw_data.gyro.z;
+        temp_sum    += c->raw_data.temperature;
+        count++;
+        if (first)
+        {
+            first_active_chip_id = c->chip_id;
+            first = false;
+        }
+    }
+
+    if (count == 0)
+    {
         return;
     }
 
-    ctx.data.temperature = imu_port_read_temperature(imu_dev);
+    float inv_n = 1.0f / (float)count;
+    aggregate_data.accel.x = accel_sum.x * inv_n;
+    aggregate_data.accel.y = accel_sum.y * inv_n;
+    aggregate_data.accel.z = accel_sum.z * inv_n;
+    aggregate_data.gyro.x  = gyro_sum.x  * inv_n;
+    aggregate_data.gyro.y  = gyro_sum.y  * inv_n;
+    aggregate_data.gyro.z  = gyro_sum.z  * inv_n;
+    aggregate_data.temperature = temp_sum * inv_n;
 }
 
 STATIC void imu_transform_accel(const vec3_t* accel_in, vec3_t* accel_out)
 {
-    // Identity mapping (sensor frame = body frame)
     accel_out->x = accel_in->z;
     accel_out->y = accel_in->y;
-    accel_out->z = -1 * accel_in->x;
+    accel_out->z = -1.0f * accel_in->x;
 }
 
 STATIC void imu_transform_gyro(const vec3_t* gyro_in, vec3_t* gyro_out)
 {
     gyro_out->x = gyro_in->z;
     gyro_out->y = gyro_in->y;
-    gyro_out->z = -1 * gyro_in->x;
-}
-
-STATIC void imu_push_to_sensor_fusion(void)
-{
-    sensor_event_t event = {.type         = SENSOR_EVENT_IMU,
-                            .timestamp_ms = platform_get_time_ms(),
-                            .sequence     = ctx.sample_count,
-                            .data.imu     = {.accel_x = ctx.data.accel.x,
-                                             .accel_y = ctx.data.accel.y,
-                                             .accel_z = ctx.data.accel.z,
-                                             .gyro_x  = ctx.data.gyro.x,
-                                             .gyro_y  = ctx.data.gyro.y,
-                                             .gyro_z  = ctx.data.gyro.z,
-                                             .temp_c  = ctx.data.temperature}};
-
-    sensor_fusion_status_e sf_status = sensor_fusion_push_event(&event);
-    if (sf_status != SENSOR_FUSION_SUCCESS)
-    {
-        error_handler_log(ERROR_SEVERITY_WARNING, "imu",
-                          "Failed to push IMU event to sensor fusion: %d", sf_status);
-    }
-}
-
-STATIC void imu_init(void)
-{
-    // Initialization handled by state machine on first process call
-}
-
-STATIC void imu_process_1kHz(void)
-{
-    imu_state_machine_sample_inputs();
-    state_machine_periodic(&imu_state_machine);
-}
-
-STATIC void imu_state_machine_sample_inputs(void)
-{
-    // State machine input sampling (currently unused, kept for future expansion)
+    gyro_out->z = -1.0f * gyro_in->x;
 }
 
 STATIC uint16_t imu_transition_logic(uint16_t currentState, uint32_t stateTimer)
 {
     uint16_t nextState = currentState;
+    uint8_t  idx       = imu_ctx_current_index;
+    imu_ctx_t* ctx    = &imu_ctxs[idx];
 
     switch (currentState)
     {
         case IMU_STATE_STARTUP:
-            if (stateTimer >= MS_TO_1KHZ_TICKS(STARTUP_DELAY_MS))
+            if (g_startup_delay_ticks >= STARTUP_DELAY_MS)
             {
                 nextState = IMU_STATE_INITIALIZATION;
             }
             break;
 
         case IMU_STATE_INITIALIZATION:
-            if (imu_fault_code != FAULT_NONE)
+            if (ctx->fault_code != FAULT_NONE)
             {
                 nextState = IMU_STATE_FAULTED;
             }
@@ -235,7 +221,7 @@ STATIC uint16_t imu_transition_logic(uint16_t currentState, uint32_t stateTimer)
             break;
 
         case IMU_STATE_ACTIVE:
-            if (imu_fault_code != FAULT_NONE)
+            if (ctx->fault_code != FAULT_NONE)
             {
                 nextState = IMU_STATE_FAULTED;
             }
@@ -257,61 +243,67 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
 {
     (void)prevState;
 
-    imu_fault_code   = FAULT_NONE;
-    ctx.sample_count = 0;
+    uint8_t  idx = imu_ctx_current_index;
+    imu_ctx_t* ctx = &imu_ctxs[idx];
 
-    imu_dev = imu_port_init();
-    if (imu_dev == NULL)
+    ctx->fault_code = FAULT_NONE;
+    ctx->active     = false;
+    memset(&ctx->raw_data, 0, sizeof(ctx->raw_data));
+    ctx->chip_id = 0;
+    ctx->dev    = imu_port_init((imu_device_e)idx);
+    if (ctx->dev == NULL)
     {
-        imu_fault_code = FAULT_INIT_NULL_DEV;
+        error_handler_log(ERROR_SEVERITY_WARNING, "imu", "IMU %u: init returned NULL", idx);
+        ctx->fault_code = FAULT_PROBE_FAILED;
         return;
     }
 
-    int probe_result = imu_port_probe_and_init(imu_dev);
-    if (probe_result != IMU_PORT_SUCCESS)
+    if (imu_port_probe_and_init(ctx->dev) != IMU_PORT_SUCCESS)
     {
-        imu_fault_code = FAULT_PROBE_FAILED;
+        error_handler_log(ERROR_SEVERITY_WARNING, "imu", "IMU %u: probe/init failed", idx);
+        ctx->dev = NULL;
+        ctx->fault_code = FAULT_PROBE_FAILED;
         return;
     }
 
-    if (!verify_chip_id())
+    uint8_t chip_id = imu_port_read_chip_id(ctx->dev);
+    if (chip_id != IMU_EXPECTED_CHIP_ID_1 && chip_id != IMU_EXPECTED_CHIP_ID_2)
     {
-        imu_fault_code = FAULT_CHIP_ID_INVALID;
+        error_handler_log(ERROR_SEVERITY_WARNING, "imu", "IMU %u: invalid chip ID 0x%02X", idx,
+                          chip_id);
+        ctx->dev = NULL;
+        ctx->fault_code = FAULT_PROBE_FAILED;
+        return;
+    }
+    ctx->chip_id = chip_id;
+
+    if (imu_port_configure_accel(ctx->dev, IMU_ACCEL_RANGE_2G, IMU_ODR_200HZ) != IMU_PORT_SUCCESS)
+    {
+        error_handler_log(ERROR_SEVERITY_WARNING, "imu", "IMU %u: accel config failed", idx);
+        ctx->dev = NULL;
+        ctx->fault_code = FAULT_PROBE_FAILED;
         return;
     }
 
-    int accel_result = imu_port_configure_accel(imu_dev, IMU_ACCEL_RANGE_2G, IMU_ODR_200HZ);
-    if (accel_result != IMU_PORT_SUCCESS)
+    if (imu_port_configure_gyro(ctx->dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_200HZ) != IMU_PORT_SUCCESS)
     {
-        imu_fault_code = FAULT_ACCEL_CONFIG_FAILED;
+        error_handler_log(ERROR_SEVERITY_WARNING, "imu", "IMU %u: gyro config failed", idx);
+        ctx->dev = NULL;
+        ctx->fault_code = FAULT_PROBE_FAILED;
         return;
     }
 
-    int gyro_result = imu_port_configure_gyro(imu_dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_200HZ);
-    if (gyro_result != IMU_PORT_SUCCESS)
-    {
-        imu_fault_code = FAULT_GYRO_CONFIG_FAILED;
-        return;
-    }
+    ctx->active = true;
 }
 
 STATIC void imu_state_active_process(void)
 {
-    static uint8_t prescaler_counter_accel_gyro = 0;
-    static uint16_t prescaler_counter_temp      = 0;
+    uint8_t  idx = imu_ctx_current_index;
+    imu_ctx_t* ctx = &imu_ctxs[idx];
 
-    if (counter_uint8_t(&prescaler_counter_accel_gyro, IMU_ACCEL_GYRO_PRESCALER))
+    if (!imu_read_single(ctx))
     {
-        if (imu_read_accel_and_gyro())
-        {
-            imu_push_to_sensor_fusion();
-            ctx.sample_count++;
-        }
-    }
-
-    if (counter_uint16_t(&prescaler_counter_temp, IMU_TEMPERATURE_PRESCALER))
-    {
-        imu_read_temperature();
+        ctx->fault_code = FAULT_READ_FAILED;
     }
 }
 
@@ -319,47 +311,198 @@ STATIC void imu_state_faulted_on_entry(uint16_t prevState)
 {
     (void)prevState;
 
+    uint8_t  idx = imu_ctx_current_index;
+    imu_ctx_t* ctx = &imu_ctxs[idx];
+
     const char* fault_str;
-    switch (imu_fault_code)
+    switch (ctx->fault_code)
     {
-        case FAULT_INIT_NULL_DEV:
-            fault_str = "Device init failed (NULL)";
-            break;
         case FAULT_PROBE_FAILED:
-            fault_str = "Probe/init failed";
-            break;
-        case FAULT_CHIP_ID_INVALID:
-            fault_str = "Invalid chip ID";
-            break;
-        case FAULT_ACCEL_CONFIG_FAILED:
-            fault_str = "Accel config failed";
-            break;
-        case FAULT_GYRO_CONFIG_FAILED:
-            fault_str = "Gyro config failed";
+            fault_str = "probe/init failed";
             break;
         case FAULT_READ_FAILED:
-            fault_str = "Sensor read failed";
+            fault_str = "sensor read failed";
             break;
         default:
-            fault_str = "Unknown fault";
+            fault_str = "unknown fault";
             break;
     }
 
-    error_handler_log(ERROR_SEVERITY_ERROR, "imu", "%s (code=%u)", fault_str, imu_fault_code);
+    error_handler_log(ERROR_SEVERITY_ERROR, "imu", "IMU %u: %s (code=%u)", idx, fault_str,
+                      (uint8_t)ctx->fault_code);
+}
+
+STATIC imu_state_e imu_get_overall_state(void)
+{
+    bool any_startup = false;
+    bool any_init    = false;
+    bool any_active  = false;
+
+    if (IMU_NUM_DEVICES == 0U)
+    {
+        return IMU_STATE_FAULTED;
+    }
+    for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
+    {
+        uint16_t s = imu_ctxs[i].state_machine.curr_state;
+        switch (s)
+        {
+            case IMU_STATE_STARTUP:
+                any_startup = true;
+                break;
+            case IMU_STATE_INITIALIZATION:
+                any_init = true;
+                break;
+            case IMU_STATE_ACTIVE:
+                any_active = true;
+                break;
+            case IMU_STATE_FAULTED:
+                break;
+            default:
+                break;
+        }
+    }
+
+    if (any_active)
+    {
+        return IMU_STATE_ACTIVE;
+    }
+    if (any_init || any_startup)
+    {
+        return any_init ? IMU_STATE_INITIALIZATION : IMU_STATE_STARTUP;
+    }
+    return IMU_STATE_FAULTED;
+}
+
+STATIC void imu_init(void)
+{
+    /* Initialize all slots to a known state (avoids uninitialized read when IMU_NUM_DEVICES is 0). */
+    for (uint8_t i = 0; i < (uint8_t)IMU_MAX_DEVICES; i++)
+    {
+        imu_ctx_t* ctx = &imu_ctxs[i];
+        memset(ctx, 0, sizeof(*ctx));
+        ctx->state_machine.prev_state      = IMU_STATE_STARTUP;
+        ctx->state_machine.curr_state      = IMU_STATE_STARTUP;
+        ctx->state_machine.next_state      = IMU_STATE_STARTUP;
+        ctx->state_machine.timer           = 0;
+        ctx->state_machine.transitionLogic = imu_transition_logic;
+        ctx->state_machine.states          = imu_states;
+    }
+}
+
+STATIC void imu_process_1kHz(void)
+{
+    if (IMU_NUM_DEVICES == 0U)
+    {
+        return;
+    }
+
+    if (IMU_NUM_DEVICES > 0U)
+    {
+        if (g_startup_delay_ticks < STARTUP_DELAY_MS)
+        {
+            g_startup_delay_ticks++;
+        }
+
+        for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
+        {
+            imu_ctx_current_index = i;
+            state_machine_periodic(&imu_ctxs[i].state_machine);
+        }
+    }
+
+    /* Aggregate and push at 200 Hz; read temperatures at 1 Hz */
+    static uint8_t  prescaler_avg  = 0;
+    static uint16_t prescaler_temp = 0;
+
+    if (counter_uint8_t(&prescaler_avg, IMU_ACCEL_GYRO_PRESCALER))
+    {
+        imu_aggregate_and_push();
+        if (imu_get_overall_state() == IMU_STATE_ACTIVE)
+        {
+            sensor_event_t event = {
+                .type         = SENSOR_EVENT_IMU,
+                .timestamp_ms = platform_get_time_ms(),
+                .sequence     = aggregate_sample_count,
+                .data.imu     = {
+                    .accel_x = aggregate_data.accel.x,
+                    .accel_y = aggregate_data.accel.y,
+                    .accel_z = aggregate_data.accel.z,
+                    .gyro_x  = aggregate_data.gyro.x,
+                    .gyro_y  = aggregate_data.gyro.y,
+                    .gyro_z  = aggregate_data.gyro.z,
+                    .temp_c  = aggregate_data.temperature
+                }
+            };
+            sensor_fusion_status_e sf_status = sensor_fusion_push_event(&event);
+            if (sf_status != SENSOR_FUSION_SUCCESS)
+            {
+                error_handler_log(ERROR_SEVERITY_WARNING, "imu",
+                                  "Failed to push IMU event to sensor fusion: %d", sf_status);
+            }
+            aggregate_sample_count++;
+        }
+    }
+
+    if (counter_uint16_t(&prescaler_temp, IMU_TEMPERATURE_PRESCALER))
+    {
+        if (IMU_NUM_DEVICES > 0U)
+        {
+            for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
+            {
+                imu_ctx_t* c = &imu_ctxs[i];
+                if (!c->active || c->dev == NULL)
+                {
+                    continue;
+                }
+                float t = imu_port_read_temperature(c->dev);
+                /* Only update on success; 0.0f is used by port to indicate read failure. */
+                if (t != 0.0f)
+                {
+                    c->raw_data.temperature = t;
+                }
+            }
+        }
+        imu_aggregate_and_push();
+    }
 }
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
+/* Returns true if at least one active IMU accepted soft reset (any-success semantics). */
 bool imu_soft_reset(void)
 {
-    if (imu_dev == NULL || imu_state_machine.curr_state != IMU_STATE_ACTIVE)
+    if (imu_get_overall_state() != IMU_STATE_ACTIVE)
     {
         return false;
     }
 
-    imu_port_status_t ret = imu_port_soft_reset(imu_dev);
-    return (ret == IMU_PORT_SUCCESS);
+    bool any_ok = false;
+    if (IMU_NUM_DEVICES > 0U)
+    {
+        for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
+        {
+            imu_ctx_t* c = &imu_ctxs[i];
+            if (c->active && c->dev != NULL)
+            {
+                if (imu_port_soft_reset(c->dev) == IMU_PORT_SUCCESS)
+                {
+                    any_ok = true;
+                }
+            }
+        }
+    }
+    return any_ok;
+}
+
+imu_state_e imu_get_state(imu_device_e device)
+{
+    if ((uint8_t)device >= (uint8_t)IMU_MAX_DEVICES || IMU_NUM_DEVICES == 0U)
+    {
+        return IMU_STATE_FAULTED;
+    }
+    return (imu_state_e)imu_ctxs[(uint8_t)device].state_machine.curr_state;
 }
 
 void imu_get_status(imu_status_t* status)
@@ -369,51 +512,104 @@ void imu_get_status(imu_status_t* status)
         return;
     }
 
-    status->state      = (imu_state_e)imu_state_machine.curr_state;
-    status->chip_id    = ctx.chip_id;
-    status->fault_code = imu_fault_code;
+    status->state   = imu_get_overall_state();
+    status->chip_id = first_active_chip_id; /* First active IMU at last aggregation; 0 if none */
+    status->fault_code = 0U;
+    if (IMU_NUM_DEVICES > 0U)
+    {
+        for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
+        {
+            if (imu_ctxs[i].state_machine.curr_state == IMU_STATE_FAULTED)
+            {
+                status->fault_code = (uint32_t)imu_ctxs[i].fault_code;
+                break;
+            }
+        }
+    }
 }
 
 bool imu_get_data(imu_data_t* data)
 {
-    if (data == NULL || imu_state_machine.curr_state != IMU_STATE_ACTIVE)
+    if (data == NULL || imu_get_overall_state() != IMU_STATE_ACTIVE)
     {
         return false;
     }
 
-    *data = ctx.data;
+    *data = aggregate_data;
     return true;
 }
 
 bool imu_get_accel(vec3_t* accel)
 {
-    if (accel == NULL || imu_state_machine.curr_state != IMU_STATE_ACTIVE)
+    if (accel == NULL || imu_get_overall_state() != IMU_STATE_ACTIVE)
     {
         return false;
     }
 
-    *accel = ctx.data.accel;
+    *accel = aggregate_data.accel;
     return true;
 }
 
 bool imu_get_gyro(vec3_t* gyro)
 {
-    if (gyro == NULL || imu_state_machine.curr_state != IMU_STATE_ACTIVE)
+    if (gyro == NULL || imu_get_overall_state() != IMU_STATE_ACTIVE)
     {
         return false;
     }
 
-    *gyro = ctx.data.gyro;
+    *gyro = aggregate_data.gyro;
     return true;
 }
 
-bool imu_get_temp(float* temp)
+bool imu_get_temp(imu_device_e device, float* temp)
 {
-    if (temp == NULL || imu_state_machine.curr_state != IMU_STATE_ACTIVE)
+    if (temp == NULL || (uint8_t)device >= (uint8_t)IMU_MAX_DEVICES || IMU_NUM_DEVICES == 0U)
+    {
+        return false;
+    }
+    if (imu_get_state(device) != IMU_STATE_ACTIVE)
     {
         return false;
     }
 
-    *temp = ctx.data.temperature;
-    return true;
+    uint8_t idx = (uint8_t)device;
+    *temp = imu_ctxs[idx].raw_data.temperature;
+    return imu_ctxs[idx].active;
+}
+
+bool imu_get_individual_data(imu_device_e device, imu_data_t* data)
+{
+    if (data == NULL || (uint8_t)device >= (uint8_t)IMU_MAX_DEVICES || IMU_NUM_DEVICES == 0U)
+    {
+        return false;
+    }
+    if (imu_get_state(device) != IMU_STATE_ACTIVE)
+    {
+        return false;
+    }
+
+    uint8_t idx = (uint8_t)device;
+    *data = imu_ctxs[idx].raw_data;
+    return imu_ctxs[idx].active;
+}
+
+uint8_t imu_get_device_count(void)
+{
+    return (uint8_t)IMU_NUM_DEVICES;
+}
+
+uint8_t imu_get_active_count(void)
+{
+    uint8_t n = 0;
+    if (IMU_NUM_DEVICES > 0U)
+    {
+        for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
+        {
+            if (imu_ctxs[i].active && imu_ctxs[i].state_machine.curr_state == IMU_STATE_ACTIVE)
+            {
+                n++;
+            }
+        }
+    }
+    return n;
 }

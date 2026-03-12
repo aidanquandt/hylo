@@ -10,7 +10,7 @@
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define SPI_TIMEOUT_MS (100U)
+#define SPI_TIMEOUT_MS (5U)
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -36,11 +36,12 @@ extern SPI_HandleTypeDef hspi2; //imu
 STATIC const spi_cs_map_t cs_map[] = {
 #if (HWREV == 0)
     [PLATFORM_SPI_CS_UWB] = {SPI1_CSn_GPIO_Port, SPI1_CSn_Pin, &hspi1},
-
-    [PLATFORM_SPI_CS_IMU] = {SPI5_CSn_GPIO_Port, SPI5_CSn_Pin, &hspi5},
 #elif (HWREV == 1)
-    [PLATFORM_SPI_CS_UWB] = {SPI4_CSn_GPIO_Port, SPI4_CSn_Pin, &hspi4},
-    [PLATFORM_SPI_CS_IMU] = {BMI_CS2_GPIO_Port, BMI_CS2_Pin, &hspi2},
+    [PLATFORM_SPI_CS_UWB]   = {SPI4_CSn_GPIO_Port, SPI4_CSn_Pin, &hspi4},
+    [PLATFORM_SPI_CS_IMU_0] = {BMI_CS2_GPIO_Port,  BMI_CS2_Pin,  &hspi2},
+    [PLATFORM_SPI_CS_IMU_1] = {BMI_CS1_GPIO_Port,  BMI_CS1_Pin,  &hspi2},
+    [PLATFORM_SPI_CS_IMU_2] = {BMI_CS3_GPIO_Port,  BMI_CS3_Pin,  &hspi2},
+    [PLATFORM_SPI_CS_IMU_3] = {BMI_CS4_GPIO_Port,  BMI_CS4_Pin,  &hspi2},
 #endif
 };
 

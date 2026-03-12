@@ -4,6 +4,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "common.h"
+#include "feature_config.h"
 #include "platform_spi.h"
 
 /*---------------------------------------------------------------------------
@@ -19,6 +20,20 @@ typedef struct imu_dev_s imu_dev_t;
 /*---------------------------------------------------------------------------
  * Typedefs
  *---------------------------------------------------------------------------*/
+typedef enum
+{
+#if FEATURE_IMUS_POPULATED
+    IMU_DEVICE_0 = 0,
+    IMU_DEVICE_1,
+    IMU_DEVICE_2,
+    IMU_DEVICE_3,
+#endif
+    IMU_NUM_DEVICES /* last: 0 or 4; use for iteration and bounds */
+} imu_device_e;
+
+/* Max devices for static array sizing (avoids zero-length arrays when IMU_NUM_DEVICES is 0). */
+#define IMU_MAX_DEVICES (4U)
+
 typedef enum
 {
     IMU_PORT_SUCCESS          = 0,
@@ -73,7 +88,7 @@ typedef enum
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
-imu_dev_t* imu_port_init(void);
+imu_dev_t* imu_port_init(imu_device_e device);
 imu_port_status_t imu_port_probe_and_init(imu_dev_t* dev);
 imu_port_status_t imu_port_check_device_id(imu_dev_t* dev);
 uint8_t imu_port_read_chip_id(imu_dev_t* dev);

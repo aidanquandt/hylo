@@ -7,6 +7,7 @@
 #include "datalogger.h"
 #include "error_handler.h"
 #include "imu.h"
+#include "uart_manager.h"
 #include "ota_config.h"
 #include "platform_system.h"
 #include "sensor_fusion.h"
@@ -86,6 +87,9 @@ STATIC void uart_cmd_router_handle_list(void)
     uart_manager_print("  system     - System information (UUID, device ID)\r\n");
     uart_manager_print("  data       - Data communications module\r\n");
     uart_manager_print("  imu        - IMU sensor module\r\n");
+    uart_manager_print("               imu.get.status | imu.get.data | imu.get.accel\r\n");
+    uart_manager_print("               imu.get.gyro   | imu.get.temp | imu.get.array\r\n");
+    uart_manager_print("               imu.stream.array (10Hz) | imu.stream.avg (10Hz) | imu.stream.stop\r\n");
     uart_manager_print("  uwb_node   - UWB node identity and configuration\r\n");
     uart_manager_print("  uwb        - UWB radio transceiver\r\n");
     uart_manager_print("  twr        - Two-Way Ranging service\r\n");
@@ -162,7 +166,27 @@ STATIC void uart_cmd_router_handle_imu(const char* action, const char* target, c
                     state_str = "startup";
                     break;
             }
-            uart_manager_print("IMU: %s, chip_id=0x%02X\r\n", state_str, status.chip_id);
+            uart_manager_print("IMU overall: %s, chip_id=0x%02X\r\n", state_str, status.chip_id);
+            for (uint8_t i = 0; i < imu_get_device_count(); i++)
+            {
+                imu_state_e s = imu_get_state((imu_device_e)i);
+                switch (s)
+                {
+                    case IMU_STATE_ACTIVE:
+                        state_str = "active";
+                        break;
+                    case IMU_STATE_INITIALIZATION:
+                        state_str = "init";
+                        break;
+                    case IMU_STATE_FAULTED:
+                        state_str = "FAULTED";
+                        break;
+                    default:
+                        state_str = "startup";
+                        break;
+                }
+                uart_manager_print("  IMU%u: %s\r\n", i, state_str);
+            }
         }
         else if (strcmp(target, "data") == 0)
         {
@@ -207,15 +231,80 @@ STATIC void uart_cmd_router_handle_imu(const char* action, const char* target, c
         }
         else if (strcmp(target, "temp") == 0)
         {
-            float temp;
-            if (imu_get_temp(&temp))
+            uint8_t n = imu_get_device_count();
+            if (n == 0)
             {
-                uart_manager_print("Temp: %.2f C\r\n", temp);
+                uart_manager_print("No IMUs on this board\r\n");
             }
             else
             {
-                uart_manager_print("IMU not active\r\n");
+                for (uint8_t i = 0; i < n; i++)
+                {
+                    float temp;
+                    if (imu_get_temp((imu_device_e)i, &temp))
+                    {
+                        uart_manager_print("IMU%u: %.2f C\r\n", i, temp);
+                    }
+                    else
+                    {
+                        uart_manager_print("IMU%u: inactive\r\n", i);
+                    }
+                }
             }
+        }
+        else if (strcmp(target, "array") == 0)
+        {
+            uint8_t n      = imu_get_device_count();
+            uint8_t active = imu_get_active_count();
+            uart_manager_print("IMU Array (%u/%u active):\r\n", active, n);
+
+            for (uint8_t i = 0; i < n; i++)
+            {
+                imu_data_t d;
+                if (imu_get_individual_data((imu_device_e)i, &d))
+                {
+                    uart_manager_print(
+                        "  IMU[%u]: Accel X=%+.3f Y=%+.3f Z=%+.3f m/s^2 | Gyro X=%+.3f Y=%+.3f "
+                        "Z=%+.3f rad/s\r\n",
+                        i, d.accel.x, d.accel.y, d.accel.z, d.gyro.x, d.gyro.y, d.gyro.z);
+                }
+                else
+                {
+                    uart_manager_print("  IMU[%u]: inactive\r\n", i);
+                }
+            }
+
+            imu_data_t avg;
+            if (imu_get_data(&avg))
+            {
+                uart_manager_print(
+                    "  AVG:    Accel X=%+.3f Y=%+.3f Z=%+.3f m/s^2 | Gyro X=%+.3f Y=%+.3f "
+                    "Z=%+.3f rad/s\r\n",
+                    avg.accel.x, avg.accel.y, avg.accel.z, avg.gyro.x, avg.gyro.y, avg.gyro.z);
+                uart_manager_print("  Temp:   %.2f C\r\n", avg.temperature);
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else if (strcmp(action, "stream") == 0)
+    {
+        if (strcmp(target, "array") == 0)
+        {
+            uart_manager_imu_stream_enable();
+            uart_manager_print("IMU array streaming started at 10Hz. Send 'imu.stream.stop' to halt.\r\n");
+        }
+        else if (strcmp(target, "avg") == 0)
+        {
+            uart_manager_imu_stream_enable_avg();
+            uart_manager_print("IMU average streaming started at 10Hz. Send 'imu.stream.stop' to halt.\r\n");
+        }
+        else if (strcmp(target, "stop") == 0)
+        {
+            uart_manager_imu_stream_disable();
+            uart_manager_print("IMU stream stopped.\r\n");
         }
         else
         {
@@ -569,8 +658,8 @@ STATIC void uart_cmd_router_handle_datalogger(const char* action, const char* ta
         if (strcmp(target, "tasks") == 0)
         {
             uart_manager_print("\r\nTask List:\r\n");
-            task_cpu_info_t tasks[20];
-            uint32_t count = datalogger_get_task_usage(tasks, 20);
+            task_cpu_info_t tasks[DATALOGGER_MAX_TASKS];
+            uint32_t count = datalogger_get_task_usage(tasks, DATALOGGER_MAX_TASKS);
             for (uint32_t i = 0; i < count; i++)
             {
                 uart_manager_print("%-20s %5.2f%%\r\n", tasks[i].task_name, tasks[i].cpu_percent);
@@ -581,8 +670,8 @@ STATIC void uart_cmd_router_handle_datalogger(const char* action, const char* ta
             uart_manager_print("\r\nSystem Statistics:\r\n");
 
             system_stats_t stats;
-            task_cpu_info_t task_buffer[20];
-            datalogger_get_system_stats(&stats, task_buffer, 20);
+            task_cpu_info_t task_buffer[DATALOGGER_MAX_TASKS];
+            datalogger_get_system_stats(&stats, task_buffer, DATALOGGER_MAX_TASKS);
 
             uart_manager_print("Memory:\r\n");
             uart_manager_print("  Current Free:     %u bytes\r\n",

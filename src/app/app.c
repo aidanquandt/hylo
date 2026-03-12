@@ -78,6 +78,11 @@ STATIC void module_task_1Hz(void* argument)
             {
                 worst_latency_ticks[module] = latency;
             }
+            // Snap forward after a large overrun to avoid a catch-up storm of rapid-fire ticks
+            if (latency > TASK_RATE_1HZ)
+            {
+                lastWake = now;
+            }
         }
 
         vTaskDelayUntil(&lastWake, TASK_RATE_1HZ);
@@ -103,6 +108,10 @@ STATIC void module_task_10Hz(void* argument)
             if (latency > worst_latency_ticks[module])
             {
                 worst_latency_ticks[module] = latency;
+            }
+            if (latency > TASK_RATE_10HZ)
+            {
+                lastWake = now;
             }
         }
 
@@ -130,6 +139,10 @@ STATIC void module_task_100Hz(void* argument)
             {
                 worst_latency_ticks[module] = latency;
             }
+            if (latency > TASK_RATE_100HZ)
+            {
+                lastWake = now;
+            }
         }
 
         vTaskDelayUntil(&lastWake, TASK_RATE_100HZ);
@@ -155,6 +168,11 @@ STATIC void module_task_1kHz(void* argument)
             if (latency > worst_latency_ticks[module])
             {
                 worst_latency_ticks[module] = latency;
+            }
+            // Snap forward after a large overrun (e.g. IMU init) to avoid a flood of catch-up ticks
+            if (latency > TASK_RATE_1KHZ * 5)
+            {
+                lastWake = now;
             }
         }
 
@@ -307,4 +325,14 @@ void app_get_deadline_stats(modules_E module, deadline_stats_t* stats)
     stats->miss_count       = deadline_miss_count[module];
     stats->worst_latency_ms = worst_latency_ticks[module];
     stats->period_ms        = module_period_ms[module];
+}
+
+void app_reset_deadline_stats(modules_E module)
+{
+    if (module >= NUM_MODULES)
+    {
+        return;
+    }
+
+    worst_latency_ticks[module] = 0;
 }
