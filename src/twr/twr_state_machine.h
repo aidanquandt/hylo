@@ -8,8 +8,8 @@
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define TWR_TIMEOUT_MS 3U
-#define TWR_TX_COMPLETION_TIMEOUT_MS 2U
+#define TWR_TIMEOUT_MS 20U
+#define TWR_TX_COMPLETION_TIMEOUT_MS 10U
 
 /*---------------------------------------------------------------------------
  * Public Function Prototypes

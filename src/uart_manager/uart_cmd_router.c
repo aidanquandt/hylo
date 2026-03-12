@@ -7,6 +7,7 @@
 #include "datalogger.h"
 #include "error_handler.h"
 #include "imu.h"
+#include "uart_manager.h"
 #include "ota_config.h"
 #include "platform_system.h"
 #include "sensor_fusion.h"
@@ -86,6 +87,9 @@ STATIC void uart_cmd_router_handle_list(void)
     uart_manager_print("  system     - System information (UUID, device ID)\r\n");
     uart_manager_print("  data       - Data communications module\r\n");
     uart_manager_print("  imu        - IMU sensor module\r\n");
+    uart_manager_print("               imu.get.status | imu.get.data | imu.get.accel\r\n");
+    uart_manager_print("               imu.get.gyro   | imu.get.temp | imu.get.array\r\n");
+    uart_manager_print("               imu.stream.array (10Hz) | imu.stream.avg (10Hz) | imu.stream.stop\r\n");
     uart_manager_print("  uwb_node   - UWB node identity and configuration\r\n");
     uart_manager_print("  uwb        - UWB radio transceiver\r\n");
     uart_manager_print("  twr        - Two-Way Ranging service\r\n");
@@ -216,6 +220,59 @@ STATIC void uart_cmd_router_handle_imu(const char* action, const char* target, c
             {
                 uart_manager_print("IMU not active\r\n");
             }
+        }
+        else if (strcmp(target, "array") == 0)
+        {
+            uint8_t active = imu_get_active_count();
+            uart_manager_print("IMU Array (%u/%u active):\r\n", active, IMU_NUM_DEVICES);
+
+            for (uint8_t i = 0; i < IMU_NUM_DEVICES; i++)
+            {
+                imu_data_t d;
+                if (imu_get_individual_data(i, &d))
+                {
+                    uart_manager_print(
+                        "  IMU[%u]: Accel X=%+.3f Y=%+.3f Z=%+.3f m/s^2 | Gyro X=%+.3f Y=%+.3f "
+                        "Z=%+.3f rad/s\r\n",
+                        i, d.accel.x, d.accel.y, d.accel.z, d.gyro.x, d.gyro.y, d.gyro.z);
+                }
+                else
+                {
+                    uart_manager_print("  IMU[%u]: inactive\r\n", i);
+                }
+            }
+
+            imu_data_t avg;
+            if (imu_get_data(&avg))
+            {
+                uart_manager_print(
+                    "  AVG:    Accel X=%+.3f Y=%+.3f Z=%+.3f m/s^2 | Gyro X=%+.3f Y=%+.3f "
+                    "Z=%+.3f rad/s\r\n",
+                    avg.accel.x, avg.accel.y, avg.accel.z, avg.gyro.x, avg.gyro.y, avg.gyro.z);
+                uart_manager_print("  Temp:   %.2f C\r\n", avg.temperature);
+            }
+        }
+        else
+        {
+            uart_manager_print("ERR: Unknown target '%s'\r\n", target);
+        }
+    }
+    else if (strcmp(action, "stream") == 0)
+    {
+        if (strcmp(target, "array") == 0)
+        {
+            uart_manager_imu_stream_enable();
+            uart_manager_print("IMU array streaming started at 10Hz. Send 'imu.stream.stop' to halt.\r\n");
+        }
+        else if (strcmp(target, "avg") == 0)
+        {
+            uart_manager_imu_stream_enable_avg();
+            uart_manager_print("IMU average streaming started at 10Hz. Send 'imu.stream.stop' to halt.\r\n");
+        }
+        else if (strcmp(target, "stop") == 0)
+        {
+            uart_manager_imu_stream_disable();
+            uart_manager_print("IMU stream stopped.\r\n");
         }
         else
         {

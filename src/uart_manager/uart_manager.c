@@ -47,6 +47,7 @@ typedef struct
  *---------------------------------------------------------------------------*/
 STATIC void uart_manager_init(void);
 STATIC void uart_manager_create_task(void);
+STATIC void uart_manager_process_10Hz(void);
 STATIC void uart_manager_process_100Hz(void);
 
 extern const module_S uart_manager_module;
@@ -56,7 +57,7 @@ const module_S uart_manager_module = {
     .module_init          = uart_manager_init,
     .module_create_task   = uart_manager_create_task,
     .module_process_1Hz   = NULL,
-    .module_process_10Hz   = NULL,
+    .module_process_10Hz  = uart_manager_process_10Hz,
     .module_process_100Hz = uart_manager_process_100Hz,
     .module_process_1kHz  = NULL,
 };
@@ -82,6 +83,9 @@ STATIC bool last_was_cr                  = false;
 // Recursion guard: prevent error_handler from using UART if UART is calling error_handler
 STATIC volatile bool in_error_handler_call = false;
 
+typedef enum { IMU_STREAM_OFF = 0, IMU_STREAM_AVG, IMU_STREAM_ARRAY } imu_stream_mode_e;
+STATIC volatile imu_stream_mode_e imu_stream_mode = IMU_STREAM_OFF;
+
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
@@ -97,6 +101,77 @@ STATIC void uart_manager_default_cmd_handler(const char* cmd, uint16_t length);
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
+void uart_manager_imu_stream_enable(void)
+{
+    imu_stream_mode = IMU_STREAM_ARRAY;
+}
+
+void uart_manager_imu_stream_enable_avg(void)
+{
+    imu_stream_mode = IMU_STREAM_AVG;
+}
+
+void uart_manager_imu_stream_disable(void)
+{
+    imu_stream_mode = IMU_STREAM_OFF;
+}
+
+STATIC void uart_manager_process_10Hz(void)
+{
+    if (imu_stream_mode == IMU_STREAM_OFF)
+    {
+        return;
+    }
+
+    imu_data_t avg;
+    bool has_avg = imu_get_data(&avg);
+
+    if (imu_stream_mode == IMU_STREAM_AVG)
+    {
+        if (has_avg)
+        {
+            uart_manager_print("AVG A(%+.3f,%+.3f,%+.3f) G(%+.3f,%+.3f,%+.3f) T=%.1fC\r\n",
+                               avg.accel.x, avg.accel.y, avg.accel.z,
+                               avg.gyro.x, avg.gyro.y, avg.gyro.z, avg.temperature);
+        }
+        else
+        {
+            uart_manager_print("IMU not active\r\n");
+        }
+        return;
+    }
+
+    // IMU_STREAM_ARRAY
+    uint8_t active = imu_get_active_count();
+    uart_manager_print("IMU[%u/%u]", active, IMU_NUM_DEVICES);
+
+    for (uint8_t i = 0; i < IMU_NUM_DEVICES; i++)
+    {
+        imu_data_t d;
+        if (imu_get_individual_data(i, &d))
+        {
+            uart_manager_print(" | [%u] A(%+.2f,%+.2f,%+.2f) G(%+.2f,%+.2f,%+.2f)",
+                               i, d.accel.x, d.accel.y, d.accel.z,
+                               d.gyro.x, d.gyro.y, d.gyro.z);
+        }
+        else
+        {
+            uart_manager_print(" | [%u] inactive", i);
+        }
+    }
+
+    if (has_avg)
+    {
+        uart_manager_print(" | AVG A(%+.2f,%+.2f,%+.2f) G(%+.2f,%+.2f,%+.2f)\r\n",
+                           avg.accel.x, avg.accel.y, avg.accel.z,
+                           avg.gyro.x, avg.gyro.y, avg.gyro.z);
+    }
+    else
+    {
+        uart_manager_print("\r\n");
+    }
+}
+
 STATIC bool is_in_isr_context(void)
 {
     return (xPortIsInsideInterrupt() == pdTRUE);

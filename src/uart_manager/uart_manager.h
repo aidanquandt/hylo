@@ -21,3 +21,6 @@ uint32_t uart_manager_get_tx_errors(void);
 void uart_manager_register_cmd_callback(uart_cmd_callback_t callback);
 uint32_t uart_manager_get_rx_count(void);
 uint32_t uart_manager_get_rx_overruns(void);
+void uart_manager_imu_stream_enable(void);
+void uart_manager_imu_stream_enable_avg(void);
+void uart_manager_imu_stream_disable(void);

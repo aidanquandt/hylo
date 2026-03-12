@@ -4,6 +4,12 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "common.h"
+#include "imu_port.h"
+
+/*---------------------------------------------------------------------------
+ * Defines
+ *---------------------------------------------------------------------------*/
+#define IMU_NUM_DEVICES IMU_PORT_NUM_DEVICES
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -39,4 +45,6 @@ bool imu_get_data(imu_data_t* data);
 bool imu_get_accel(vec3_t* accel);
 bool imu_get_gyro(vec3_t* gyro);
 bool imu_get_temp(float* temp);
+bool imu_get_individual_data(uint8_t index, imu_data_t* data);
+uint8_t imu_get_active_count(void);
 bool imu_soft_reset(void);

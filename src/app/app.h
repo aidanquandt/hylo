@@ -22,3 +22,4 @@ typedef struct
 void app_init(void);
 uint32_t app_get_deadline_miss_count(modules_E module);
 void app_get_deadline_stats(modules_E module, deadline_stats_t* stats);
+void app_reset_deadline_stats(modules_E module);

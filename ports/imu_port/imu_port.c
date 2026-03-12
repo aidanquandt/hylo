@@ -33,22 +33,37 @@ STATIC bool validate_odr(imu_odr_t odr);
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-STATIC struct imu_dev_s imu_device = {.bmi_dev = {
-                                          .intf           = BMI3_SPI_INTF,
-                                          .read           = imu_spi_read,
-                                          .write          = imu_spi_write,
-                                          .delay_us       = imu_delay_us,
-                                          .intf_ptr       = NULL,
-                                          .read_write_len = 32,
-                                      }};
+STATIC struct imu_dev_s imu_devices[IMU_PORT_NUM_DEVICES];
+
+STATIC const platform_spi_cs_E imu_cs_pins[IMU_PORT_NUM_DEVICES] = {
+    PLATFORM_SPI_CS_IMU_0,
+#if (IMU_PORT_NUM_DEVICES > 1)
+    PLATFORM_SPI_CS_IMU_1,
+    PLATFORM_SPI_CS_IMU_2,
+    PLATFORM_SPI_CS_IMU_3,
+#endif
+};
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
 
-imu_dev_t* imu_port_init(void)
+imu_dev_t* imu_port_init(uint8_t device_index)
 {
-    return &imu_device;
+    if (device_index >= IMU_PORT_NUM_DEVICES)
+    {
+        return NULL;
+    }
+
+    struct imu_dev_s* dev   = &imu_devices[device_index];
+    dev->bmi_dev.intf           = BMI3_SPI_INTF;
+    dev->bmi_dev.read           = imu_spi_read;
+    dev->bmi_dev.write          = imu_spi_write;
+    dev->bmi_dev.delay_us       = imu_delay_us;
+    dev->bmi_dev.intf_ptr       = (void*)&imu_cs_pins[device_index];
+    dev->bmi_dev.read_write_len = 32;
+
+    return dev;
 }
 
 imu_port_status_t imu_port_probe_and_init(imu_dev_t* dev)
@@ -58,17 +73,19 @@ imu_port_status_t imu_port_probe_and_init(imu_dev_t* dev)
         return IMU_PORT_ERROR_NULL_PTR;
     }
 
-    platform_spi_cs_low(IMU_PORT_CS_PIN);
+    platform_spi_cs_E cs = *(const platform_spi_cs_E*)dev->bmi_dev.intf_ptr;
+
+    platform_spi_cs_low(cs);
     platform_os_delay_us_blocking(100);
-    platform_spi_cs_high(IMU_PORT_CS_PIN);
+    platform_spi_cs_high(cs);
     platform_os_delay_us_blocking(500);
 
     uint8_t dummy_rx[3] = {0};
-    platform_spi_cs_low(IMU_PORT_CS_PIN);
+    platform_spi_cs_low(cs);
     uint8_t dummy_cmd = 0x80;
     platform_spi_transmit(&dummy_cmd, 1);
     platform_spi_receive(dummy_rx, 3);
-    platform_spi_cs_high(IMU_PORT_CS_PIN);
+    platform_spi_cs_high(cs);
     vTaskDelay(pdMS_TO_TICKS(2));
 
     int8_t rslt = bmi323_init(&dev->bmi_dev);
@@ -369,14 +386,13 @@ STATIC bool validate_odr(imu_odr_t odr)
 
 STATIC int8_t imu_spi_read(uint8_t reg_addr, uint8_t* reg_data, uint32_t len, void* intf_ptr)
 {
-    (void)intf_ptr;
-
-    if (reg_data == NULL)
+    if (intf_ptr == NULL || reg_data == NULL)
     {
         return BMI3_E_NULL_PTR;
     }
 
-    platform_spi_cs_low(IMU_PORT_CS_PIN);
+    platform_spi_cs_E cs = *(const platform_spi_cs_E*)intf_ptr;
+    platform_spi_cs_low(cs);
 
     uint8_t tx_buf[len + 1];
     uint8_t rx_buf[len + 1];
@@ -386,7 +402,7 @@ STATIC int8_t imu_spi_read(uint8_t reg_addr, uint8_t* reg_data, uint32_t len, vo
 
     if (platform_spi_transfer(tx_buf, rx_buf, len + 1) != PLATFORM_SPI_SUCCESS)
     {
-        platform_spi_cs_high(IMU_PORT_CS_PIN);
+        platform_spi_cs_high(cs);
         return BMI3_E_COM_FAIL;
     }
 
@@ -395,36 +411,35 @@ STATIC int8_t imu_spi_read(uint8_t reg_addr, uint8_t* reg_data, uint32_t len, vo
         reg_data[i] = rx_buf[i + 1];
     }
 
-    platform_spi_cs_high(IMU_PORT_CS_PIN);
+    platform_spi_cs_high(cs);
 
     return BMI3_OK;
 }
 
 STATIC int8_t imu_spi_write(uint8_t reg_addr, const uint8_t* reg_data, uint32_t len, void* intf_ptr)
 {
-    (void)intf_ptr;
-
-    if (reg_data == NULL)
+    if (intf_ptr == NULL || reg_data == NULL)
     {
         return BMI3_E_NULL_PTR;
     }
 
-    platform_spi_cs_low(IMU_PORT_CS_PIN);
+    platform_spi_cs_E cs = *(const platform_spi_cs_E*)intf_ptr;
+    platform_spi_cs_low(cs);
 
     uint8_t addr_byte = reg_addr & 0x7F;
     if (platform_spi_transmit(&addr_byte, 1) != PLATFORM_SPI_SUCCESS)
     {
-        platform_spi_cs_high(IMU_PORT_CS_PIN);
+        platform_spi_cs_high(cs);
         return BMI3_E_COM_FAIL;
     }
 
     if (platform_spi_transmit(reg_data, len) != PLATFORM_SPI_SUCCESS)
     {
-        platform_spi_cs_high(IMU_PORT_CS_PIN);
+        platform_spi_cs_high(cs);
         return BMI3_E_COM_FAIL;
     }
 
-    platform_spi_cs_high(IMU_PORT_CS_PIN);
+    platform_spi_cs_high(cs);
 
     return BMI3_OK;
 }

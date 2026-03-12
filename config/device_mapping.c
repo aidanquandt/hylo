@@ -27,6 +27,7 @@ const device_mapping_entry_t device_mapping_table[] = {
     {.uuid_word0 = 0x003C003B, .uuid_word1 = 0x34335113, .uuid_word2 = 0x33343839, .uwb_address = 0x0004, .device_name = "DEVICE_4"},
     {.uuid_word0 = 0x00140044, .uuid_word1 = 0x32335118, .uuid_word2 = 0x39373632, .uwb_address = 0x0005, .device_name = "DEVICE_5"},
     {.uuid_word0 = 0x0008002E, .uuid_word1 = 0x32335114, .uuid_word2 = 0x37333432, .uwb_address = 0x0006, .device_name = "DEVICE_6"},
+    {.uuid_word0 = 0x000C0030, .uuid_word1 = 0x3133510F, .uuid_word2 = 0x38373334, .uwb_address = 0x0007, .device_name = "DEVICE_7"},
 
     // Add more device mappings here
     // Run: system.get.uuid (then copy/paste the line it gives you)

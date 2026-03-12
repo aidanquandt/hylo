@@ -16,6 +16,12 @@ typedef struct imu_dev_s imu_dev_t;
  *---------------------------------------------------------------------------*/
 #define IMU_PORT_CS_PIN PLATFORM_SPI_CS_IMU
 
+#if (HWREV == 1)
+#define IMU_PORT_NUM_DEVICES (4U)
+#else
+#define IMU_PORT_NUM_DEVICES (1U)
+#endif
+
 /*---------------------------------------------------------------------------
  * Typedefs
  *---------------------------------------------------------------------------*/
@@ -73,7 +79,7 @@ typedef enum
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
-imu_dev_t* imu_port_init(void);
+imu_dev_t* imu_port_init(uint8_t device_index);
 imu_port_status_t imu_port_probe_and_init(imu_dev_t* dev);
 imu_port_status_t imu_port_check_device_id(imu_dev_t* dev);
 uint8_t imu_port_read_chip_id(imu_dev_t* dev);
