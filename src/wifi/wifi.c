@@ -41,8 +41,6 @@ typedef enum {
     STATE_WAIT_MODE,
     STATE_SEND_ECHO_OFF,
     STATE_WAIT_ECHO_OFF,
-    //STATE_SEND_CIPMUX,
-    //STATE_WAIT_CIPMUX,
     STATE_SEND_JOIN_WIFI,
     STATE_WAIT_JOIN_WIFI,
     STATE_SEND_TCP_CONNECT,
@@ -94,8 +92,6 @@ STATIC void wifi_state_wait_cipsend_process(void);
 STATIC void wifi_state_active_on_entry(uint16_t prevState);
 STATIC void wifi_state_active_process(void);
 STATIC void wifi_state_faulted_on_entry(uint16_t prevState);
-STATIC void wifi_state_send_cipmux_on_entry(uint16_t prevState);//new
-STATIC void wifi_state_wait_cipmux_process(void);//new
 
 // Non-blocking command helpers
 STATIC void wifi_start_command(const char *cmd);
@@ -144,8 +140,6 @@ STATIC const state_s wifi_states[] = {
     [STATE_WAIT_MODE] = {.process = wifi_state_wait_mode_process, .onEntry = NULL, .onExit = NULL},
     [STATE_SEND_ECHO_OFF] = {.process = NULL, .onEntry = wifi_state_send_echo_off_on_entry, .onExit = NULL},
     [STATE_WAIT_ECHO_OFF] = {.process = wifi_state_wait_echo_off_process, .onEntry = NULL, .onExit = NULL},
-    /*[STATE_SEND_CIPMUX] = {.process = NULL, .onEntry = wifi_state_send_cipmux_on_entry, .onExit = NULL},//new
-    [STATE_WAIT_CIPMUX] = {.process = wifi_state_wait_cipmux_process, .onEntry = NULL, .onExit = NULL},//new*/
     [STATE_SEND_JOIN_WIFI] = {.process = NULL, .onEntry = wifi_state_send_join_wifi_on_entry, .onExit = NULL},
     [STATE_WAIT_JOIN_WIFI] = {.process = wifi_state_wait_join_wifi_process, .onEntry = NULL, .onExit = NULL},
     [STATE_SEND_TCP_CONNECT] = {.process = NULL, .onEntry = wifi_state_send_tcp_connect_on_entry, .onExit = NULL},
@@ -237,9 +231,9 @@ STATIC uint16_t wifi_transition_logic(uint16_t currentState, uint32_t stateTimer
     static uint16_t last_printed_state = 0xFF;
 
     // Print state on first entry
-    if (currentState != last_printed_state) {
+    if (FEATURE_WIFI_PRINT_STATE && (currentState != last_printed_state)) {
         const char* state_names[] = {"STARTUP", "SEND_RESET", "WAIT_RESET",    "SEND_MODE", "WAIT_MODE", 
-        "SEND_ECHO_OFF", "WAIT_ECHO_OFF", /*"SEND_CIPMUX","WAIT_CIPMUX",*/"SEND_JOIN_WIFI", "WAIT_JOIN_WIFI",
+        "SEND_ECHO_OFF", "WAIT_ECHO_OFF","SEND_JOIN_WIFI", "WAIT_JOIN_WIFI",
         "SEND_TCP_CONNECT", "WAIT_TCP_CONNECT", "VERIFY_TCP", "SEND_CIPMODE", 
         "WAIT_CIPMODE", "SEND_CIPSEND", "WAIT_CIPSEND", "ACTIVE", "FAULTED"};
         
@@ -287,23 +281,10 @@ STATIC uint16_t wifi_transition_logic(uint16_t currentState, uint32_t stateTimer
         case STATE_WAIT_ECHO_OFF:
             if (state_inputs.response_ok) {
                 nextState = STATE_SEND_JOIN_WIFI;
-                //nextState = STATE_SEND_CIPMUX;//new
             } else if (state_inputs.fault_present) {
                 nextState = STATE_FAULTED;
             }
             break;
-
-        // case STATE_SEND_CIPMUX:
-        //     nextState = STATE_WAIT_CIPMUX;
-        //     break;
-
-        // case STATE_WAIT_CIPMUX:
-        //     if (state_inputs.response_ok) {
-        //         nextState = STATE_SEND_JOIN_WIFI;
-        //     } else if (state_inputs.fault_present) {
-        //         nextState = STATE_FAULTED;
-        //     }
-        //     break;
 
         case STATE_SEND_JOIN_WIFI:
             nextState = STATE_WAIT_JOIN_WIFI;
@@ -419,17 +400,6 @@ STATIC void wifi_state_wait_echo_off_process(void)
     wifi_check_response("OK", 2000);
 }
 
-STATIC void wifi_state_send_cipmux_on_entry(uint16_t prevState)
-{
-    (void)prevState;
-    wifi_start_command("AT+CIPMUX=0\r\n");
-}
-
-STATIC void wifi_state_wait_cipmux_process(void)
-{
-    wifi_check_response("OK", 2000);
-}
-
 STATIC void wifi_state_send_join_wifi_on_entry(uint16_t prevState)
 {
     (void)prevState;
@@ -506,7 +476,7 @@ STATIC void wifi_state_wait_tcp_connect_process(void)
     // Timeout
     if ((xTaskGetTickCount() - cmd_start_time) > pdMS_TO_TICKS(timeout_ms)) {
         uart_manager_print("[WiFi] CIPSTART TIMEOUT after %lu ms\r\n", (unsigned long)timeout_ms);
-        uart_manager_print("[WiFi] Final window: '%s'\r\n", cmd_response_window);
+        //uart_manager_print("[WiFi] Final window: '%s'\r\n", cmd_response_window);
 
         state_inputs.response_received = true;
         state_inputs.response_ok = false;
@@ -555,7 +525,7 @@ STATIC void wifi_state_wait_tcp_connect_process(void)
         strstr(cmd_response_window, "LINK IS NOT VALID")) {
 
         uart_manager_print("[WiFi] CIPSTART FAILED\r\n");
-        uart_manager_print("[WiFi] Final window: '%s'\r\n", cmd_response_window);
+        //uart_manager_print("[WiFi] Final window: '%s'\r\n", cmd_response_window);
 
         state_inputs.response_received = true;
         state_inputs.response_ok = false;
@@ -569,7 +539,7 @@ STATIC void wifi_state_wait_tcp_connect_process(void)
         strstr(cmd_response_window, "CONNECT")) {
 
         uart_manager_print("[WiFi] CIPSTART CONNECTED\r\n");
-        uart_manager_print("[WiFi] Final window: '%s'\r\n", cmd_response_window);
+        //uart_manager_print("[WiFi] Final window: '%s'\r\n", cmd_response_window);
 
         state_inputs.response_received = true;
         state_inputs.response_ok = true;
@@ -677,9 +647,9 @@ STATIC void wifi_state_wait_cipmode_process(void)
     wifi_check_response("OK", 2000);
     
     // Debug: print what we received if we got a response
-    if (state_inputs.response_received) {
-        uart_manager_print("[WiFi] CIPMODE response: '%s'\r\n", cmd_response_window);
-    }
+    // if (state_inputs.response_received) {
+    //     uart_manager_print("[WiFi] CIPMODE response: '%s'\r\n", cmd_response_window);
+    // }
 }
 
 STATIC void wifi_state_send_cipsend_on_entry(uint16_t prevState)
@@ -720,7 +690,7 @@ STATIC void wifi_state_wait_cipsend_process(void)
     // Check for timeout
     if ((xTaskGetTickCount() - cmd_start_time) > pdMS_TO_TICKS(2000)) {
         uart_manager_print("[WiFi] CIPSEND timeout\r\n");
-        uart_manager_print("[WiFi] Response was: '%s'\r\n", cmd_response_window);
+        //uart_manager_print("[WiFi] Response was: '%s'\r\n", cmd_response_window);
         state_inputs.response_received = true;
         state_inputs.response_ok = false;
         state_inputs.fault_present = true;
@@ -764,7 +734,7 @@ STATIC void wifi_state_wait_cipsend_process(void)
     // Check for errors
     if (strstr(cmd_response_window, "ERROR")) {
         uart_manager_print("[WiFi] CIPSEND failed with ERROR\r\n");
-        uart_manager_print("[WiFi] Response: '%s'\r\n", cmd_response_window);
+        //uart_manager_print("[WiFi] Response: '%s'\r\n", cmd_response_window);
         state_inputs.response_received = true;
         state_inputs.response_ok = false;
         state_inputs.fault_present = true;
@@ -963,7 +933,7 @@ STATIC void wifi_check_response(const char *expected_token, uint32_t timeout_ms)
 
     if ((xTaskGetTickCount() - cmd_start_time) > pdMS_TO_TICKS(timeout_ms)) {
         uart_manager_print("[WiFi] Timeout waiting for: %s\r\n", expected_token);
-        uart_manager_print("[WiFi] Received: '%s'\r\n", cmd_response_window);
+        //uart_manager_print("[WiFi] Received: '%s'\r\n", cmd_response_window);
         state_inputs.response_received = true;
         state_inputs.response_ok = false;
         state_inputs.fault_present = true;
@@ -975,9 +945,6 @@ STATIC void wifi_check_response(const char *expected_token, uint32_t timeout_ms)
 
     // Drain ALL available bytes each call
     while ((n = xStreamBufferReceive(rxStream, tmp, sizeof(tmp), 0)) > 0) {
-
-        // uart_manager_print("[WiFi] DEBUG: wifi_check_response received %u bytes\r\n", (unsigned)n);
-
         // Make room in rolling window if needed
         size_t free = (sizeof(cmd_response_window) - 1) - cmd_response_used;
         if (n > free) {

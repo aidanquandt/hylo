@@ -321,11 +321,9 @@ STATIC void send_imu_telemetry(const sensor_event_t* event)
 {
     // IMU runs at 200Hz, so only send every 20th sample to avoid flooding
     static uint8_t imu_decimation_counter = 0;
-    
-    if (++imu_decimation_counter >= 20)
+
+    if (counter_uint8_t(&imu_decimation_counter, 20))
     {
-        imu_decimation_counter = 0;
-        
         if (wifi_telemetry_is_ready())
         {
             telemetry_event_t telem = {

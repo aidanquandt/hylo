@@ -148,12 +148,6 @@ void StartDefaultTask(void *argument)
   /* USER CODE BEGIN StartDefaultTask */
   /* Infinite loop */
   (void)(argument);
-  
-  // DIAGNOSTIC: Test UART output before app_init
-  // extern UART_HandleTypeDef huart1;
-  // const char* test_msg = "\r\n=== UART TEST - REV1 START ===\r\n";
-  // HAL_UART_Transmit(&huart1, (uint8_t*)test_msg, strlen(test_msg), 1000);
-  
   app_init();
   /* USER CODE END StartDefaultTask */
 }
