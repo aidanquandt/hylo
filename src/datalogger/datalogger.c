@@ -14,7 +14,6 @@
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define MAX_NUM_TASKS 20U
 #define DEADLINE_MISS_STARTUP_GRACE_PERIOD_S 5U
 #define HEAP_LOW_MEMORY_THRESHOLD_BYTES 1024U
 
@@ -44,8 +43,8 @@ const module_S datalogger_module = {
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-STATIC float32_t cpu_usage[MAX_NUM_TASKS] = {0};
-STATIC TaskStatus_t task_status_array[MAX_NUM_TASKS];
+STATIC float32_t cpu_usage[DATALOGGER_MAX_TASKS] = {0};
+STATIC TaskStatus_t task_status_array[DATALOGGER_MAX_TASKS];
 STATIC UBaseType_t num_tracked_tasks   = 0;
 STATIC uint32_t current_free_heap      = 0U;
 STATIC uint32_t minimum_ever_free_heap = 0U;
@@ -56,11 +55,11 @@ STATIC uint32_t minimum_ever_free_heap = 0U;
 STATIC void datalogger_monitor_rtos_usage(void)
 {
     STATIC uint32_t prev_total_runtime                   = 0U;
-    STATIC uint32_t prev_task_runtime[MAX_NUM_TASKS]     = {0};
-    STATIC TaskHandle_t prev_task_handles[MAX_NUM_TASKS] = {NULL};
+    STATIC uint32_t prev_task_runtime[DATALOGGER_MAX_TASKS]     = {0};
+    STATIC TaskHandle_t prev_task_handles[DATALOGGER_MAX_TASKS] = {NULL};
 
     uint32_t total_runtime = 0U;
-    num_tracked_tasks      = uxTaskGetSystemState(task_status_array, MAX_NUM_TASKS, &total_runtime);
+    num_tracked_tasks      = uxTaskGetSystemState(task_status_array, DATALOGGER_MAX_TASKS, &total_runtime);
     if ((num_tracked_tasks == 0U) || (total_runtime == 0U))
     {
         return;
@@ -87,7 +86,7 @@ STATIC void datalogger_monitor_rtos_usage(void)
         uint32_t current_runtime    = task_status_array[task_index].ulRunTimeCounter;
 
         uint32_t previous_runtime = 0U;
-        for (uint8_t prev_index = 0U; prev_index < MAX_NUM_TASKS; ++prev_index)
+        for (uint8_t prev_index = 0U; prev_index < DATALOGGER_MAX_TASKS; ++prev_index)
         {
             if (prev_task_handles[prev_index] == current_handle)
             {

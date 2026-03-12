@@ -658,8 +658,8 @@ STATIC void uart_cmd_router_handle_datalogger(const char* action, const char* ta
         if (strcmp(target, "tasks") == 0)
         {
             uart_manager_print("\r\nTask List:\r\n");
-            task_cpu_info_t tasks[20];
-            uint32_t count = datalogger_get_task_usage(tasks, 20);
+            task_cpu_info_t tasks[DATALOGGER_MAX_TASKS];
+            uint32_t count = datalogger_get_task_usage(tasks, DATALOGGER_MAX_TASKS);
             for (uint32_t i = 0; i < count; i++)
             {
                 uart_manager_print("%-20s %5.2f%%\r\n", tasks[i].task_name, tasks[i].cpu_percent);
@@ -670,8 +670,8 @@ STATIC void uart_cmd_router_handle_datalogger(const char* action, const char* ta
             uart_manager_print("\r\nSystem Statistics:\r\n");
 
             system_stats_t stats;
-            task_cpu_info_t task_buffer[20];
-            datalogger_get_system_stats(&stats, task_buffer, 20);
+            task_cpu_info_t task_buffer[DATALOGGER_MAX_TASKS];
+            datalogger_get_system_stats(&stats, task_buffer, DATALOGGER_MAX_TASKS);
 
             uart_manager_print("Memory:\r\n");
             uart_manager_print("  Current Free:     %u bytes\r\n",
