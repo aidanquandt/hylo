@@ -297,7 +297,7 @@ STATIC uint16_t wifi_transition_logic(uint16_t currentState, uint32_t stateTimer
                 // Retry up to 3 times
                 if (state_inputs.retry_count < 3) {
                     state_inputs.retry_count++;
-                    uart_manager_print("[WiFi] Join retry %d/3\r\n", state_inputs.retry_count);
+                    //uart_manager_print("[WiFi] Join retry %d/3\r\n", state_inputs.retry_count);
                     nextState = STATE_SEND_JOIN_WIFI;
                 } else {
                     nextState = STATE_FAULTED;
@@ -354,7 +354,7 @@ STATIC uint16_t wifi_transition_logic(uint16_t currentState, uint32_t stateTimer
 
         case STATE_ACTIVE:
             if (tcp_closed_detected) {
-                uart_manager_print("[WiFi] TCP connection closed - reconnecting\r\n");
+                //uart_manager_print("[WiFi] TCP connection closed - reconnecting\r\n");
                 tcp_closed_detected = false;
                 nextState = STATE_SEND_TCP_CONNECT;
             }
@@ -421,7 +421,7 @@ STATIC void wifi_state_wait_join_wifi_process(void)
     // During CWJAP, "WIFI DISCONNECT" happens sometimes before we connect again.
     // Only treat it as a failure if we also see FAIL/ERROR or we timeout.
     if (strstr(cmd_response_window, "FAIL") || strstr(cmd_response_window, "ERROR")) {
-        uart_manager_print("[WiFi] Join failed (FAIL/ERROR)\r\n");
+        //uart_manager_print("[WiFi] Join failed (FAIL/ERROR)\r\n");
         state_inputs.response_received = true;
         state_inputs.response_ok = false;
         state_inputs.fault_present = true;
@@ -464,7 +464,7 @@ STATIC void wifi_state_wait_tcp_connect_process(void)
     }
 
     if (!checking_started) {
-        uart_manager_print("[WiFi] Starting to check for CONNECT response...\r\n");
+        //uart_manager_print("[WiFi] Starting to check for CONNECT response...\r\n");
         checking_started = true;
     }
 
@@ -588,7 +588,7 @@ STATIC void wifi_state_verify_tcp_process(void)
 
     // We got some STATUS response in cmd_response_window now.
     if (strstr(cmd_response_window, "STATUS:3")) {
-        uart_manager_print("[WiFi] STATUS:3 (TCP connected)\r\n");
+        //uart_manager_print("[WiFi] STATUS:3 (TCP connected)\r\n");
         state_inputs.response_ok = true;
         state_inputs.fault_present = false;
         state_inputs.command_sent = false;
@@ -596,7 +596,7 @@ STATIC void wifi_state_verify_tcp_process(void)
     }
 
     if (strstr(cmd_response_window, "STATUS:2")) {
-        uart_manager_print("[WiFi] STATUS:2 (no TCP) -> retry CIPSTART\r\n");
+        //uart_manager_print("[WiFi] STATUS:2 (no TCP) -> retry CIPSTART\r\n");
 
         // Not a hard fault; trigger retry path
         state_inputs.response_ok = false;
@@ -606,7 +606,7 @@ STATIC void wifi_state_verify_tcp_process(void)
     }
 
     // Anything else treat as fault
-    uart_manager_print("[WiFi] Unexpected CIPSTATUS: '%s'\r\n", cmd_response_window);
+    //uart_manager_print("[WiFi] Unexpected CIPSTATUS: '%s'\r\n", cmd_response_window);
     state_inputs.response_ok = false;
     state_inputs.fault_present = true;
     state_inputs.command_sent = false;
@@ -621,8 +621,6 @@ STATIC void wifi_state_send_cipmode_on_entry(uint16_t prevState)
     state_inputs.response_received = false;
     state_inputs.response_ok = false;
     state_inputs.fault_present = false;
-    
-    uart_manager_print("[WiFi] Enabling transparent mode...\r\n");
 }
 
 STATIC void wifi_state_wait_cipmode_process(void)
@@ -661,8 +659,6 @@ STATIC void wifi_state_send_cipsend_on_entry(uint16_t prevState)
     state_inputs.response_received = false;
     state_inputs.response_ok = false;
     state_inputs.fault_present = false;
-    
-    uart_manager_print("[WiFi] Starting transparent transmission...\r\n");
 }
 
 STATIC void wifi_state_wait_cipsend_process(void)
@@ -723,7 +719,7 @@ STATIC void wifi_state_wait_cipsend_process(void)
 
         // Check for '>' prompt
         if (strchr(cmd_response_window, '>')) {
-            uart_manager_print("[WiFi] Transparent mode active\r\n");
+            //uart_manager_print("[WiFi] Transparent mode active\r\n");
             state_inputs.response_received = true;
             state_inputs.response_ok = true;
             state_inputs.command_sent = false;
@@ -752,8 +748,6 @@ STATIC void wifi_state_active_on_entry(uint16_t prevState)
     
     // Clear TCP closed flag
     tcp_closed_detected = false;
-    
-    uart_manager_print("[WiFi] Transparent mode active - entering settling period\r\n");
 }
 
 STATIC void wifi_state_active_process(void)
@@ -833,7 +827,7 @@ STATIC void wifi_state_active_process(void)
 STATIC void wifi_state_faulted_on_entry(uint16_t prevState)
 {
     (void)prevState;
-    uart_manager_print("[WiFi] WiFi module FAULTED\r\n");
+    //uart_manager_print("[WiFi] WiFi module FAULTED\r\n");
 }
 
 /**

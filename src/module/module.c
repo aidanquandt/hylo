@@ -14,6 +14,7 @@
 #include "uwb_node.h"
 #include "watchdog.h"
 #include "wifi.h"
+#include "sdcard.h"
 
 /*---------------------------------------------------------------------------
  * Public variables
@@ -30,6 +31,7 @@ extern const module_S ota_config_module;
 extern const module_S twr_module;
 extern const module_S twr_manager_module;
 extern const module_S wifi_module;
+extern const module_S sdcard_module;
 
 const module_S* const modules[NUM_MODULES] = {
     [UART_MANAGER_MODULE]  = &uart_manager_module,
@@ -43,5 +45,6 @@ const module_S* const modules[NUM_MODULES] = {
     [TWR_MODULE]           = &twr_module,
     [TWR_MANAGER_MODULE]   = &twr_manager_module,
     [WIFI_MODULE]          = &wifi_module,
+    [SDCARD_MODULE]          = &sdcard_module,
     [WATCHDOG_MODULE]      = &watchdog_module, // Last - monitors all others
 };

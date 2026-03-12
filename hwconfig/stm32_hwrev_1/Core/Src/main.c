@@ -20,8 +20,10 @@
 #include "main.h"
 #include "cmsis_os.h"
 #include "dma.h"
+#include "fatfs.h"
 #include "i2c.h"
 #include "iwdg.h"
+#include "sdmmc.h"
 #include "spi.h"
 #include "tim.h"
 #include "usart.h"
@@ -111,6 +113,8 @@ int main(void)
   MX_TIM2_Init();
   MX_TIM5_Init();
   MX_IWDG1_Init();
+  MX_SDMMC2_SD_Init();
+  MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim2);  /* 64-bit system time: overflow ISR extends to uint64_t */
   /* USER CODE END 2 */

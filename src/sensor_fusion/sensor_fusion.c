@@ -14,6 +14,9 @@
 #include "task.h"
 #include "uart_manager.h"
 #include "wifi.h"
+#if (HWREV == 1)
+#include "sdcard.h"
+#endif
 #include <math.h>
 
 /*---------------------------------------------------------------------------
@@ -37,10 +40,17 @@ STATIC void sensor_fusion_task(void* pvParameters);
 STATIC void sensor_fusion_process_10Hz(void);
 STATIC void sensor_fusion_update_position_estimate(void);
 
-// Telemetry helpers (WIFI)
+// Telemetry helpers (WiFi)
 STATIC void send_ranging_telemetry(const sensor_ranging_data_t* ranging, uint32_t timestamp_ms);
 STATIC void send_imu_telemetry(const sensor_event_t* event);
 STATIC void send_position_telemetry(const sensor_fusion_position_t* position);
+
+// Telemetry helpers (SD card)
+#if (HWREV == 1)
+STATIC void sdcard_log_ranging(const sensor_ranging_data_t* ranging, uint32_t timestamp_ms);
+STATIC void sdcard_log_imu(const sensor_event_t* event);
+STATIC void sdcard_log_position(const sensor_fusion_position_t* position);
+#endif
 
 /*---------------------------------------------------------------------------
  * Module Functions
@@ -182,7 +192,7 @@ STATIC void sensor_fusion_task(void* pvParameters)
         {
             stats.events_popped++;
 
-            // Send telemetry over WIFI even when fusion is inactive (for monitoring raw data)
+            // Send telemetry over WiFi even when fusion is inactive (for monitoring raw data)
             if (event.type == SENSOR_EVENT_IMU && imu_enabled)
             {
                 send_imu_telemetry(&event);
@@ -191,6 +201,18 @@ STATIC void sensor_fusion_task(void* pvParameters)
             {
                 send_ranging_telemetry(&event.data.ranging, event.timestamp_ms);
             }
+
+#if (HWREV == 1)
+            // Log raw sensor data to SD card
+            if (event.type == SENSOR_EVENT_IMU && imu_enabled)
+            {
+                sdcard_log_imu(&event);
+            }
+            else if (event.type == SENSOR_EVENT_RANGING)
+            {
+                sdcard_log_ranging(&event.data.ranging, event.timestamp_ms);
+            }
+#endif
 
             // Discard events when sensor fusion is not active
             if (!fusion_active)
@@ -290,6 +312,11 @@ STATIC void sensor_fusion_update_position_estimate(void)
     
     // Send position estimate to WiFi telemetry
     send_position_telemetry(&position_estimate);
+
+#if (HWREV == 1)
+    // Log position estimate to SD card
+    sdcard_log_position(&position_estimate);
+#endif
 }
 
 /*---------------------------------------------------------------------------
@@ -359,6 +386,58 @@ STATIC void send_position_telemetry(const sensor_fusion_position_t* position)
         }
     }
 }
+
+#if (HWREV == 1)
+/**
+ * @brief Log ranging event to SD card (non-blocking)
+ */
+STATIC void sdcard_log_ranging(const sensor_ranging_data_t* ranging, uint32_t timestamp_ms)
+{
+    sdcard_log_event_t entry = {
+        .type         = SDCARD_EVENT_RANGING,
+        .timestamp_ms = timestamp_ms,
+        .data.ranging = *ranging,
+    };
+    sdcard_push_event(&entry);
+}
+
+/**
+ * @brief Log IMU event to SD card (decimated - every 20th sample = ~10Hz at 200Hz input)
+ */
+STATIC void sdcard_log_imu(const sensor_event_t* event)
+{
+    static uint8_t imu_sd_counter = 0;
+    if (counter_uint8_t(&imu_sd_counter, 20))
+    {
+        sdcard_log_event_t entry = {
+            .type         = SDCARD_EVENT_IMU,
+            .timestamp_ms = event->timestamp_ms,
+            .data.imu     = event->data.imu,
+        };
+        sdcard_push_event(&entry);
+    }
+}
+
+/**
+ * @brief Log position estimate to SD card (throttled to 10Hz, valid only)
+ */
+STATIC void sdcard_log_position(const sensor_fusion_position_t* position)
+{
+    static uint32_t last_sd_position_send = 0;
+    uint32_t now = platform_get_time_ms();
+
+    if (position->valid && (now - last_sd_position_send) >= 100U)
+    {
+        sdcard_log_event_t entry = {
+            .type             = SDCARD_EVENT_POSITION,
+            .timestamp_ms     = position->timestamp_ms,
+            .data.position    = *position,
+        };
+        sdcard_push_event(&entry);
+        last_sd_position_send = now;
+    }
+}
+#endif
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations

@@ -22,6 +22,7 @@ typedef enum
     TWR_MODULE,
     TWR_MANAGER_MODULE,
     WIFI_MODULE,
+    SDCARD_MODULE,
     WATCHDOG_MODULE, // Must be last - runs after all other modules
     NUM_MODULES
 } modules_E;

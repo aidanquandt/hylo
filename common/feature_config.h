@@ -22,9 +22,11 @@
 #if (HWREV == 0)
 #define FEATURE_WIFI_MODULE     (0U)
 #define FEATURE_IMUS_POPULATED  (0U)
+#define FEATURE_SDCARD_MODULE   (0U)
 #elif (HWREV == 1)
 #define FEATURE_WIFI_MODULE     (1U)
 #define FEATURE_IMUS_POPULATED  (1U)
+#define FEATURE_SDCARD_MODULE   (1U)
 #endif
 
 #define FEATURE_WIFI_PRINT_STATE (0U)
