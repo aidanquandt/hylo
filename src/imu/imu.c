@@ -293,6 +293,29 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
         return;
     }
 
+    /* One-time calibration at startup — device must be stationary. */
+    if (imu_port_calibrate_gyro(ctx->dev) != IMU_PORT_SUCCESS)
+    {
+        error_handler_log(ERROR_SEVERITY_WARNING, "imu",
+                          "IMU %u: gyro calibration failed (non-fatal)", idx);
+    }
+    else
+    {
+        error_handler_log(ERROR_SEVERITY_INFO, "imu",
+                          "IMU %u: gyro calibration OK", idx);
+    }
+
+    if (imu_port_calibrate_accel(ctx->dev) != IMU_PORT_SUCCESS)
+    {
+        error_handler_log(ERROR_SEVERITY_WARNING, "imu",
+                          "IMU %u: accel calibration failed (non-fatal)", idx);
+    }
+    else
+    {
+        error_handler_log(ERROR_SEVERITY_INFO, "imu",
+                          "IMU %u: accel calibration OK", idx);
+    }
+
     ctx->active = true;
 }
 

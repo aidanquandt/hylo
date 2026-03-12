@@ -322,6 +322,59 @@ imu_port_status_t imu_port_soft_reset(imu_dev_t* dev)
     return IMU_PORT_SUCCESS;
 }
 
+imu_port_status_t imu_port_calibrate_gyro(imu_dev_t* dev)
+{
+    if (dev == NULL)
+    {
+        return IMU_PORT_ERROR_NULL_PTR;
+    }
+
+    struct bmi3_self_calib_rslt sc_rslt = {0};
+
+    /* Calibrate gyro offset — device must be stationary.
+     * Blocks ~430ms internally (10 polls x 43ms). */
+    int8_t rslt = bmi323_perform_gyro_sc(BMI3_SC_OFFSET_EN, BMI3_SC_APPLY_CORR_EN, &sc_rslt,
+                                         &dev->bmi_dev);
+
+    if (rslt != BMI3_OK)
+    {
+        return IMU_PORT_ERROR_COMM_FAIL;
+    }
+
+    if (sc_rslt.gyro_sc_rslt != BMI3_TRUE)
+    {
+        return IMU_PORT_ERROR_CONFIG;
+    }
+
+    return IMU_PORT_SUCCESS;
+}
+
+imu_port_status_t imu_port_calibrate_accel(imu_dev_t* dev)
+{
+    if (dev == NULL)
+    {
+        return IMU_PORT_ERROR_NULL_PTR;
+    }
+
+    /* Board mounting: chip X maps to body -Z (see imu_transform_accel).
+     * When device is flat (body +Z up), gravity is -1g on chip X axis. */
+    struct bmi3_accel_foc_g_value accel_g_value = {
+        .x    = 1,
+        .y    = 0,
+        .z    = 0,
+        .sign = 1
+    };
+
+    int8_t rslt = bmi323_perform_accel_foc(&accel_g_value, &dev->bmi_dev);
+
+    if (rslt != BMI3_OK)
+    {
+        return IMU_PORT_ERROR_COMM_FAIL;
+    }
+
+    return IMU_PORT_SUCCESS;
+}
+
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/

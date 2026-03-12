@@ -6,9 +6,9 @@
 #pragma once
 
 // WiFi network credentials
-#define WIFI_SSID "YourNetworkName"
-#define WIFI_PASS "YourPassword"
+#define WIFI_SSID "YusufPhone"
+#define WIFI_PASS "cocknball"
 
 // TCP server configuration
-#define WIFI_HOST "192.168.1.100"  // Your PC's IP address
+#define WIFI_HOST "128.189.198.174"  // Your PC's IP address
 #define WIFI_PORT 5000
