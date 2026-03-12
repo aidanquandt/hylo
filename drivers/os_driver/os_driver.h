@@ -11,7 +11,7 @@
 typedef uint32_t os_driver_critical_state_t;
 
 /*---------------------------------------------------------------------------
- * Public Function Prototypes
+ * Defines
  *---------------------------------------------------------------------------*/
 void os_driver_init(void);
 void os_driver_delay_us_blocking(uint32_t delay_us);
