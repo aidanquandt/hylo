@@ -13,6 +13,10 @@
 #define DW3000_TIME_UNITS (1.0 / 499.2e6 / 128.0)
 #define SPEED_OF_LIGHT 299792458.0
 
+/* DTU high-frequency conversion (matches DW3000_DTU_FREQ from vendor; used for timestamp diff) */
+#define TWR_DTUH_FREQ_HZ 249600000ULL
+#define TWR_MS_TO_DTUH(ms) (((uint64_t)(ms)) * (TWR_DTUH_FREQ_HZ / 1000ULL))
+
 /*---------------------------------------------------------------------------
  * Typedefs
  *---------------------------------------------------------------------------*/

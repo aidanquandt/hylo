@@ -2,7 +2,6 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "twr_algorithm.h"
-#include "uwb_port.h"
 #include "common.h"
 
 /*---------------------------------------------------------------------------
@@ -168,7 +167,7 @@ bool twr_validate_timestamp_order(uint64_t ts1, uint64_t ts2, uint32_t max_diff_
         return false;
     }
 
-    int64_t max_diff_dtu = (int64_t)(UWB_MS_TO_DTUH(max_diff_ms));
+    int64_t max_diff_dtu = (int64_t)(TWR_MS_TO_DTUH(max_diff_ms));
 
     return (diff_dtu <= max_diff_dtu);
 }

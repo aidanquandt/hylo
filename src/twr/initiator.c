@@ -12,7 +12,7 @@
 #include "common.h"
 #include "error_handler.h"
 #include "feature_config.h"
-#include "platform_timer.h"
+#include "timer_driver.h"
 #include "stopwatch.h"
 #include "task.h"
 #include "uwb.h"
@@ -250,7 +250,7 @@ STATIC void initiator_process_result_impl(twr_context_t* ctx)
         stopwatch_stop(0);
 
         result.remote_addr  = ctx->peer_address;
-        result.timestamp_ms = platform_get_time_ms();
+        result.timestamp_ms = timer_driver_get_time_ms();
 
         // Include anchor position from responder
         result.anchor_position       = ctx->remote_anchor_position;

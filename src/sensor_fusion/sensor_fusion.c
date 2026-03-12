@@ -9,7 +9,7 @@
 #include "feature_config.h"
 #include "kalman_core.h"
 #include "module.h"
-#include "platform_timer.h"
+#include "timer_driver.h"
 #include "queue.h"
 #include "task.h"
 #include "uart_manager.h"
@@ -155,7 +155,7 @@ STATIC void sensor_fusion_init(void)
     position_estimate.valid        = false;
 
     kalmanCoreDefaultParams(&kf_params);
-    kalmanCoreInit(&kf_data, &kf_params, platform_get_time_ms());
+    kalmanCoreInit(&kf_data, &kf_params, timer_driver_get_time_ms());
 
     update_count       = 0;
     fusion_initialized = true;
@@ -261,7 +261,7 @@ STATIC void sensor_fusion_update_position_estimate(void)
                           &position_estimate.vz);
 
     // Update timestamp
-    position_estimate.timestamp_ms = platform_get_time_ms();
+    position_estimate.timestamp_ms = timer_driver_get_time_ms();
 
     // Check validity: need enough updates and reasonable position
     bool valid_updates  = (update_count >= MIN_UPDATES_FOR_VALID);
@@ -342,7 +342,7 @@ STATIC void send_imu_telemetry(const sensor_event_t* event)
 STATIC void send_position_telemetry(const sensor_fusion_position_t* position)
 {
     static uint32_t last_position_send = 0;
-    uint32_t now = platform_get_time_ms();
+    uint32_t now = timer_driver_get_time_ms();
     
     // Throttle to max 10 Hz and only send when valid
     if (position->valid && (now - last_position_send) >= 100)
@@ -482,7 +482,7 @@ void sensor_fusion_reset(void)
     xQueueReset(sensor_queue);
 
     // Reset Kalman filter to initial state
-    kalmanCoreInit(&kf_data, &kf_params, platform_get_time_ms());
+    kalmanCoreInit(&kf_data, &kf_params, timer_driver_get_time_ms());
 
     // Reset position estimate validity
     taskENTER_CRITICAL();

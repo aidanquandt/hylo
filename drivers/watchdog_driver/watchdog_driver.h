@@ -8,4 +8,4 @@
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
-void platform_watchdog_refresh(void);
+void watchdog_driver_refresh(void);

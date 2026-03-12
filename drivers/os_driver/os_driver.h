@@ -8,21 +8,12 @@
 /*---------------------------------------------------------------------------
  * Type Definitions
  *---------------------------------------------------------------------------*/
-typedef enum
-{
-    PLATFORM_GPIO_LOW  = 0,
-    PLATFORM_GPIO_HIGH = 1
-} platform_gpio_state_t;
-
-typedef enum
-{
-    PLATFORM_GPIO_PIN_LED_GREEN
-} platform_gpio_pin_t;
+typedef uint32_t os_driver_critical_state_t;
 
 /*---------------------------------------------------------------------------
- * Public function prototypes
+ * Public Function Prototypes
  *---------------------------------------------------------------------------*/
-void platform_gpio_set_leds(platform_gpio_state_t state);
-void platform_gpio_toggle_led_green(void);
-
-platform_gpio_state_t platform_gpio_read_pin(platform_gpio_pin_t pin);
+void os_driver_init(void);
+void os_driver_delay_us_blocking(uint32_t delay_us);
+os_driver_critical_state_t os_driver_critical_enter(void);
+void os_driver_critical_exit(os_driver_critical_state_t state);

@@ -8,11 +8,10 @@
 #include "datalogger.h"
 #include "error_handler.h"
 #include "feature_config.h"
-#include "main.h"
 #include "module.h"
-#include "platform_gpio.h"
-#include "platform_os.h"
-#include "platform_system.h"
+#include "gpio_driver.h"
+#include "os_driver.h"
+#include "system_driver.h"
 #include "sensor_fusion.h"
 #include "task.h"
 #include "uart_cmd_router.h"
@@ -266,10 +265,10 @@ STATIC void app_post_module_initialization(void)
 
 #if FEATURE_AUTO_CONFIGURE_ADDRESS_FROM_UUID
     // Auto-configure UWB address based on device UUID if known
-    platform_system_device_init();
+    system_driver_device_init();
 
-    platform_system_device_info_t dev_info;
-    if (platform_system_device_get_info(&dev_info))
+    system_driver_device_info_t dev_info;
+    if (system_driver_device_get_info(&dev_info))
     {
         if (dev_info.is_known_device)
         {

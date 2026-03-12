@@ -10,10 +10,10 @@
 #include "common.h"
 #include "counter.h"
 #include "error_handler.h"
-#include "imu_port.h"
+#include "imu_driver.h"
 #include "module.h"
-#include "platform_gpio.h"
-#include "platform_timer.h"
+#include "gpio_driver.h"
+#include "timer_driver.h"
 #include "sensor_fusion.h"
 #include "state_machine.h"
 #include "task.h"
@@ -121,7 +121,7 @@ STATIC bool imu_read_single(imu_ctx_t* ctx)
     vec3_t raw_accel = {0.0f, 0.0f, 0.0f};
     vec3_t raw_gyro  = {0.0f, 0.0f, 0.0f};
 
-    if (imu_port_read_accel_and_gyro(ctx->dev, &raw_accel, &raw_gyro) != IMU_PORT_SUCCESS)
+    if (imu_driver_read_accel_and_gyro(ctx->dev, &raw_accel, &raw_gyro) != IMU_DRIVER_SUCCESS)
     {
         return false;
     }
@@ -250,7 +250,7 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
     ctx->active     = false;
     memset(&ctx->raw_data, 0, sizeof(ctx->raw_data));
     ctx->chip_id = 0;
-    ctx->dev    = imu_port_init((imu_device_e)idx);
+    ctx->dev    = imu_driver_init((imu_device_e)idx);
     if (ctx->dev == NULL)
     {
         error_handler_log(ERROR_SEVERITY_WARNING, "imu", "IMU %u: init returned NULL", idx);
@@ -258,7 +258,7 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
         return;
     }
 
-    if (imu_port_probe_and_init(ctx->dev) != IMU_PORT_SUCCESS)
+    if (imu_driver_probe_and_init(ctx->dev) != IMU_DRIVER_SUCCESS)
     {
         error_handler_log(ERROR_SEVERITY_WARNING, "imu", "IMU %u: probe/init failed", idx);
         ctx->dev = NULL;
@@ -266,7 +266,7 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
         return;
     }
 
-    uint8_t chip_id = imu_port_read_chip_id(ctx->dev);
+    uint8_t chip_id = imu_driver_read_chip_id(ctx->dev);
     if (chip_id != IMU_EXPECTED_CHIP_ID_1 && chip_id != IMU_EXPECTED_CHIP_ID_2)
     {
         error_handler_log(ERROR_SEVERITY_WARNING, "imu", "IMU %u: invalid chip ID 0x%02X", idx,
@@ -277,7 +277,7 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
     }
     ctx->chip_id = chip_id;
 
-    if (imu_port_configure_accel(ctx->dev, IMU_ACCEL_RANGE_2G, IMU_ODR_200HZ) != IMU_PORT_SUCCESS)
+    if (imu_driver_configure_accel(ctx->dev, IMU_ACCEL_RANGE_2G, IMU_ODR_200HZ) != IMU_DRIVER_SUCCESS)
     {
         error_handler_log(ERROR_SEVERITY_WARNING, "imu", "IMU %u: accel config failed", idx);
         ctx->dev = NULL;
@@ -285,7 +285,7 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
         return;
     }
 
-    if (imu_port_configure_gyro(ctx->dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_200HZ) != IMU_PORT_SUCCESS)
+    if (imu_driver_configure_gyro(ctx->dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_200HZ) != IMU_DRIVER_SUCCESS)
     {
         error_handler_log(ERROR_SEVERITY_WARNING, "imu", "IMU %u: gyro config failed", idx);
         ctx->dev = NULL;
@@ -422,7 +422,7 @@ STATIC void imu_process_1kHz(void)
         {
             sensor_event_t event = {
                 .type         = SENSOR_EVENT_IMU,
-                .timestamp_ms = platform_get_time_ms(),
+                .timestamp_ms = timer_driver_get_time_ms(),
                 .sequence     = aggregate_sample_count,
                 .data.imu     = {
                     .accel_x = aggregate_data.accel.x,
@@ -455,7 +455,7 @@ STATIC void imu_process_1kHz(void)
                 {
                     continue;
                 }
-                float t = imu_port_read_temperature(c->dev);
+                float t = imu_driver_read_temperature(c->dev);
                 /* Only update on success; 0.0f is used by port to indicate read failure. */
                 if (t != 0.0f)
                 {
@@ -486,7 +486,7 @@ bool imu_soft_reset(void)
             imu_ctx_t* c = &imu_ctxs[i];
             if (c->active && c->dev != NULL)
             {
-                if (imu_port_soft_reset(c->dev) == IMU_PORT_SUCCESS)
+                if (imu_driver_soft_reset(c->dev) == IMU_DRIVER_SUCCESS)
                 {
                     any_ok = true;
                 }

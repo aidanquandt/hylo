@@ -6,7 +6,6 @@
 #include "app.h"
 #include "common.h"
 #include "error_handler.h"
-#include "main.h"
 #include "module.h"
 #include "task.h"
 #include "uart_manager.h"

@@ -21,8 +21,8 @@ target_include_directories(lib
         ${CMAKE_CURRENT_SOURCE_DIR}/uwb_protocol
 )
 
-# Dependencies - lib uses common types and timer from platform
-target_link_libraries(lib 
-    PUBLIC common    # Need common.h types/macros
-    PRIVATE timer    # Internal use of platform timer
+# Dependencies - lib uses common types and timer from drivers
+target_link_libraries(lib
+    PUBLIC common
+    PRIVATE timer_driver
 )

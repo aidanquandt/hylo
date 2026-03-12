@@ -7,7 +7,7 @@
 #include "common.h"
 #include "error_handler.h"
 #include "module.h"
-#include "platform_gpio.h"
+#include "gpio_driver.h"
 #include "semphr.h"
 #include "task.h"
 #include "uart_manager.h"
@@ -300,7 +300,7 @@ STATIC void ota_config_handle_set_gpio(const uint8_t* data, uint16_t length, uin
     }
 
     // Apply GPIO state
-    platform_gpio_set_leds((platform_gpio_state_t)msg->state);
+    gpio_driver_set_leds((gpio_driver_state_t)msg->state);
 
     error_handler_log(ERROR_SEVERITY_INFO, "ota_config", "GPIO set: pin=%d, state=%d", msg->pin,
                       msg->state);

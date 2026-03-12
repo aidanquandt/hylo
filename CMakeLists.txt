@@ -47,21 +47,20 @@ endif()
 # Preprocessor flag for firmware: #if (HWREV == 0) or #if (HWREV == 1)
 add_compile_definitions(HWREV=${HW_REV})
 
-add_subdirectory(platform)               # HAL wrappers (lib)
-add_subdirectory(lib)                    # utility libraries (counter, etc.)
-add_subdirectory(third_party/dwt_uwb_driver)   # vendor UWB driver -> 'uwb_driver'
-add_subdirectory(third_party/bmi323)     # vendor IMU sensor API -> 'bmi323_api'
-add_subdirectory(ports)                  # port layers -> 'ports' (includes uwb_port, imu_port)
-add_subdirectory(src)                    # app logic (lib)
+add_subdirectory(lib)                       # utility libraries (counter, etc.)
+add_subdirectory(third_party/dwt_uwb_driver) # vendor UWB -> 'dwt_uwb_driver' (before drivers)
+add_subdirectory(third_party/bmi323)        # vendor IMU sensor API -> 'bmi323_api'
+add_subdirectory(drivers)   # driver layer (sole interface to HAL/third_party)
+add_subdirectory(src)       # app logic
 
-# Link order matters: higher-level depends on lower-level
+# ---- Layering: firmware links app + drivers + lib only ----
+# Firmware target ${HWCONFIG_TARGET} must link only: app, drivers, lib.
+# App must not link HAL (stm32cubemx) or third_party (dwt_uwb_driver, bmi323_api) directly;
+# all hardware and vendor access goes through the drivers target.
 target_link_libraries(${HWCONFIG_TARGET}
-    components        # app
-    ports             # port layers (uwb_port, imu_port)
-    uwb_driver        # vendor UWB driver (DW3000-specific implementation)
-    bmi323_api        # vendor IMU sensor API (BMI323-specific implementation)
-    platform          # HAL wrappers
-    lib               # utility libraries
+    app         # application layer (src/)
+    drivers     # driver layer (sole interface to HAL/third_party)
+    lib         # utility libraries
 )
 
 # ---- Linker script ----

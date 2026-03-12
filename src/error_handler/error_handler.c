@@ -6,8 +6,8 @@
 #include "common.h"
 #include "feature_config.h"
 #include "module.h"
-#include "platform_gpio.h"
-#include "platform_os.h"
+#include "gpio_driver.h"
+#include "os_driver.h"
 #include "semphr.h"
 #include "task.h"
 #include "uart_manager.h"
@@ -248,7 +248,7 @@ void error_handler_fatal(const char* module, const char* format, ...)
 
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    platform_os_critical_enter();
+    os_driver_critical_enter();
 
     uint32_t counter = 0U;
     for (;;)
@@ -259,7 +259,7 @@ void error_handler_fatal(const char* module, const char* format, ...)
         counter++;
         if (counter >= 5U)
         {
-            platform_gpio_toggle_led_green();
+            gpio_driver_toggle_led_green();
             counter = 0U;
         }
     }

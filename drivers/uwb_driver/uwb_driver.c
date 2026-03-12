@@ -1,16 +1,19 @@
 /*---------------------------------------------------------------------------
  * Includes
  *---------------------------------------------------------------------------*/
-#include "uwb_port.h"
+#include "uwb_driver.h"
 #include "FreeRTOS.h"
 #include "deca_device_api.h"
 #include "deca_interface.h"
-#include "platform_gpio.h"
-#include "platform_os.h"
-#include "platform_spi.h"
-#include "platform_timer.h"
+#include "gpio_driver.h"
+#include "mac_802154.h"
+#include "os_driver.h"
+#include "queue.h"
+#include "spi_driver.h"
 #include "stopwatch.h"
 #include "task.h"
+#include "timer_driver.h"
+#include <string.h>
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -35,6 +38,8 @@ STATIC int32_t uwb_spi_write_crc(uint16_t headerLength, const uint8_t* headerBuf
 STATIC void uwb_spi_set_slow_rate(void);
 STATIC void uwb_spi_set_fast_rate(void);
 STATIC void uwb_wakeup_device_impl(void);
+STATIC void uwb_driver_rx_task(void* argument);
+STATIC void uwb_driver_tx_task(void* argument);
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -51,6 +56,29 @@ STATIC void uwb_wakeup_device_impl(void);
 #define DW3000_SFD_TIMEOUT (129U)            // SFD timeout: preamble length +  SFD length
 #define DW3000_TX_PDELAY (0x34U)             // TX preamble delay (Qorvo default)
 #define DW3000_TX_POWER (0xFDFDFDFDUL)       // TX power (max on all PRFs)
+
+#define UWB_DRIVER_RX_QUEUE_LENGTH (20U)
+#define UWB_DRIVER_TX_QUEUE_LENGTH (16U)
+#define UWB_DRIVER_TX_TIMEOUT_MS (3U)
+#define UWB_DRIVER_RX_TASK_STACK_SIZE (768U)
+#define UWB_DRIVER_RX_TASK_PRIORITY (6U)
+#define UWB_DRIVER_TX_TASK_STACK_SIZE (512U)
+#define UWB_DRIVER_TX_TASK_PRIORITY (5U)
+
+typedef struct
+{
+    uint8_t data[UWB_MAX_MESSAGE_LENGTH];
+    uint16_t length;
+    uint64_t timestamp;
+} uwb_driver_rx_event_t;
+
+typedef struct
+{
+    uint8_t payload[MAC_MAX_PAYLOAD_SIZE];
+    uint16_t length;
+    uint16_t dest_addr;
+    uint32_t message_id;
+} uwb_driver_tx_item_t;
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -69,9 +97,20 @@ STATIC struct uwb_dev_s uwb_device = {.dw_chip = {
                                       }};
 
 STATIC uwb_dev_t* current_device                    = NULL;
-STATIC uwb_port_rx_callback_t rx_callback           = NULL;
-STATIC uwb_port_tx_done_callback_t tx_done_callback = NULL;
-STATIC uwb_port_statistics_t uwb_port_stats         = {0};
+STATIC uwb_driver_rx_callback_t rx_callback           = NULL;
+STATIC uwb_driver_tx_done_callback_t tx_done_callback = NULL;
+STATIC uwb_driver_statistics_t uwb_driver_stats         = {0};
+
+STATIC QueueHandle_t rx_queue = NULL;
+STATIC QueueHandle_t tx_queue = NULL;
+STATIC TaskHandle_t tx_task_handle = NULL;
+STATIC volatile uint64_t tx_done_timestamp = 0;
+STATIC uint32_t tx_next_message_id = 1;
+STATIC uint32_t tx_queue_overflows = 0;
+STATIC uint32_t rx_queue_overflows = 0;
+STATIC uint16_t tx_pan_id = MAC_DEFAULT_PAN_ID;
+STATIC uint16_t tx_my_address = 0;
+STATIC uint8_t tx_sequence = 0;
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -84,11 +123,11 @@ STATIC int32_t uwb_spi_read(uint16_t headerLength, uint8_t* headerBuffer, uint16
         return DWT_ERROR;
     }
 
-    platform_spi_cs_low(UWB_PORT_CS_PIN);
+    spi_driver_cs_low(UWB_DRIVER_CS_PIN);
 
-    if (platform_spi_transmit(headerBuffer, headerLength) != PLATFORM_SPI_SUCCESS)
+    if (spi_driver_transmit(headerBuffer, headerLength) != SPI_DRIVER_SUCCESS)
     {
-        platform_spi_cs_high(UWB_PORT_CS_PIN);
+        spi_driver_cs_high(UWB_DRIVER_CS_PIN);
         return DWT_ERROR;
     }
 
@@ -96,13 +135,13 @@ STATIC int32_t uwb_spi_read(uint16_t headerLength, uint8_t* headerBuffer, uint16
     for (volatile uint32_t i = 0; i < SPI_READ_SETUP_DELAY_CYCLES; i++)
         ;
 
-    if (platform_spi_receive(readBuffer, readLength) != PLATFORM_SPI_SUCCESS)
+    if (spi_driver_receive(readBuffer, readLength) != SPI_DRIVER_SUCCESS)
     {
-        platform_spi_cs_high(UWB_PORT_CS_PIN);
+        spi_driver_cs_high(UWB_DRIVER_CS_PIN);
         return DWT_ERROR;
     }
 
-    platform_spi_cs_high(UWB_PORT_CS_PIN);
+    spi_driver_cs_high(UWB_DRIVER_CS_PIN);
 
     return DWT_SUCCESS;
 }
@@ -115,24 +154,24 @@ STATIC int32_t uwb_spi_write(uint16_t headerLength, const uint8_t* headerBuffer,
         return DWT_ERROR;
     }
 
-    platform_spi_cs_low(UWB_PORT_CS_PIN);
+    spi_driver_cs_low(UWB_DRIVER_CS_PIN);
 
-    if (platform_spi_transmit(headerBuffer, headerLength) != PLATFORM_SPI_SUCCESS)
+    if (spi_driver_transmit(headerBuffer, headerLength) != SPI_DRIVER_SUCCESS)
     {
-        platform_spi_cs_high(UWB_PORT_CS_PIN);
+        spi_driver_cs_high(UWB_DRIVER_CS_PIN);
         return DWT_ERROR;
     }
 
     if ((bodyLength > 0U) && (bodyBuffer != NULL))
     {
-        if (platform_spi_transmit(bodyBuffer, bodyLength) != PLATFORM_SPI_SUCCESS)
+        if (spi_driver_transmit(bodyBuffer, bodyLength) != SPI_DRIVER_SUCCESS)
         {
-            platform_spi_cs_high(UWB_PORT_CS_PIN);
+            spi_driver_cs_high(UWB_DRIVER_CS_PIN);
             return DWT_ERROR;
         }
     }
 
-    platform_spi_cs_high(UWB_PORT_CS_PIN);
+    spi_driver_cs_high(UWB_DRIVER_CS_PIN);
 
     return DWT_SUCCESS;
 }
@@ -145,53 +184,56 @@ STATIC int32_t uwb_spi_write_crc(uint16_t headerLength, const uint8_t* headerBuf
         return DWT_ERROR;
     }
 
-    platform_spi_cs_low(UWB_PORT_CS_PIN);
+    spi_driver_cs_low(UWB_DRIVER_CS_PIN);
 
-    if (platform_spi_transmit(headerBuffer, headerLength) != PLATFORM_SPI_SUCCESS)
+    if (spi_driver_transmit(headerBuffer, headerLength) != SPI_DRIVER_SUCCESS)
     {
-        platform_spi_cs_high(UWB_PORT_CS_PIN);
+        spi_driver_cs_high(UWB_DRIVER_CS_PIN);
         return DWT_ERROR;
     }
 
     if ((bodyLength > 0U) && (bodyBuffer != NULL))
     {
-        if (platform_spi_transmit(bodyBuffer, bodyLength) != PLATFORM_SPI_SUCCESS)
+        if (spi_driver_transmit(bodyBuffer, bodyLength) != SPI_DRIVER_SUCCESS)
         {
-            platform_spi_cs_high(UWB_PORT_CS_PIN);
+            spi_driver_cs_high(UWB_DRIVER_CS_PIN);
             return DWT_ERROR;
         }
     }
 
-    if (platform_spi_transmit(&crc8, 1) != PLATFORM_SPI_SUCCESS)
+    if (spi_driver_transmit(&crc8, 1) != SPI_DRIVER_SUCCESS)
     {
-        platform_spi_cs_high(UWB_PORT_CS_PIN);
+        spi_driver_cs_high(UWB_DRIVER_CS_PIN);
         return DWT_ERROR;
     }
 
-    platform_spi_cs_high(UWB_PORT_CS_PIN);
+    spi_driver_cs_high(UWB_DRIVER_CS_PIN);
 
     return DWT_SUCCESS;
 }
 
 STATIC void uwb_spi_set_slow_rate(void)
 {
-    platform_spi_cs_low(UWB_PORT_CS_PIN);
-    platform_spi_set_speed(PLATFORM_SPI_SPEED_SLOW);
-    platform_spi_cs_high(UWB_PORT_CS_PIN);
+    spi_driver_cs_low(UWB_DRIVER_CS_PIN);
+    spi_driver_set_speed(SPI_DRIVER_SPEED_SLOW);
+    spi_driver_cs_high(UWB_DRIVER_CS_PIN);
 }
 
 STATIC void uwb_spi_set_fast_rate(void)
 {
-    platform_spi_cs_low(UWB_PORT_CS_PIN);
-    platform_spi_set_speed(PLATFORM_SPI_SPEED_FAST);
-    platform_spi_cs_high(UWB_PORT_CS_PIN);
+    spi_driver_cs_low(UWB_DRIVER_CS_PIN);
+    spi_driver_set_speed(SPI_DRIVER_SPEED_FAST);
+    spi_driver_cs_high(UWB_DRIVER_CS_PIN);
 }
 
-STATIC void uwb_port_rx_ok_callback(const dwt_cb_data_t* cb_data)
+STATIC void uwb_driver_rx_ok_callback(const dwt_cb_data_t* cb_data)
 {
-    uwb_port_stats.rx_ok_count++;
-    if (cb_data == NULL)
+    uwb_driver_stats.rx_ok_count++;
+    if (cb_data == NULL || rx_queue == NULL)
+    {
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
         return;
+    }
 
     uint16_t frame_len = cb_data->datalength;
     if (frame_len <= MAC_CRC_LENGTH || frame_len > UWB_MAX_MESSAGE_LENGTH)
@@ -200,30 +242,28 @@ STATIC void uwb_port_rx_ok_callback(const dwt_cb_data_t* cb_data)
         return;
     }
 
-    // Static buffer: ISR is not reentrant, safe to reuse
-    // Avoids allocating 127 bytes on ISR stack (typically only 256-512 bytes total)
-    static uint8_t rx_buffer[UWB_MAX_MESSAGE_LENGTH];
     uint16_t data_len = frame_len - MAC_CRC_LENGTH;
-    dwt_readrxdata(rx_buffer, data_len, 0);
-
-    uint64_t current_ts = 0;
-    dwt_readrxtimestamp((uint8_t*)&current_ts, DWT_COMPAT_NONE);
+    uwb_driver_rx_event_t event = {.length = data_len};
+    dwt_readrxdata(event.data, data_len, 0);
+    dwt_readrxtimestamp((uint8_t*)&event.timestamp, DWT_COMPAT_NONE);
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
 
-    if (rx_callback != NULL)
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    if (xQueueSendFromISR(rx_queue, &event, &xHigherPriorityTaskWoken) != pdPASS)
     {
-        rx_callback(rx_buffer, data_len, current_ts);
+        rx_queue_overflows++;
     }
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
-STATIC void uwb_port_rx_timeout_callback(const dwt_cb_data_t* cb_data)
+STATIC void uwb_driver_rx_timeout_callback(const dwt_cb_data_t* cb_data)
 {
-    uwb_port_stats.rx_timeout_count++;
+    uwb_driver_stats.rx_timeout_count++;
     (void)cb_data;
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
 }
 
-STATIC void uwb_port_rx_error_callback(const dwt_cb_data_t* cb_data)
+STATIC void uwb_driver_rx_error_callback(const dwt_cb_data_t* cb_data)
 {
     (void)cb_data;
     // Hardware already tracks all error types in diagnostic counters
@@ -232,41 +272,102 @@ STATIC void uwb_port_rx_error_callback(const dwt_cb_data_t* cb_data)
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
 }
 
-STATIC void uwb_port_tx_done_callback(const dwt_cb_data_t* cb_data)
+STATIC void uwb_driver_tx_done_callback(const dwt_cb_data_t* cb_data)
 {
-    uwb_port_stats.tx_done_count++;
+    uwb_driver_stats.tx_done_count++;
     (void)cb_data;
 
     if (current_device != NULL)
     {
         current_device->last_tx_ts = 0;
         dwt_readtxtimestamp((uint8_t*)&current_device->last_tx_ts);
-
-        if (tx_done_callback != NULL)
+        tx_done_timestamp = current_device->last_tx_ts;
+        if (tx_task_handle != NULL)
         {
-            tx_done_callback(current_device->last_tx_ts);
+            BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+            vTaskNotifyGiveFromISR(tx_task_handle, &xHigherPriorityTaskWoken);
+            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
         }
     }
 
-    // Explicit RX control: always enable RX after TX completes
-    // This is the single, predictable point where RX is re-enabled after transmission
-    // Simpler than relying on hardware auto-transitions (DWT_RESPONSE_EXPECTED)
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
+}
+
+STATIC void uwb_driver_rx_task(void* argument)
+{
+    (void)argument;
+    uwb_driver_rx_event_t event;
+    for (;;)
+    {
+        if (xQueueReceive(rx_queue, &event, portMAX_DELAY) == pdPASS && rx_callback != NULL)
+        {
+            rx_callback(event.data, event.length, event.timestamp);
+        }
+    }
+}
+
+STATIC void uwb_driver_tx_task(void* argument)
+{
+    (void)argument;
+    uwb_driver_tx_item_t item;
+    for (;;)
+    {
+        if (xQueueReceive(tx_queue, &item, portMAX_DELAY) != pdPASS)
+        {
+            continue;
+        }
+
+        uint8_t tx_buffer[MAC_MAX_FRAME_SIZE];
+        mac_frame_short_t* frame = (mac_frame_short_t*)tx_buffer;
+        frame->frame_control = MAC_FC_TYPE_DATA | MAC_FC_DST_ADDR_SHORT | MAC_FC_SRC_ADDR_SHORT;
+        frame->sequence      = tx_sequence++;
+        frame->dest_pan_id   = tx_pan_id;
+        frame->dest_addr     = item.dest_addr;
+        frame->src_addr      = tx_my_address;
+        memcpy(frame->payload, item.payload, item.length);
+        uint16_t frame_len = MAC_FRAME_SHORT_HEADER_SIZE + item.length;
+
+        uwb_driver_stats.send_message_count++;
+        uwb_driver_status_t result =
+            uwb_driver_send_message(current_device, tx_buffer, frame_len);
+        if (result != UWB_DRIVER_SUCCESS)
+        {
+            if (tx_done_callback != NULL)
+            {
+                tx_done_callback(item.message_id, 0);
+            }
+            continue;
+        }
+
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(UWB_DRIVER_TX_TIMEOUT_MS)) == 0)
+        {
+            if (tx_done_callback != NULL)
+            {
+                tx_done_callback(item.message_id, 0);
+            }
+            continue;
+        }
+
+        if (tx_done_callback != NULL)
+        {
+            tx_done_callback(item.message_id, tx_done_timestamp);
+        }
+    }
 }
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
-uwb_dev_t* uwb_port_init(void)
+uwb_dev_t* uwb_driver_init(void)
 {
     return &uwb_device;
 }
 
-uwb_port_status_t uwb_port_probe_and_init(uwb_dev_t* dev)
+uwb_driver_status_t uwb_driver_probe_and_init(uwb_dev_t* dev)
 {
     if (dev == NULL)
     {
-        return UWB_PORT_ERROR_NULL_PTR;
+        return UWB_DRIVER_ERROR_NULL_PTR;
     }
 
     // Explicitly wake device before probe - device may be in deep sleep on first power-up
@@ -283,7 +384,7 @@ uwb_port_status_t uwb_port_probe_and_init(uwb_dev_t* dev)
     int ret = dwt_probe(&probe_data);
     if (ret != DWT_SUCCESS)
     {
-        return UWB_PORT_ERROR_COMM_FAIL;
+        return UWB_DRIVER_ERROR_COMM_FAIL;
     }
 
     dwt_softreset(0);
@@ -296,19 +397,19 @@ uwb_port_status_t uwb_port_probe_and_init(uwb_dev_t* dev)
     }
     if (timeout == 0)
     {
-        return UWB_PORT_ERROR_INIT_FAIL;
+        return UWB_DRIVER_ERROR_INIT_FAIL;
     }
 
     ret = dwt_initialise(DWT_READ_OTP_ALL);
     if (ret != DWT_SUCCESS)
     {
-        return UWB_PORT_ERROR_INIT_FAIL;
+        return UWB_DRIVER_ERROR_INIT_FAIL;
     }
 
-    return UWB_PORT_SUCCESS;
+    return UWB_DRIVER_SUCCESS;
 }
 
-void uwb_port_wakeup_device(uwb_dev_t* dev)
+void uwb_driver_wakeup_device(uwb_dev_t* dev)
 {
     if (dev == NULL)
     {
@@ -317,44 +418,44 @@ void uwb_port_wakeup_device(uwb_dev_t* dev)
     uwb_wakeup_device_impl();
 }
 
-uwb_port_status_t uwb_port_soft_reset(uwb_dev_t* dev)
+uwb_driver_status_t uwb_driver_soft_reset(uwb_dev_t* dev)
 {
     if (dev == NULL)
     {
-        return UWB_PORT_ERROR_NULL_PTR;
+        return UWB_DRIVER_ERROR_NULL_PTR;
     }
 
     dwt_softreset(0);
     vTaskDelay(pdMS_TO_TICKS(SOFT_RESET_DELAY_MS));
 
-    return UWB_PORT_SUCCESS;
+    return UWB_DRIVER_SUCCESS;
 }
 
 STATIC void uwb_wakeup_device_impl(void)
 {
-    platform_spi_cs_low(UWB_PORT_CS_PIN);
-    platform_os_delay_us_blocking(WAKEUP_PULSE_DURATION_US);
-    platform_spi_cs_high(UWB_PORT_CS_PIN);
+    spi_driver_cs_low(UWB_DRIVER_CS_PIN);
+    os_driver_delay_us_blocking(WAKEUP_PULSE_DURATION_US);
+    spi_driver_cs_high(UWB_DRIVER_CS_PIN);
     vTaskDelay(pdMS_TO_TICKS(WAKEUP_STABILIZATION_DELAY_MS));
 }
 
-uwb_port_status_t uwb_port_check_device_id(uwb_dev_t* dev)
+uwb_driver_status_t uwb_driver_check_device_id(uwb_dev_t* dev)
 {
     if (dev == NULL)
     {
-        return UWB_PORT_ERROR_NULL_PTR;
+        return UWB_DRIVER_ERROR_NULL_PTR;
     }
 
     int ret = dwt_check_dev_id();
     if (ret != DWT_SUCCESS)
     {
-        return UWB_PORT_ERROR_INVALID_ID;
+        return UWB_DRIVER_ERROR_INVALID_ID;
     }
 
-    return UWB_PORT_SUCCESS;
+    return UWB_DRIVER_SUCCESS;
 }
 
-uint32_t uwb_port_read_device_id(uwb_dev_t* dev)
+uint32_t uwb_driver_read_device_id(uwb_dev_t* dev)
 {
     if (dev == NULL)
     {
@@ -364,29 +465,31 @@ uint32_t uwb_port_read_device_id(uwb_dev_t* dev)
     return dwt_readdevid();
 }
 
-void uwb_port_set_pan_id(uwb_dev_t* dev, uint16_t pan_id)
+void uwb_driver_set_pan_id(uwb_dev_t* dev, uint16_t pan_id)
 {
     if (dev == NULL)
     {
         return;
     }
+    tx_pan_id = pan_id;
     dwt_setpanid(pan_id);
 }
 
-void uwb_port_set_address(uwb_dev_t* dev, uint16_t address)
+void uwb_driver_set_address(uwb_dev_t* dev, uint16_t address)
 {
     if (dev == NULL)
     {
         return;
     }
+    tx_my_address = address;
     dwt_setaddress16(address);
 }
 
-uwb_port_status_t uwb_port_configure(uwb_dev_t* dev)
+uwb_driver_status_t uwb_driver_configure(uwb_dev_t* dev)
 {
     if (dev == NULL)
     {
-        return UWB_PORT_ERROR_NULL_PTR;
+        return UWB_DRIVER_ERROR_NULL_PTR;
     }
 
     // Per DW3000 User Manual: IC must be in idle mode before calling dwt_configure()
@@ -412,7 +515,7 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev)
 
     if (dwt_configure(&config) != DWT_SUCCESS)
     {
-        return UWB_PORT_ERROR_COMM_FAIL;
+        return UWB_DRIVER_ERROR_COMM_FAIL;
     }
 
     dwt_setrxantennadelay(DW3000_ANTENNA_DELAY);
@@ -431,19 +534,19 @@ uwb_port_status_t uwb_port_configure(uwb_dev_t* dev)
 
     if (dwt_rxenable(DWT_START_RX_IMMEDIATE) != DWT_SUCCESS)
     {
-        return UWB_PORT_ERROR_COMM_FAIL;
+        return UWB_DRIVER_ERROR_COMM_FAIL;
     }
 
-    return UWB_PORT_SUCCESS;
+    return UWB_DRIVER_SUCCESS;
 }
 
-uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uint16_t length)
+uwb_driver_status_t uwb_driver_send_message(uwb_dev_t* dev, const uint8_t* data, uint16_t length)
 {
-    uwb_port_stats.send_message_count++;
+    uwb_driver_stats.send_message_count++;
     if (dev == NULL || data == NULL)
-        return UWB_PORT_ERROR_NULL_PTR;
+        return UWB_DRIVER_ERROR_NULL_PTR;
     if (length == 0 || length > UWB_MAX_MESSAGE_LENGTH)
-        return UWB_PORT_ERROR_CONFIG;
+        return UWB_DRIVER_ERROR_CONFIG;
 
     dwt_writetxdata(length, (uint8_t*)data, 0);
     dwt_writetxfctrl(length + MAC_CRC_LENGTH, 0, 1);
@@ -456,19 +559,19 @@ uwb_port_status_t uwb_port_send_message(uwb_dev_t* dev, const uint8_t* data, uin
     if (ret != DWT_SUCCESS)
     {
         dwt_rxenable(DWT_START_RX_IMMEDIATE);
-        return UWB_PORT_ERROR_TX_FAIL;
+        return UWB_DRIVER_ERROR_TX_FAIL;
     }
 
-    return UWB_PORT_SUCCESS;
+    return UWB_DRIVER_SUCCESS;
 }
 
-uint64_t uwb_port_read_device_time(void)
+uint64_t uwb_driver_read_device_time(void)
 {
     uint32_t sys_time_hi32 = dwt_readsystimestamphi32();
     return (uint64_t)(sys_time_hi32);
 }
 
-void uwb_port_enable_rx_interrupt(void)
+void uwb_driver_enable_rx_interrupt(void)
 {
     // Clear all status bits before enabling interrupts (critical for clean startup)
     dwt_writesysstatuslo(DWT_INT_ALL_LO);
@@ -481,25 +584,35 @@ void uwb_port_enable_rx_interrupt(void)
                         0 , DWT_ENABLE_INT_ONLY);
 }
 
-void uwb_port_handle_irq(void)
+void uwb_driver_handle_irq(void)
 {
     dwt_isr();
 }
 
 // Override the weak callback from platform layer
-void platform_gpio_uwb_irq_callback(void)
+void gpio_driver_uwb_irq_callback(void)
 {
-    uwb_port_handle_irq();
+    uwb_driver_handle_irq();
 }
 
-void uwb_port_register_isr_callbacks(uwb_dev_t* dev)
+void uwb_driver_register_isr_callbacks(uwb_dev_t* dev)
 {
     current_device = dev;
 
-    dwt_callbacks_s callbacks = {.cbRxOk      = uwb_port_rx_ok_callback,
-                                 .cbRxTo      = uwb_port_rx_timeout_callback,
-                                 .cbRxErr     = uwb_port_rx_error_callback,
-                                 .cbTxDone    = uwb_port_tx_done_callback,
+    if (rx_queue == NULL)
+    {
+        rx_queue = xQueueCreate(UWB_DRIVER_RX_QUEUE_LENGTH, sizeof(uwb_driver_rx_event_t));
+        tx_queue = xQueueCreate(UWB_DRIVER_TX_QUEUE_LENGTH, sizeof(uwb_driver_tx_item_t));
+        (void)xTaskCreate(uwb_driver_rx_task, "uwb_rx", UWB_DRIVER_RX_TASK_STACK_SIZE, NULL,
+                          UWB_DRIVER_RX_TASK_PRIORITY, NULL);
+        (void)xTaskCreate(uwb_driver_tx_task, "uwb_tx", UWB_DRIVER_TX_TASK_STACK_SIZE, NULL,
+                          UWB_DRIVER_TX_TASK_PRIORITY, &tx_task_handle);
+    }
+
+    dwt_callbacks_s callbacks = {.cbRxOk      = uwb_driver_rx_ok_callback,
+                                 .cbRxTo      = uwb_driver_rx_timeout_callback,
+                                 .cbRxErr     = uwb_driver_rx_error_callback,
+                                 .cbTxDone    = uwb_driver_tx_done_callback,
                                  .cbSPIErr    = NULL,
                                  .cbSPIRDErr  = NULL,
                                  .cbSPIRdy    = NULL,
@@ -512,19 +625,72 @@ void uwb_port_register_isr_callbacks(uwb_dev_t* dev)
     dwt_setcallbacks(&callbacks);
 }
 
-void uwb_port_set_rx_callback(uwb_port_rx_callback_t callback)
+void uwb_driver_set_rx_callback(uwb_driver_rx_callback_t callback)
 {
     rx_callback = callback;
 }
 
-void uwb_port_set_tx_done_callback(uwb_port_tx_done_callback_t callback)
+void uwb_driver_set_tx_done_callback(uwb_driver_tx_done_callback_t callback)
 {
     tx_done_callback = callback;
 }
 
-uwb_port_statistics_t uwb_port_get_statistics(void)
+uint32_t uwb_driver_send_async(const uint8_t* payload, uint16_t length, uint16_t dest_addr)
 {
-    uwb_port_statistics_t stats = uwb_port_stats;
+    if (tx_queue == NULL || payload == NULL || length == 0 || length > MAC_MAX_PAYLOAD_SIZE)
+    {
+        return 0;
+    }
+    uint32_t message_id;
+    taskENTER_CRITICAL();
+    message_id = tx_next_message_id++;
+    if (tx_next_message_id == 0)
+    {
+        tx_next_message_id = 1;
+    }
+    taskEXIT_CRITICAL();
+
+    uwb_driver_tx_item_t item = {
+        .length     = length,
+        .dest_addr  = dest_addr,
+        .message_id = message_id,
+    };
+    memcpy(item.payload, payload, length);
+
+    if (xQueueSend(tx_queue, &item, 0) != pdPASS)
+    {
+        tx_queue_overflows++;
+        return 0;
+    }
+    return message_id;
+}
+
+uint32_t uwb_driver_get_tx_queue_depth(void)
+{
+    return (tx_queue != NULL) ? (uint32_t)uxQueueMessagesWaiting(tx_queue) : 0;
+}
+
+uint32_t uwb_driver_get_tx_queue_overflows(void)
+{
+    return tx_queue_overflows;
+}
+
+uint32_t uwb_driver_get_rx_queue_overflows(void)
+{
+    return rx_queue_overflows;
+}
+
+void uwb_driver_reset_tx_queue(void)
+{
+    if (tx_queue != NULL)
+    {
+        xQueueReset(tx_queue);
+    }
+}
+
+uwb_driver_statistics_t uwb_driver_get_statistics(void)
+{
+    uwb_driver_statistics_t stats = uwb_driver_stats;
     
     // Read hardware diagnostic counters
     dwt_deviceentcnts_t hw_counters;
@@ -542,19 +708,19 @@ uwb_port_statistics_t uwb_port_get_statistics(void)
     stats.TXF   = hw_counters.TXF;
     
     // Read live status registers
-    stats.irq_status = uwb_port_read_irq_status();
-    stats.status_lo  = uwb_port_read_status_register_low();
-    stats.status_hi  = uwb_port_read_status_register_high();
+    stats.irq_status = uwb_driver_read_irq_status();
+    stats.status_lo  = uwb_driver_read_status_register_low();
+    stats.status_hi  = uwb_driver_read_status_register_high();
     
     return stats;
 }
 
-uint32_t uwb_port_read_irq_status(void)
+uint32_t uwb_driver_read_irq_status(void)
 {
     return dwt_checkirq();
 }
 
-uint32_t uwb_port_read_status_register_low(void)
+uint32_t uwb_driver_read_status_register_low(void)
 {
     decaIrqStatus_t irq_status = decamutexon();
     uint32_t status            = dwt_readsysstatuslo();
@@ -562,7 +728,7 @@ uint32_t uwb_port_read_status_register_low(void)
     return status;
 }
 
-uint32_t uwb_port_read_status_register_high(void)
+uint32_t uwb_driver_read_status_register_high(void)
 {
     decaIrqStatus_t irq_status = decamutexon();
     uint32_t status            = dwt_readsysstatushi();
@@ -572,7 +738,7 @@ uint32_t uwb_port_read_status_register_high(void)
 
 void deca_usleep(unsigned long time_us)
 {
-    platform_os_delay_us_blocking((uint32_t)time_us);
+    os_driver_delay_us_blocking((uint32_t)time_us);
 }
 
 void deca_sleep(unsigned int time_ms)
@@ -582,15 +748,15 @@ void deca_sleep(unsigned int time_ms)
 
 decaIrqStatus_t decamutexon(void)
 {
-    return (decaIrqStatus_t)platform_os_critical_enter();
+    return (decaIrqStatus_t)os_driver_critical_enter();
 }
 
 void decamutexoff(decaIrqStatus_t s)
 {
-    platform_os_critical_exit((platform_os_critical_state_t)s);
+    os_driver_critical_exit((os_driver_critical_state_t)s);
 }
 
-void uwb_port_reset_event_counters(void)
+void uwb_driver_reset_event_counters(void)
 {
     // Re-enabling event counters resets them to zero
     dwt_configeventcounters(1);

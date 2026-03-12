@@ -5,7 +5,7 @@
  *---------------------------------------------------------------------------*/
 #include "common.h"
 #include "feature_config.h"
-#include "platform_spi.h"
+#include "spi_driver.h"
 
 /*---------------------------------------------------------------------------
  * Forward Declarations
@@ -15,7 +15,7 @@ typedef struct imu_dev_s imu_dev_t;
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define IMU_PORT_CS_PIN PLATFORM_SPI_CS_IMU
+#define IMU_DRIVER_CS_PIN SPI_DRIVER_CS_IMU
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -28,23 +28,22 @@ typedef enum
     IMU_DEVICE_2,
     IMU_DEVICE_3,
 #endif
-    IMU_NUM_DEVICES /* last: 0 or 4; use for iteration and bounds */
+    IMU_NUM_DEVICES
 } imu_device_e;
 
-/* Max devices for static array sizing (avoids zero-length arrays when IMU_NUM_DEVICES is 0). */
 #define IMU_MAX_DEVICES (4U)
 
 typedef enum
 {
-    IMU_PORT_SUCCESS          = 0,
-    IMU_PORT_ERROR_NULL_PTR   = -1,
-    IMU_PORT_ERROR_COMM_FAIL  = -2,
-    IMU_PORT_ERROR_INVALID_ID = -3,
-    IMU_PORT_ERROR_TIMEOUT    = -4,
-    IMU_PORT_ERROR_INIT_FAIL  = -5,
-    IMU_PORT_ERROR_CONFIG     = -6,
-    IMU_PORT_ERROR_UNKNOWN    = -99
-} imu_port_status_t;
+    IMU_DRIVER_SUCCESS          = 0,
+    IMU_DRIVER_ERROR_NULL_PTR   = -1,
+    IMU_DRIVER_ERROR_COMM_FAIL  = -2,
+    IMU_DRIVER_ERROR_INVALID_ID = -3,
+    IMU_DRIVER_ERROR_TIMEOUT    = -4,
+    IMU_DRIVER_ERROR_INIT_FAIL  = -5,
+    IMU_DRIVER_ERROR_CONFIG     = -6,
+    IMU_DRIVER_ERROR_UNKNOWN    = -99
+} imu_driver_status_t;
 
 typedef enum
 {
@@ -82,23 +81,16 @@ typedef enum
 } imu_odr_t;
 
 /*---------------------------------------------------------------------------
- * Public Types
- *---------------------------------------------------------------------------*/
-
-/*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
-imu_dev_t* imu_port_init(imu_device_e device);
-imu_port_status_t imu_port_probe_and_init(imu_dev_t* dev);
-imu_port_status_t imu_port_check_device_id(imu_dev_t* dev);
-uint8_t imu_port_read_chip_id(imu_dev_t* dev);
-float imu_port_read_temperature(imu_dev_t* dev);
-imu_port_status_t imu_port_read_accel(imu_dev_t* dev, vec3_t* accel);
-imu_port_status_t imu_port_read_gyro(imu_dev_t* dev, vec3_t* gyro);
-imu_port_status_t imu_port_read_accel_and_gyro(imu_dev_t* dev, vec3_t* accel, vec3_t* gyro);
-imu_port_status_t imu_port_configure_accel(imu_dev_t* dev, imu_accel_range_t range, imu_odr_t odr);
-imu_port_status_t imu_port_configure_gyro(imu_dev_t* dev, imu_gyro_range_t range, imu_odr_t odr);
-imu_port_status_t imu_port_soft_reset(imu_dev_t* dev);
-void imu_port_delay_us(uint32_t period_us, void* intf_ptr);
-int8_t imu_port_spi_read(uint8_t reg_addr, uint8_t* reg_data, uint32_t len, void* intf_ptr);
-int8_t imu_port_spi_write(uint8_t reg_addr, const uint8_t* reg_data, uint32_t len, void* intf_ptr);
+imu_dev_t* imu_driver_init(imu_device_e device);
+imu_driver_status_t imu_driver_probe_and_init(imu_dev_t* dev);
+imu_driver_status_t imu_driver_check_device_id(imu_dev_t* dev);
+uint8_t imu_driver_read_chip_id(imu_dev_t* dev);
+float imu_driver_read_temperature(imu_dev_t* dev);
+imu_driver_status_t imu_driver_read_accel(imu_dev_t* dev, vec3_t* accel);
+imu_driver_status_t imu_driver_read_gyro(imu_dev_t* dev, vec3_t* gyro);
+imu_driver_status_t imu_driver_read_accel_and_gyro(imu_dev_t* dev, vec3_t* accel, vec3_t* gyro);
+imu_driver_status_t imu_driver_configure_accel(imu_dev_t* dev, imu_accel_range_t range, imu_odr_t odr);
+imu_driver_status_t imu_driver_configure_gyro(imu_dev_t* dev, imu_gyro_range_t range, imu_odr_t odr);
+imu_driver_status_t imu_driver_soft_reset(imu_dev_t* dev);

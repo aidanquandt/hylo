@@ -6,17 +6,10 @@
 #include "common.h"
 
 /*---------------------------------------------------------------------------
- * Typedefs
- *---------------------------------------------------------------------------*/
-
-typedef enum
-{
-    PLATFORM_I2C_SUCCESS = 0,
-    PLATFORM_I2C_ERROR   = -1,
-    PLATFORM_I2C_TIMEOUT = -2,
-} platform_i2c_status_E;
-
-/*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
-
+uint32_t timer_driver_get_timestamp(void);
+uint32_t timer_driver_get_elapsed_us(uint32_t start_timestamp, uint32_t end_timestamp);
+void timer_driver_on_overflow(void);
+uint64_t timer_driver_get_time_us(void);
+uint32_t timer_driver_get_time_ms(void);
