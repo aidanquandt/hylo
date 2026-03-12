@@ -4,6 +4,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "common.h"
+#include "feature_config.h"
 #include "platform_spi.h"
 
 /*---------------------------------------------------------------------------
@@ -16,15 +17,25 @@ typedef struct imu_dev_s imu_dev_t;
  *---------------------------------------------------------------------------*/
 #define IMU_PORT_CS_PIN PLATFORM_SPI_CS_IMU
 
-#if (HWREV == 1)
+/* Number of IMU devices on this board: 0 (HWREV 0) or 4 (HWREV 1). Use for init/run loops. */
+#if FEATURE_IMUS_POPULATED
 #define IMU_PORT_NUM_DEVICES (4U)
 #else
-#define IMU_PORT_NUM_DEVICES (1U)
+#define IMU_PORT_NUM_DEVICES (0U)
 #endif
 
 /*---------------------------------------------------------------------------
  * Typedefs
  *---------------------------------------------------------------------------*/
+typedef enum
+{
+    IMU_DEVICE_0 = 0,
+    IMU_DEVICE_1,
+    IMU_DEVICE_2,
+    IMU_DEVICE_3,
+    IMU_NUM_DEVICES /* last: use for array size and iteration bound */
+} imu_device_e;
+
 typedef enum
 {
     IMU_PORT_SUCCESS          = 0,
@@ -79,7 +90,7 @@ typedef enum
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
-imu_dev_t* imu_port_init(uint8_t device_index);
+imu_dev_t* imu_port_init(imu_device_e device);
 imu_port_status_t imu_port_probe_and_init(imu_dev_t* dev);
 imu_port_status_t imu_port_check_device_id(imu_dev_t* dev);
 uint8_t imu_port_read_chip_id(imu_dev_t* dev);

@@ -33,34 +33,33 @@ STATIC bool validate_odr(imu_odr_t odr);
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-STATIC struct imu_dev_s imu_devices[IMU_PORT_NUM_DEVICES];
+STATIC struct imu_dev_s imu_devices[IMU_NUM_DEVICES];
 
-STATIC const platform_spi_cs_E imu_cs_pins[IMU_PORT_NUM_DEVICES] = {
+STATIC const platform_spi_cs_E imu_cs_pins[IMU_NUM_DEVICES] = {
     PLATFORM_SPI_CS_IMU_0,
-#if (IMU_PORT_NUM_DEVICES > 1)
     PLATFORM_SPI_CS_IMU_1,
     PLATFORM_SPI_CS_IMU_2,
     PLATFORM_SPI_CS_IMU_3,
-#endif
 };
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
 
-imu_dev_t* imu_port_init(uint8_t device_index)
+imu_dev_t* imu_port_init(imu_device_e device)
 {
-    if (device_index >= IMU_PORT_NUM_DEVICES)
+    if (IMU_PORT_NUM_DEVICES == 0U || (unsigned)device >= IMU_NUM_DEVICES)
     {
         return NULL;
     }
 
-    struct imu_dev_s* dev   = &imu_devices[device_index];
+    uint8_t idx = (uint8_t)device;
+    struct imu_dev_s* dev = &imu_devices[idx];
     dev->bmi_dev.intf           = BMI3_SPI_INTF;
     dev->bmi_dev.read           = imu_spi_read;
     dev->bmi_dev.write          = imu_spi_write;
     dev->bmi_dev.delay_us       = imu_delay_us;
-    dev->bmi_dev.intf_ptr       = (void*)&imu_cs_pins[device_index];
+    dev->bmi_dev.intf_ptr       = (void*)&imu_cs_pins[idx];
     dev->bmi_dev.read_write_len = 32;
 
     return dev;

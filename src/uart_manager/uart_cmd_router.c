@@ -166,7 +166,27 @@ STATIC void uart_cmd_router_handle_imu(const char* action, const char* target, c
                     state_str = "startup";
                     break;
             }
-            uart_manager_print("IMU: %s, chip_id=0x%02X\r\n", state_str, status.chip_id);
+            uart_manager_print("IMU overall: %s, chip_id=0x%02X\r\n", state_str, status.chip_id);
+            for (uint8_t i = 0; i < imu_get_device_count(); i++)
+            {
+                imu_state_e s = imu_get_state((imu_device_e)i);
+                switch (s)
+                {
+                    case IMU_STATE_ACTIVE:
+                        state_str = "active";
+                        break;
+                    case IMU_STATE_INITIALIZATION:
+                        state_str = "init";
+                        break;
+                    case IMU_STATE_FAULTED:
+                        state_str = "FAULTED";
+                        break;
+                    default:
+                        state_str = "startup";
+                        break;
+                }
+                uart_manager_print("  IMU%u: %s\r\n", i, state_str);
+            }
         }
         else if (strcmp(target, "data") == 0)
         {
@@ -211,25 +231,37 @@ STATIC void uart_cmd_router_handle_imu(const char* action, const char* target, c
         }
         else if (strcmp(target, "temp") == 0)
         {
-            float temp;
-            if (imu_get_temp(&temp))
+            uint8_t n = imu_get_device_count();
+            if (n == 0)
             {
-                uart_manager_print("Temp: %.2f C\r\n", temp);
+                uart_manager_print("No IMUs on this board\r\n");
             }
             else
             {
-                uart_manager_print("IMU not active\r\n");
+                for (uint8_t i = 0; i < n; i++)
+                {
+                    float temp;
+                    if (imu_get_temp((imu_device_e)i, &temp))
+                    {
+                        uart_manager_print("IMU%u: %.2f C\r\n", i, temp);
+                    }
+                    else
+                    {
+                        uart_manager_print("IMU%u: inactive\r\n", i);
+                    }
+                }
             }
         }
         else if (strcmp(target, "array") == 0)
         {
+            uint8_t n      = imu_get_device_count();
             uint8_t active = imu_get_active_count();
-            uart_manager_print("IMU Array (%u/%u active):\r\n", active, IMU_NUM_DEVICES);
+            uart_manager_print("IMU Array (%u/%u active):\r\n", active, n);
 
-            for (uint8_t i = 0; i < IMU_NUM_DEVICES; i++)
+            for (uint8_t i = 0; i < n; i++)
             {
                 imu_data_t d;
-                if (imu_get_individual_data(i, &d))
+                if (imu_get_individual_data((imu_device_e)i, &d))
                 {
                     uart_manager_print(
                         "  IMU[%u]: Accel X=%+.3f Y=%+.3f Z=%+.3f m/s^2 | Gyro X=%+.3f Y=%+.3f "

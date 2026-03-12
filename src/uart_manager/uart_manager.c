@@ -142,13 +142,14 @@ STATIC void uart_manager_process_10Hz(void)
     }
 
     // IMU_STREAM_ARRAY
+    uint8_t n      = imu_get_device_count();
     uint8_t active = imu_get_active_count();
-    uart_manager_print("IMU[%u/%u]", active, IMU_NUM_DEVICES);
+    uart_manager_print("IMU[%u/%u]", active, n);
 
-    for (uint8_t i = 0; i < IMU_NUM_DEVICES; i++)
+    for (uint8_t i = 0; i < n; i++)
     {
         imu_data_t d;
-        if (imu_get_individual_data(i, &d))
+        if (imu_get_individual_data((imu_device_e)i, &d))
         {
             uart_manager_print(" | [%u] A(%+.2f,%+.2f,%+.2f) G(%+.2f,%+.2f,%+.2f)",
                                i, d.accel.x, d.accel.y, d.accel.z,

@@ -7,11 +7,6 @@
 #include "imu_port.h"
 
 /*---------------------------------------------------------------------------
- * Defines
- *---------------------------------------------------------------------------*/
-#define IMU_NUM_DEVICES IMU_PORT_NUM_DEVICES
-
-/*---------------------------------------------------------------------------
  * Typedefs
  *---------------------------------------------------------------------------*/
 
@@ -41,10 +36,12 @@ typedef struct
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
 void imu_get_status(imu_status_t* status);
+imu_state_e imu_get_state(imu_device_e device);
 bool imu_get_data(imu_data_t* data);
 bool imu_get_accel(vec3_t* accel);
 bool imu_get_gyro(vec3_t* gyro);
-bool imu_get_temp(float* temp);
-bool imu_get_individual_data(uint8_t index, imu_data_t* data);
+bool imu_get_temp(imu_device_e device, float* temp);
+bool imu_get_individual_data(imu_device_e device, imu_data_t* data);
+uint8_t imu_get_device_count(void);
 uint8_t imu_get_active_count(void);
 bool imu_soft_reset(void);
