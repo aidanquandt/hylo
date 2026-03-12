@@ -12,7 +12,6 @@
 #include "semphr.h"
 #include "state_machine.h"
 #include "task.h"
-#include "uart_manager.h"
 #include "uwb_driver.h"
 #include "uwb_protocol_messages.h"
 

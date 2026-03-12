@@ -10,7 +10,7 @@
 #include "os_driver.h"
 #include "semphr.h"
 #include "task.h"
-#include "uart_manager.h"
+// #include "uart_manager.h"  /* Commented out for uart_manager removal - new UART architecture pending */
 
 
 /*---------------------------------------------------------------------------
@@ -180,8 +180,8 @@ void error_handler_log(error_severity_e severity, const char* module, const char
             dropped_error_count++;
         }
 
-        // Print directly (uart_manager_print handles ISR context)
-#if FEATURE_UART_LOGGING
+        // Print directly (uart_manager_print handles ISR context) - commented out for uart_manager removal
+#if 0 && FEATURE_UART_LOGGING
         const char* severity_str = error_handler_severity_to_string(severity);
         uart_manager_print("[%s] %s: %s\r\n", severity_str, module, message);
 #endif
@@ -216,7 +216,7 @@ void error_handler_log(error_severity_e severity, const char* module, const char
     error_handler_increment_counter(severity);
     xSemaphoreGive(error_mutex);
 
-#if FEATURE_UART_LOGGING
+#if 0 && FEATURE_UART_LOGGING
     const char* severity_str = error_handler_severity_to_string(severity);
     uart_manager_print("[%s] %s: %s\r\n", severity_str, record.module, record.message);
 #endif
@@ -231,9 +231,8 @@ void error_handler_fatal(const char* module, const char* format, ...)
     va_end(args);
     message[sizeof(message) - 1] = '\0';
 
-#if FEATURE_UART_LOGGING
-    // Note: Fatal errors are printed regardless of logging setting in many systems
-    // since they indicate critical failures. Change this behavior if needed.
+#if 0 && FEATURE_UART_LOGGING
+    /* Commented out for uart_manager removal - new UART architecture pending */
     uart_manager_print("\r\n");
     uart_manager_print("==============================================\r\n");
     uart_manager_print("         FATAL ERROR - SYSTEM HALTED          \r\n");

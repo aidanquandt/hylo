@@ -10,7 +10,6 @@
 #include "gpio_driver.h"
 #include "semphr.h"
 #include "task.h"
-#include "uart_manager.h"
 #include "uwb.h"
 #include "uwb_node.h"
 #include "uwb_protocol_messages.h"

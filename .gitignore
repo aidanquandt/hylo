@@ -53,5 +53,14 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.pyc
+
 # Wifi keys and other sensitive information
 **/wifi_config.h

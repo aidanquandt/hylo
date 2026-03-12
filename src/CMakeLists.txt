@@ -7,6 +7,7 @@ target_link_libraries(components_inc INTERFACE
     common
     drivers
     lib
+    protocol
     CMSIS-DSP
 )
 
@@ -22,9 +23,9 @@ target_include_directories(components_inc INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/sensor_fusion
     ${CMAKE_CURRENT_SOURCE_DIR}/twr
     ${CMAKE_CURRENT_SOURCE_DIR}/twr_manager
-    ${CMAKE_CURRENT_SOURCE_DIR}/uart_manager
     ${CMAKE_CURRENT_SOURCE_DIR}/uwb
     ${CMAKE_CURRENT_SOURCE_DIR}/uwb_node
+    ${CMAKE_CURRENT_SOURCE_DIR}/uart_protocol
     ${CMAKE_CURRENT_SOURCE_DIR}/watchdog
     ${CMAKE_CURRENT_SOURCE_DIR}/wifi
 )
@@ -52,6 +53,14 @@ set(APP_SOURCES
 )
 add_component_module(app_main "${APP_SOURCES}")
 
+# UART protocol: framing (COBS+CRC16) and RX task; links protocol + drivers
+set(UART_PROTOCOL_SOURCES
+    uart_protocol/uart_framing.c
+    uart_protocol/uart_protocol_task.c
+    uart_protocol/protocol_handlers.c
+)
+add_component_module(uart_protocol "${UART_PROTOCOL_SOURCES}")
+
 set(MODULE_SOURCES
     module/module.c
     datalogger/datalogger.c
@@ -67,8 +76,6 @@ set(MODULE_SOURCES
     twr/responder.c
     twr_manager/twr_manager.c
     twr_manager/twr_scheduler.c
-    uart_manager/uart_manager.c
-    uart_manager/uart_cmd_router.c
     uwb/uwb.c
     uwb_node/uwb_node.c
     watchdog/watchdog.c

@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+import "nanopb.proto";
+
+message PingRequest {}
+
+message PingResponse {
+  uint32 seq = 1;
+}
+
+message SetAddressRequest {
+  uint32 address = 1;
+  uint32 pan_id = 2;
+}
+
+message SetAddressResponse {
+  bool success = 1;
+}
+
+message GetConfigRequest {}
+
+message GetConfigResponse {
+  uint32 pan_id = 1;
+  uint32 short_addr = 2;
+}
+
+message LogLine {
+  uint32 level = 1;
+  string text = 2 [(nanopb).max_length = 64];
+}

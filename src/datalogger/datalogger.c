@@ -8,7 +8,6 @@
 #include "error_handler.h"
 #include "module.h"
 #include "task.h"
-#include "uart_manager.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -181,23 +180,7 @@ STATIC void datalogger_monitor_heap_usage(void)
 
 STATIC void datalogger_monitor_uart_health(void)
 {
-    uint32_t queue_count         = uart_manager_get_queue_count();
-    STATIC uint32_t prev_dropped = 0U;
-    uint32_t dropped             = uart_manager_get_dropped_count();
-
-    if (dropped > prev_dropped)
-    {
-        uint32_t new_drops = dropped - prev_dropped;
-        error_handler_log(ERROR_SEVERITY_ERROR, "datalogger", "[UART] %u messages dropped!\n",
-                          (unsigned int)new_drops);
-        prev_dropped = dropped;
-    }
-
-    if (queue_count > 24U)
-    {
-        error_handler_log(ERROR_SEVERITY_WARNING, "datalogger", "[UART] Queue high: %u/32\n",
-                          (unsigned int)queue_count);
-    }
+    /* UART health monitoring disabled - uart_manager removed pending new UART architecture */
 }
 
 /*---------------------------------------------------------------------------

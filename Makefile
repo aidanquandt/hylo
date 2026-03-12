@@ -8,6 +8,7 @@ PRESET_RELEASE := arm-gcc-release
 .PHONY: all build clean rebuild help check-deps flash distclean debug release
 .PHONY: clean-debug clean-release rebuild-release
 .PHONY: host host-help host-monitor host-enable-streaming host-visualization
+.PHONY: protocol-codegen
 
 all build debug:
 	@if [ -z "$(REV)" ]; then echo "Error: REV must be specified (0 or 1). Use: make build REV=0 or make build REV=1"; exit 1; fi
@@ -37,8 +38,15 @@ distclean:
 	rm -rf build
 	@echo "Removed build/"
 
+# Regenerate protocol .pb and codegen; verify outputs (requires third_party/nanopb submodule)
+protocol-codegen:
+	python protocol/verify_codegen.py
+
 help:
 	@echo "Hylo build (from repo root)"
+	@echo ""
+	@echo "Protocol (UART .proto codegen):"
+	@echo "  make protocol-codegen  Regenerate .pb.c/.pb.h and protocol_ids/dispatch/tx; verify"
 	@echo ""
 	@echo "Firmware:"
 	@echo "  make build REV=0 or make build REV=1  Build (REV required)"

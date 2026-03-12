@@ -9,7 +9,6 @@
 #include "sensor_fusion.h"
 #include "twr.h"
 #include "twr_manager.h"
-#include "uart_manager.h"
 #include "uwb.h"
 #include "uwb_node.h"
 #include "watchdog.h"
@@ -18,7 +17,16 @@
 /*---------------------------------------------------------------------------
  * Public variables
  *---------------------------------------------------------------------------*/
-extern const module_S uart_manager_module;
+/* Stub for UART_MANAGER_MODULE slot - uart_manager removed pending new UART architecture */
+STATIC const module_S uart_manager_stub = {
+    .module_name          = "uart_manager",
+    .module_init          = NULL,
+    .module_create_task   = NULL,
+    .module_process_1Hz   = NULL,
+    .module_process_10Hz  = NULL,
+    .module_process_100Hz = NULL,
+    .module_process_1kHz  = NULL,
+};
 extern const module_S error_handler_module;
 extern const module_S sensor_fusion_module;
 extern const module_S datalogger_module;
@@ -32,7 +40,7 @@ extern const module_S twr_manager_module;
 extern const module_S wifi_module;
 
 const module_S* const modules[NUM_MODULES] = {
-    [UART_MANAGER_MODULE]  = &uart_manager_module,
+    [UART_MANAGER_MODULE]  = &uart_manager_stub,
     [ERROR_HANDLER_MODULE] = &error_handler_module,
     [SENSOR_FUSION_MODULE] = &sensor_fusion_module,
     [DATALOGGER_MODULE]    = &datalogger_module,

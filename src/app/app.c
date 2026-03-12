@@ -14,8 +14,8 @@
 #include "system_driver.h"
 #include "sensor_fusion.h"
 #include "task.h"
-#include "uart_cmd_router.h"
-#include "uart_manager.h"
+#include "uart_driver.h"
+#include "uart_protocol_task.h"
 #include "uwb.h"
 #include "wifi.h"
 
@@ -261,8 +261,6 @@ STATIC void app_create_module_tasks(void)
 
 STATIC void app_post_module_initialization(void)
 {
-    uart_cmd_router_init();
-
 #if FEATURE_AUTO_CONFIGURE_ADDRESS_FROM_UUID
     // Auto-configure UWB address based on device UUID if known
     system_driver_device_init();
@@ -297,8 +295,11 @@ STATIC void app_post_module_initialization(void)
 /*---------------------------------------------------------------------------
  * Public function implementations
  *---------------------------------------------------------------------------*/
+
 void app_init(void)
 {
+    uart_driver_init();
+    uart_protocol_task_start();
     app_initialize_modules();
     app_create_module_tasks();
     app_post_module_initialization();
