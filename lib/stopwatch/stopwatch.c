@@ -2,7 +2,7 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "stopwatch.h"
-#include "platform_timer.h"
+#include "timer_driver.h"
 
 /*---------------------------------------------------------------------------
  * Types
@@ -30,7 +30,7 @@ void stopwatch_start(uint8_t id)
         return;
     }
 
-    stopwatches[id].start_time = platform_get_timestamp();
+    stopwatches[id].start_time = timer_driver_get_timestamp();
     stopwatches[id].is_running = true;
 }
 
@@ -41,7 +41,7 @@ void stopwatch_stop(uint8_t id)
         return;
     }
 
-    stopwatches[id].stop_time  = platform_get_timestamp();
+    stopwatches[id].stop_time  = timer_driver_get_timestamp();
     stopwatches[id].is_running = false;
 }
 
@@ -53,8 +53,8 @@ uint32_t stopwatch_elapsed_us(uint8_t id)
     }
 
     uint32_t end_time =
-        stopwatches[id].is_running ? platform_get_timestamp() : stopwatches[id].stop_time;
-    return platform_get_elapsed_us(stopwatches[id].start_time, end_time);
+        stopwatches[id].is_running ? timer_driver_get_timestamp() : stopwatches[id].stop_time;
+    return timer_driver_get_elapsed_us(stopwatches[id].start_time, end_time);
 }
 
 bool stopwatch_is_running(uint8_t id)

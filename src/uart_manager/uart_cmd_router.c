@@ -9,7 +9,7 @@
 #include "imu.h"
 #include "uart_manager.h"
 #include "ota_config.h"
-#include "platform_system.h"
+#include "system_driver.h"
 #include "sensor_fusion.h"
 #include "stopwatch.h"
 #include "task.h"
@@ -550,7 +550,8 @@ STATIC void uart_cmd_router_handle_uwb(const char* action, const char* target, c
                                (unsigned int)uwb_get_tx_queue_overflows(),
                                (unsigned int)uwb_get_rx_queue_overflows());
 
-            uwb_port_statistics_t port_stats = uwb_port_get_statistics();
+            uwb_driver_stats_t port_stats;
+            uwb_get_driver_statistics(&port_stats);
             uart_manager_print("Port Stats:\r\n");
             uart_manager_print("  rx_ok_count: %lu\r\n", (unsigned long)port_stats.rx_ok_count);
             uart_manager_print("  rx_timeout_count: %lu\r\n",
@@ -1325,9 +1326,9 @@ STATIC void uart_cmd_router_handle_system(const char* action, const char* target
     {
         if (strcmp(target, "uuid") == 0)
         {
-            uint32_t word0 = platform_system_get_uuid_word(0);
-            uint32_t word1 = platform_system_get_uuid_word(1);
-            uint32_t word2 = platform_system_get_uuid_word(2);
+            uint32_t word0 = system_driver_get_uuid_word(0);
+            uint32_t word1 = system_driver_get_uuid_word(1);
+            uint32_t word2 = system_driver_get_uuid_word(2);
 
             uart_manager_print("\r\n");
             uart_manager_print("=== STM32 Unique ID ===\r\n");
@@ -1342,8 +1343,8 @@ STATIC void uart_cmd_router_handle_system(const char* action, const char* target
         }
         else if (strcmp(target, "info") == 0)
         {
-            platform_system_device_info_t dev_info;
-            if (platform_system_device_get_info(&dev_info))
+            system_driver_device_info_t dev_info;
+            if (system_driver_device_get_info(&dev_info))
             {
                 uart_manager_print("\r\n");
                 uart_manager_print("=== Device Information ===\r\n");

@@ -11,7 +11,7 @@
 #include "imu.h"
 #include "module.h"
 #include "uart_manager.h"
-#include "platform_uart.h"
+#include "uart_driver.h"
 #include "state_machine.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -210,7 +210,7 @@ STATIC void wifi_init(void)
     telemetry_stats.sequence = 0;
     
     ota_parser_init();
-    wifi_rx_init();
+    uart_driver_wifi_rx_init();
 }
 
 STATIC void wifi_process_10Hz(void)
@@ -898,7 +898,7 @@ STATIC void wifi_transmit_telemetry_queue(void)
         
         if (len > 0 && len < (int)sizeof(tx_buf))
         {
-            wifi_uart_transmit_blocking((uint8_t*)tx_buf, (uint16_t)len);
+            uart_driver_wifi_transmit_blocking((uint8_t*)tx_buf, (uint16_t)len);
             telemetry_stats.events_transmitted++;
         }
     }
@@ -913,7 +913,7 @@ STATIC void wifi_start_command(const char *cmd)
 
     // Send command - use blocking for initialization commands
     // (wifi module runs in periodic callback, not dedicated task)
-    wifi_uart_transmit_blocking((uint8_t*)cmd, (uint16_t)strlen(cmd));
+    uart_driver_wifi_transmit_blocking((uint8_t*)cmd, (uint16_t)strlen(cmd));
 
     // Reset tracking
     cmd_response_window[0] = 0;

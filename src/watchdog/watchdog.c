@@ -6,7 +6,7 @@
 #include "error_handler.h"
 #include "feature_config.h"
 #include "module.h"
-#include "platform_watchdog.h"
+#include "watchdog_driver.h"
 #include "task.h"
 
 /*---------------------------------------------------------------------------
@@ -66,7 +66,7 @@ STATIC void watchdog_task(void* argument)
     TickType_t lastWake = xTaskGetTickCount();
 
 #if FEATURE_WATCHDOG_ENABLE_IWDG
-    platform_watchdog_refresh();
+    watchdog_driver_refresh();
 #endif
 
     for (;;)
@@ -80,7 +80,7 @@ STATIC void watchdog_task(void* argument)
         if (current_heartbeats == HEARTBEAT_ALL_BITS)
         {
 #if FEATURE_WATCHDOG_ENABLE_IWDG
-            platform_watchdog_refresh();
+            watchdog_driver_refresh();
 #endif
         }
         else

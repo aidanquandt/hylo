@@ -1,14 +1,11 @@
-# Umbrella libraries (target name "components" kept for link compatibility)
-add_library(components INTERFACE)
+# App layer umbrella: app = all app libs; components_inc = include + link interface for all app modules.
+add_library(app INTERFACE)
 add_library(components_inc INTERFACE)
 
-# Global dependencies - app logic needs platform, ports, drivers, utils, and common
+# App must not link HAL, third_party, or hwconfig; driver includes/deps come via the drivers target only.
 target_link_libraries(components_inc INTERFACE
     common
-    stm32cubemx
-    platform
-    ports
-    uwb_driver_itf
+    drivers
     lib
     CMSIS-DSP
 )
@@ -47,13 +44,13 @@ function(add_component_module MODULE_NAME SOURCES)
     add_library(${MODULE_NAME} STATIC ${SOURCES})
     target_link_libraries(${MODULE_NAME} PUBLIC components_inc)
     set_target_properties(${MODULE_NAME} PROPERTIES FOLDER "src")
-    target_link_libraries(components INTERFACE ${MODULE_NAME})
+    target_link_libraries(app INTERFACE ${MODULE_NAME})
 endfunction()
 
 set(APP_SOURCES
     app/app.c
 )
-add_component_module(app "${APP_SOURCES}")
+add_component_module(app_main "${APP_SOURCES}")
 
 set(MODULE_SOURCES
     module/module.c

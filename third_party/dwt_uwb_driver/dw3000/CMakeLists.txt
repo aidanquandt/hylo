@@ -9,6 +9,6 @@ add_library(dw3000_uwb_driver STATIC
             
 target_include_directories(dw3000_uwb_driver PRIVATE .)
 
-target_link_libraries(dw3000_uwb_driver 
-    PRIVATE uwb_driver
+target_link_libraries(dw3000_uwb_driver
+    PRIVATE dwt_uwb_driver
 )
