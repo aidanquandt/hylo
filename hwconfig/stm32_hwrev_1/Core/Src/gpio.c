@@ -38,12 +38,6 @@
         * Output
         * EVENT_OUT
         * EXTI
-     PD6   ------> SDMMC2_CK
-     PD7   ------> SDMMC2_CMD
-     PG9   ------> SDMMC2_D0
-     PG10   ------> SDMMC2_D1
-     PG11   ------> SDMMC2_D2
-     PG12   ------> SDMMC2_D3
 */
 void MX_GPIO_Init(void)
 {
@@ -53,6 +47,7 @@ void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
+  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
@@ -123,30 +118,6 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(SW_button_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PD6 PD7 */
-  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  GPIO_InitStruct.Alternate = GPIO_AF11_SDMMC2;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PG9 PG10 */
-  GPIO_InitStruct.Pin = GPIO_PIN_9|GPIO_PIN_10;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  GPIO_InitStruct.Alternate = GPIO_AF11_SDMMC2;
-  HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PG11 PG12 */
-  GPIO_InitStruct.Pin = GPIO_PIN_11|GPIO_PIN_12;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  GPIO_InitStruct.Alternate = GPIO_AF10_SDMMC2;
-  HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PG13 */
   GPIO_InitStruct.Pin = GPIO_PIN_13;

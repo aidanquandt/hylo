@@ -14,7 +14,7 @@
 #include "task.h"
 #include "wifi.h"
 #include <math.h>
-
+#include "sdcard_driver.h"
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
@@ -36,10 +36,15 @@ STATIC void sensor_fusion_task(void* pvParameters);
 STATIC void sensor_fusion_process_10Hz(void);
 STATIC void sensor_fusion_update_position_estimate(void);
 
-// Telemetry helpers (WIFI)
+// Telemetry helpers (WIFI + SD card) — only used on HWREV 1
+#if (HWREV == 1)
 STATIC void send_ranging_telemetry(const sensor_ranging_data_t* ranging, uint32_t timestamp_ms);
 STATIC void send_imu_telemetry(const sensor_event_t* event);
 STATIC void send_position_telemetry(const sensor_fusion_position_t* position);
+STATIC void sdcard_log_ranging(const sensor_ranging_data_t* ranging, uint32_t timestamp_ms);
+STATIC void sdcard_log_imu(const sensor_event_t* event);
+STATIC void sdcard_log_position(const sensor_fusion_position_t* position);
+#endif
 
 /*---------------------------------------------------------------------------
  * Module Functions
@@ -181,14 +186,18 @@ STATIC void sensor_fusion_task(void* pvParameters)
             stats.events_popped++;
 
             // Send telemetry over WIFI even when fusion is inactive (for monitoring raw data)
-            if (event.type == SENSOR_EVENT_IMU && imu_enabled)
+            #if (HWREV == 1)
+            if (event.type == SENSOR_EVENT_IMU)
             {
                 send_imu_telemetry(&event);
+                sdcard_log_imu(&event);
             }
             else if (event.type == SENSOR_EVENT_RANGING)
             {
                 send_ranging_telemetry(&event.data.ranging, event.timestamp_ms);
+                sdcard_log_ranging(&event.data.ranging, event.timestamp_ms);
             }
+            #endif
 
             // Discard events when sensor fusion is not active
             if (!fusion_active)
@@ -276,13 +285,20 @@ STATIC void sensor_fusion_update_position_estimate(void)
                                        ? (float)update_count / (float)CONFIDENCE_RAMP_UPDATES
                                        : 1.0f;
     
-    // Send position estimate to WiFi telemetry
-    send_position_telemetry(&position_estimate);
+    position_estimate.imu_enable = imu_enabled;
+
+    #if (HWREV == 1)
+        // Send position estimate to WiFi telemetry
+        send_position_telemetry(&position_estimate);
+        // Log position estimate to SD card
+        sdcard_log_position(&position_estimate);
+    #endif
 }
 
 /*---------------------------------------------------------------------------
- * Telemetry Helper Functions
+ * Telemetry Helper Functions (HWREV 1 only: WiFi + SD card)
  *---------------------------------------------------------------------------*/
+#if (HWREV == 1)
 
 /**
  * @brief Send ranging telemetry to WiFi (non-blocking)
@@ -310,7 +326,7 @@ STATIC void send_imu_telemetry(const sensor_event_t* event)
     // IMU runs at 200Hz, so only send every 20th sample to avoid flooding
     static uint8_t imu_decimation_counter = 0;
 
-    if (counter_uint8_t(&imu_decimation_counter, 20))
+    if (counter_uint8_t(&imu_decimation_counter, 20)) // log every 20th sample to get ~10Hz (200Hz / 20)
     {
         if (wifi_telemetry_is_ready())
         {
@@ -332,8 +348,8 @@ STATIC void send_position_telemetry(const sensor_fusion_position_t* position)
     static uint32_t last_position_send = 0;
     uint32_t now = timer_driver_get_time_ms();
     
-    // Throttle to max 10 Hz and only send when valid
-    if (position->valid && (now - last_position_send) >= 100)
+    // Throttle to max 10 Hz and always send (even if position invalid)
+    if ((now - last_position_send) >= 100)
     {
         if (wifi_telemetry_is_ready())
         {
@@ -347,6 +363,88 @@ STATIC void send_position_telemetry(const sensor_fusion_position_t* position)
         }
     }
 }
+
+/**
+ * @brief Log ranging event to SD card (non-blocking)
+ */
+STATIC void sdcard_log_ranging(const sensor_ranging_data_t* ranging, uint32_t timestamp_ms)
+{
+    sdcard_driver_event_t entry = {
+        .type         = SDCARD_DRIVER_EVENT_RANGING,
+        .timestamp_ms = timestamp_ms,
+        .data.ranging = {
+            .distance_m = ranging->distance_m,
+            .anchor_addr = ranging->anchor_addr,
+            .anchor_x = ranging->anchor_position.x,
+            .anchor_y = ranging->anchor_position.y,
+            .anchor_z = ranging->anchor_position.z,
+            .quality = ranging->quality,
+            .rssi_dbm = ranging->rssi_dbm,
+        },
+    };
+    (void)sdcard_driver_push_event(&entry);
+}
+
+/**
+ * @brief Log IMU event to SD card (decimated - every 20th sample = ~10Hz at 200Hz input)
+ */
+STATIC void sdcard_log_imu(const sensor_event_t* event)
+{
+    static uint8_t imu_sd_counter = 0;
+    if (counter_uint8_t(&imu_sd_counter, 5)) // log every 5th sample to get ~40Hz (200Hz / 5) - adjust as needed for desired logging rate
+    {
+        sdcard_driver_event_t entry = {
+            .type         = SDCARD_DRIVER_EVENT_IMU,
+            .timestamp_ms = event->timestamp_ms,
+            .data.imu = {
+                .accel_x = event->data.imu.accel_x,
+                .accel_y = event->data.imu.accel_y,
+                .accel_z = event->data.imu.accel_z,
+                .gyro_x = event->data.imu.gyro_x,
+                .gyro_y = event->data.imu.gyro_y,
+                .gyro_z = event->data.imu.gyro_z,
+                .temp_c = event->data.imu.temp_c,
+            },
+        };
+        (void)sdcard_driver_push_event(&entry);
+    }
+}
+
+/**
+ * @brief Log position estimate to SD card (throttled to 10Hz, valid only)
+ */
+STATIC void sdcard_log_position(const sensor_fusion_position_t* position)
+{
+    static uint32_t last_sd_position_send = 0;
+    uint32_t now = timer_driver_get_time_ms();
+
+    if ((now - last_sd_position_send) >= 100U) // Throttle to max 10 Hz CHANGE IF WANT MORE FREQUENT LOGGING!!!
+    {
+        if (position->valid)
+        {
+            sdcard_driver_event_t entry = {
+                .type             = SDCARD_DRIVER_EVENT_POSITION,
+                .timestamp_ms     = position->timestamp_ms,
+                .data.position = {
+                    .x = position->x,
+                    .y = position->y,
+                    .z = position->z,
+                    .vx = position->vx,
+                    .vy = position->vy,
+                    .vz = position->vz,
+                    .confidence = position->confidence,
+                    .valid = position->valid,
+                    .imu_enable = imu_enabled,
+                },
+            };
+            (void)sdcard_driver_push_event(&entry);
+            last_sd_position_send = now;
+        }
+    }
+}
+
+#endif /* HWREV == 1 */
+
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations

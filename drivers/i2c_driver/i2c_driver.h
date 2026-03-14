@@ -1,0 +1,35 @@
+#pragma once
+
+/*---------------------------------------------------------------------------
+ * Includes
+ *---------------------------------------------------------------------------*/
+#include "common.h"
+
+/*---------------------------------------------------------------------------
+ * Typedefs
+ *---------------------------------------------------------------------------*/
+
+typedef enum
+{
+    I2C_DRIVER_SUCCESS = 0,
+    I2C_DRIVER_ERROR   = -1,
+    I2C_DRIVER_TIMEOUT = -2,
+} i2c_driver_status_E;
+
+/** Selects which I2C bus (maps to HW handle per HWREV). */
+typedef enum
+{
+    I2C_EEPROM = 0,
+    I2C_COUNT
+} i2c_id_t;
+
+/*---------------------------------------------------------------------------
+ * Defines
+ *---------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------
+ * Public Function Prototypes
+ *---------------------------------------------------------------------------*/
+i2c_driver_status_E i2c_driver_write_register_16(i2c_id_t id, uint16_t dev_addr, uint16_t reg,
+                                                  const uint8_t* data, uint8_t len);
+i2c_driver_status_E i2c_driver_read_register_16(i2c_id_t id, uint16_t dev_addr, uint16_t reg, uint8_t* data, uint8_t len);
