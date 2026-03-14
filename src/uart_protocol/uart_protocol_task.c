@@ -11,7 +11,7 @@
 #include <string.h>
 
 #define RX_CHUNK_SIZE  64
-#define TASK_STACK     1024
+#define TASK_STACK     1024 /* 4KB: deep tx chain (protocol_send_frame=245B + uart_driver_transmit=130B + protocol_dispatch 170+ cases) */
 #define TASK_PRIORITY  (tskIDLE_PRIORITY + 1)
 
 static void uart_protocol_task_fn(void *arg)

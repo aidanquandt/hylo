@@ -191,10 +191,12 @@ STATIC void initiator_handle_message_impl(const twr_event_t* event, twr_context_
         }
 
         default:
+        {
             InitiatorUnexpectedMessageTypeEvent ev = InitiatorUnexpectedMessageTypeEvent_init_zero;
             ev.message_type = (int32_t)msg_type;
             protocol_tx_InitiatorUnexpectedMessageTypeEvent(&ev);
             break;
+        }
     }
 }
 

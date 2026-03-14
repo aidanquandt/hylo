@@ -22,7 +22,6 @@ target_link_libraries(components_inc INTERFACE
 target_include_directories(components_inc INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/app
-    ${CMAKE_CURRENT_SOURCE_DIR}/module
     ${CMAKE_CURRENT_SOURCE_DIR}/datalogger
     ${CMAKE_CURRENT_SOURCE_DIR}/imu
     ${CMAKE_CURRENT_SOURCE_DIR}/ota_config
@@ -69,7 +68,6 @@ set(UART_PROTOCOL_SOURCES
 add_component_module(uart_protocol "${UART_PROTOCOL_SOURCES}")
 
 set(MODULE_SOURCES
-    module/module.c
     datalogger/datalogger.c
     imu/imu.c
     ota_config/ota_config.c

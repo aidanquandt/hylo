@@ -126,18 +126,18 @@ def emit_protocol_tx_c(messages, out_path):
         "#include <pb_encode.h>",
         "#include <stddef.h>",
         "",
-        "/* Single encode buffer; size must fit largest message (see PROTOCOL_PB_H_MAX_SIZE). */",
+        "/* Stack-local encode buffer per call: avoids shared-state races across tasks. */",
         "#define PROTOCOL_TX_BUF_SIZE 110",
-        "static uint8_t s_tx_buf[PROTOCOL_TX_BUF_SIZE];",
         "",
     ]
     for name in messages:
         lines.append("void protocol_tx_{}(const {} *msg)".format(name, name))
         lines.append("{")
-        lines.append("  pb_ostream_t stream = pb_ostream_from_buffer(s_tx_buf, sizeof(s_tx_buf));")
+        lines.append("  uint8_t tx_buf[PROTOCOL_TX_BUF_SIZE];")
+        lines.append("  pb_ostream_t stream = pb_ostream_from_buffer(tx_buf, sizeof(tx_buf));")
         lines.append("  if (!pb_encode(&stream, {}_fields, msg))".format(name))
         lines.append("    return;")
-        lines.append("  protocol_send_frame(MSG_ID_{}, s_tx_buf, stream.bytes_written);".format(name))
+        lines.append("  protocol_send_frame(MSG_ID_{}, tx_buf, stream.bytes_written);".format(name))
         lines.append("}")
         lines.append("")
     with open(out_path, "w", encoding="utf-8") as f:

@@ -538,10 +538,9 @@ def _run_send_command(port: str | None, command: str, args: List[str], route_ove
                 return True, f"OK [src:{str(resp_source).upper()}]", []
             resp = resp_cls()
             resp.ParseFromString(resp_payload)
-            response_text = _protocol_tool.format_message(resp_type, resp) + f" [src:{str(resp_source).upper()}]"
-            with _event_log_lock:
-                new_events = list(_event_log[prev_len:])
-            return True, response_text, new_events
+            response_text = _protocol_tool.format_message(resp_type, resp)
+            # Don't return new_events here: the SSE stream already delivered them to the frontend.
+            return True, response_text, []
         except Exception as e:
             with _serial_lock:
                 _pending_expected_id = None

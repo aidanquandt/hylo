@@ -5,7 +5,6 @@
 #include "FreeRTOS.h"
 #include "backoff.h"
 #include "common.h"
-#include "module.h"
 #include "protocol_tx.h"
 #include "protocol.pb.h"
 #include "gpio_driver.h"
@@ -65,7 +64,6 @@ STATIC struct
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
-STATIC void ota_config_module_init(void);
 STATIC void ota_config_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr,
                                         uint64_t rx_timestamp);
 STATIC void ota_config_handle_set_address(const uint8_t* data, uint16_t length, uint16_t src_addr);
@@ -85,25 +83,11 @@ STATIC bool ota_config_send_with_retry_ex(uint16_t target_addr, uint16_t new_add
 STATIC bool ota_config_verify_auth(uint32_t received_token, uint16_t src_addr, uint16_t sequence);
 STATIC void ota_config_init_message_header(protocol_header_t* header, uint8_t msg_type);
 
-/*---------------------------------------------------------------------------
- * Module Registration
- *---------------------------------------------------------------------------*/
-extern const module_S ota_config_module;
-
-const module_S ota_config_module = {
-    .module_name          = "ota_config",
-    .module_init          = ota_config_module_init,
-    .module_create_task   = NULL,
-    .module_process_1Hz   = NULL,
-    .module_process_10Hz  = NULL,
-    .module_process_100Hz = NULL,
-    .module_process_1kHz  = NULL,
-};
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
-STATIC void ota_config_module_init(void)
+void ota_config_init(void)
 {
     // Initialize pending request table
     memset(pending_requests, 0, sizeof(pending_requests));

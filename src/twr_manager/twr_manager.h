@@ -9,6 +9,7 @@
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
+void twr_manager_init(void);
 bool twr_manager_start(void);
 void twr_manager_stop(void);
 bool twr_manager_is_active(void);

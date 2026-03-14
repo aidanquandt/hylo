@@ -9,6 +9,8 @@
 #include "wifi.h"
 #include "wifi_config.h"
 #include "imu.h"
+#include "system_halt.h"
+#include "task_config.h"
 #include "uart_driver.h"
 #include "state_machine.h"
 #include "FreeRTOS.h"
@@ -95,15 +97,15 @@ STATIC void wifi_start_command(const char *cmd);
 STATIC void wifi_check_response(const char *expected_token, uint32_t timeout_ms);
 
 /*---------------------------------------------------------------------------
- * Module Functions
+ * Private Function Prototypes (module-internal)
  *---------------------------------------------------------------------------*/
 #if FEATURE_WIFI_MODULE
-STATIC void wifi_init(void);
 STATIC void wifi_task(void* argument);
 STATIC StaticTask_t wifi_task_tcb;
 STATIC StackType_t wifi_task_stack[WIFI_TASK_STACK_SIZE];
-STATIC bool wifi_task_started = false;
 
+STATIC void wifi_process_10Hz(void);
+STATIC void wifi_10Hz_task(void* pvParameters);
 #endif
 
 /*---------------------------------------------------------------------------
@@ -157,11 +159,27 @@ STATIC const uint16_t PORT = WIFI_PORT;
  *---------------------------------------------------------------------------*/
 
 #if FEATURE_WIFI_MODULE
-STATIC void wifi_init(void)
+void wifi_init(void)
 {   
     gpio_driver_esp_set();
     ota_parser_init();
     uart_driver_rx_start(UART_WIFI);
+
+    BaseType_t result = xTaskCreate(wifi_10Hz_task, "wifi_10hz", TASK_STACK_2KB,
+                                    NULL, TASK_PRIORITY_WIFI, NULL);
+    if (result != pdPASS)
+    {
+        system_halt("wifi", "Failed to create 10Hz task");
+    }
+
+    (void)xTaskCreateStatic(
+        wifi_task,
+        "WIFI",
+        WIFI_TASK_STACK_SIZE,
+        NULL,
+        WIFI_TASK_PRIORITY,
+        wifi_task_stack,
+        &wifi_task_tcb);
 }
 
 STATIC void wifi_task(void* argument)
@@ -173,27 +191,9 @@ STATIC void wifi_task(void* argument)
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(WIFI_TASK_PERIOD_MS));
     }
 }
+#else
+void wifi_init(void) {}
 #endif /* FEATURE_WIFI_MODULE */
-
-void wifi_start_task(void)
-{
-#if FEATURE_WIFI_MODULE
-    if (wifi_task_started) {
-        return;
-    }
-
-    wifi_init();
-    (void)xTaskCreateStatic(
-        wifi_task,
-        "WIFI",
-        WIFI_TASK_STACK_SIZE,
-        NULL,
-        WIFI_TASK_PRIORITY,
-        wifi_task_stack,
-        &wifi_task_tcb);
-    wifi_task_started = true;
-#endif
-}
 
 STATIC uint16_t wifi_transition_logic(uint16_t currentState, uint32_t stateTimer)
 {
