@@ -19,6 +19,7 @@ add_driver_module(spi_driver)
 add_driver_module(timer_driver)
 add_driver_module(os_driver)
 add_driver_module(watchdog_driver)
+add_driver_module(sdcard_driver uart_driver)
 add_driver_module(system_driver config)
 
 # IMU driver: wraps bmi323 + spi/gpio/timer/os drivers

@@ -45,14 +45,14 @@ uint32_t timer_driver_get_time_ms(void)
 }
 
 /* Override HAL weak callback: TIM6 = HAL_IncTick(), TIM2 = 64-bit time overflow */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim)
-{
-    if (htim->Instance == TIM6)
-    {
-        HAL_IncTick();
-    }
-    else if (htim->Instance == TIM2)
-    {
-        timer_driver_on_overflow();
-    }
-}
+// void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim)
+// {
+//     if (htim->Instance == TIM6)
+//     {
+//         HAL_IncTick();
+//     }
+//     else if (htim->Instance == TIM2)
+//     {
+//         timer_driver_on_overflow();
+//     }
+// }

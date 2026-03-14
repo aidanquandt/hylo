@@ -1,6 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include "FreeRTOS.h"
 #include "stream_buffer.h"
 
@@ -17,6 +18,8 @@ typedef enum {
 
 void uart_driver_init(void);
 void uart_driver_transmit(uart_id_t id, const uint8_t *buf, size_t len);
+void uart_driver_vprintf(uart_id_t id, const char *fmt, va_list args);
+void uart_driver_printf(uart_id_t id, const char *fmt, ...);
 uint32_t uart_driver_get_drop_count(uart_id_t id);
 StreamBufferHandle_t uart_driver_get_rx_stream(uart_id_t id);
 void uart_driver_rx_start(uart_id_t id);
