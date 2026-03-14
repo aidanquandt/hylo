@@ -9,7 +9,7 @@ time.sleep(0.5)
 # Clear any pending data
 ser.reset_input_buffer()
 
-# Send enable command (correct format: module.action.target args)
+# Send enable command (legacy text protocol; use uart_protocol_tool for protobuf)
 command = "imu.set.stream on\r\n"
 print(f"\nSending: {command.strip()}")
 ser.write(command.encode('utf-8'))

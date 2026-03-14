@@ -2,11 +2,19 @@
 add_library(app INTERFACE)
 add_library(components_inc INTERFACE)
 
+# system_halt: minimal lib for fatal halt (sends SystemFatalEvent then halts)
+add_library(system_halt STATIC system_halt/system_halt.c)
+target_include_directories(system_halt PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(system_halt PUBLIC protocol common drivers)
+set_target_properties(system_halt PROPERTIES FOLDER "src")
+
 # App must not link HAL, third_party, or hwconfig; driver includes/deps come via the drivers target only.
 target_link_libraries(components_inc INTERFACE
     common
     drivers
     lib
+    protocol
+    system_halt
     CMSIS-DSP
 )
 
@@ -16,15 +24,15 @@ target_include_directories(components_inc INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/app
     ${CMAKE_CURRENT_SOURCE_DIR}/module
     ${CMAKE_CURRENT_SOURCE_DIR}/datalogger
-    ${CMAKE_CURRENT_SOURCE_DIR}/error_handler
     ${CMAKE_CURRENT_SOURCE_DIR}/imu
     ${CMAKE_CURRENT_SOURCE_DIR}/ota_config
     ${CMAKE_CURRENT_SOURCE_DIR}/sensor_fusion
     ${CMAKE_CURRENT_SOURCE_DIR}/twr
     ${CMAKE_CURRENT_SOURCE_DIR}/twr_manager
-    ${CMAKE_CURRENT_SOURCE_DIR}/uart_manager
     ${CMAKE_CURRENT_SOURCE_DIR}/uwb
     ${CMAKE_CURRENT_SOURCE_DIR}/uwb_node
+    ${CMAKE_CURRENT_SOURCE_DIR}/uart_protocol
+    ${CMAKE_CURRENT_SOURCE_DIR}/system_halt
     ${CMAKE_CURRENT_SOURCE_DIR}/watchdog
     ${CMAKE_CURRENT_SOURCE_DIR}/wifi
 )
@@ -52,10 +60,17 @@ set(APP_SOURCES
 )
 add_component_module(app_main "${APP_SOURCES}")
 
+# UART protocol: framing (COBS+CRC16) and RX task; links protocol + drivers
+set(UART_PROTOCOL_SOURCES
+    uart_protocol/uart_framing.c
+    uart_protocol/uart_protocol_task.c
+    uart_protocol/protocol_handlers.c
+)
+add_component_module(uart_protocol "${UART_PROTOCOL_SOURCES}")
+
 set(MODULE_SOURCES
     module/module.c
     datalogger/datalogger.c
-    error_handler/error_handler.c
     imu/imu.c
     ota_config/ota_config.c
     sensor_fusion/kalman_core.c
@@ -67,8 +82,6 @@ set(MODULE_SOURCES
     twr/responder.c
     twr_manager/twr_manager.c
     twr_manager/twr_scheduler.c
-    uart_manager/uart_manager.c
-    uart_manager/uart_cmd_router.c
     uwb/uwb.c
     uwb_node/uwb_node.c
     watchdog/watchdog.c

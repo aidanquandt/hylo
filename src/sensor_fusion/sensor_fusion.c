@@ -5,14 +5,13 @@
 #include "FreeRTOS.h"
 #include "common.h"
 #include "counter.h"
-#include "error_handler.h"
 #include "feature_config.h"
+#include "system_halt.h"
 #include "kalman_core.h"
 #include "module.h"
 #include "timer_driver.h"
 #include "queue.h"
 #include "task.h"
-#include "uart_manager.h"
 #include "wifi.h"
 #include <math.h>
 
@@ -92,7 +91,6 @@ STATIC void process_ranging_event(const sensor_event_t* event)
     {
         if (debug_prints_enabled)
         {
-            uart_manager_print("SF_DEBUG: Ranging skipped - anchor position invalid\r\n");
         }
         return; // Cannot update without known anchor position
     }
@@ -135,7 +133,7 @@ STATIC void sensor_fusion_init(void)
     sensor_queue = xQueueCreate(SENSOR_FUSION_QUEUE_SIZE, sizeof(sensor_event_t));
     if (sensor_queue == NULL)
     {
-        error_handler_fatal("sensor_fusion", "Failed to create event queue");
+        system_halt("sensor_fusion", "Failed to create event queue");
     }
 
     stats.events_pushed = 0;
@@ -165,7 +163,7 @@ STATIC void sensor_fusion_init(void)
 
     if (result != pdPASS)
     {
-        error_handler_fatal("sensor_fusion", "Failed to create processing task");
+        system_halt("sensor_fusion", "Failed to create processing task");
     }
 }
 
@@ -238,13 +236,10 @@ STATIC void sensor_fusion_process_10Hz(void)
     {
         if (sensor_fusion_get_position(&pos))
         {
-            uart_manager_print(
-                "SF: x=%6.2f y=%6.2f z=%6.2f m | vx=%6.2f vy=%6.2f vz=%6.2f m/s | conf=%.2f\r\n",
-                pos.x, pos.y, pos.z, pos.vx, pos.vy, pos.vz, pos.confidence);
+            (void)pos;
         }
         else if (fusion_active)
         {
-            uart_manager_print("SF: Position estimate invalid\r\n");
         }
     }
 #endif
@@ -273,15 +268,8 @@ STATIC void sensor_fusion_update_position_estimate(void)
 
     position_estimate.valid = valid_updates && reasonable_pos && no_nans;
 
-    // DEBUG: Log why position is invalid
-    if (debug_prints_enabled && !position_estimate.valid)
-    {
-        uart_manager_print("SF_DEBUG: valid=%d, updates=%lu (need %d), pos=(%.2f,%.2f,%.2f), "
-                           "noNaN=%d, reasonable=%d\r\n",
-                           position_estimate.valid, (unsigned long)update_count,
-                           MIN_UPDATES_FOR_VALID, position_estimate.x, position_estimate.y,
-                           position_estimate.z, no_nans, reasonable_pos);
-    }
+    (void)no_nans;
+    (void)reasonable_pos;
 
     // Simple confidence metric based on update count
     position_estimate.confidence = (update_count < CONFIDENCE_RAMP_UPDATES)
@@ -608,7 +596,6 @@ bool sensor_fusion_get_debug_prints_enabled(void)
 void sensor_fusion_enable_imu(bool enable)
 {
     imu_enabled = enable;
-    uart_manager_print("SF: IMU %s\r\n", enable ? "enabled" : "disabled");
 }
 
 bool sensor_fusion_get_imu_enabled(void)
@@ -626,9 +613,6 @@ void sensor_fusion_set_process_noise(float pos, float vel, float att)
     kf_params.procNoisePos = pos;
     kf_params.procNoiseVel = vel;
     kf_params.procNoiseAtt = att;
-
-    uart_manager_print("SF: Process noise updated - pos=%.4f, vel=%.4f, att=%.4f\r\n", pos, vel,
-                       att);
 }
 
 void sensor_fusion_get_process_noise(float* pos, float* vel, float* att)
@@ -661,5 +645,4 @@ void sensor_fusion_set_kalman_params(const kalmanCoreParams_t* params)
     }
 
     kf_params = *params;
-    uart_manager_print("SF: Kalman parameters updated\r\n");
 }

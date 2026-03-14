@@ -7,7 +7,8 @@ PRESET_RELEASE := arm-gcc-release
 
 .PHONY: all build clean rebuild help check-deps flash distclean debug release
 .PHONY: clean-debug clean-release rebuild-release
-.PHONY: host host-help host-monitor host-enable-streaming host-visualization
+.PHONY: host host-help host-monitor host-enable-streaming host-visualization host-interactive
+.PHONY: protocol-codegen
 
 all build debug:
 	@if [ -z "$(REV)" ]; then echo "Error: REV must be specified (0 or 1). Use: make build REV=0 or make build REV=1"; exit 1; fi
@@ -37,8 +38,15 @@ distclean:
 	rm -rf build
 	@echo "Removed build/"
 
+# Regenerate protocol .pb and codegen; verify outputs (requires third_party/nanopb submodule)
+protocol-codegen:
+	python protocol/verify_codegen.py
+
 help:
 	@echo "Hylo build (from repo root)"
+	@echo ""
+	@echo "Protocol (UART .proto codegen):"
+	@echo "  make protocol-codegen  Regenerate .pb.c/.pb.h and protocol_ids/dispatch/tx; verify"
 	@echo ""
 	@echo "Firmware:"
 	@echo "  make build REV=0 or make build REV=1  Build (REV required)"
@@ -51,6 +59,7 @@ help:
 	@echo ""
 	@echo "Host tools (Python; in tools/host; scripts use COM10 by default):"
 	@echo "  make host-help   List host targets"
+	@echo "  make host-interactive    UART protocol: listen + send commands (PORT=COM10)"
 	@echo "  make host-monitor        Serial monitor"
 	@echo "  make host-enable-streaming  Enable IMU streaming on device"
 	@echo "  make host-visualization  IMU 3D visualization"
@@ -59,8 +68,12 @@ help:
 
 # Host tools (run from repo root; require Python + pyserial, optional: pygame, PyOpenGL)
 host host-help:
-	@echo "Host targets: host-monitor, host-enable-streaming, host-visualization"
-	@echo "Run from repo root. Edit scripts in tools/host/serial and tools/host/visualization to change COM port."
+	@echo "Host targets: host-interactive, host-monitor, host-enable-streaming, host-visualization"
+	@echo "Run from repo root. For host-interactive: make host-interactive PORT=COM10"
+
+PORT ?= COM10
+host-interactive:
+	cd tools/host/serial && python uart_protocol_tool.py --port $(PORT) interactive
 
 host-monitor:
 	cd tools/host/serial && python monitor_serial.py

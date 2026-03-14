@@ -48,6 +48,7 @@ endif()
 add_compile_definitions(HWREV=${HW_REV})
 
 add_subdirectory(lib)                       # utility libraries (counter, etc.)
+add_subdirectory(protocol)                  # UART protocol (.proto, nanopb, codegen)
 add_subdirectory(third_party/dwt_uwb_driver) # vendor UWB -> 'dwt_uwb_driver' (before drivers)
 add_subdirectory(third_party/bmi323)        # vendor IMU sensor API -> 'bmi323_api'
 add_subdirectory(drivers)   # driver layer (sole interface to HAL/third_party)
@@ -64,6 +65,11 @@ target_link_libraries(${HWCONFIG_TARGET}
 )
 
 # ---- Linker script ----
+# Force strong RX handlers (protocol_handlers.c) to be linked; otherwise the weak stubs
+# in protocol_dispatch.c satisfy refs and the real handlers are dropped from the image.
 target_link_options(${HWCONFIG_TARGET} PRIVATE
     -T${CMAKE_SOURCE_DIR}/hwconfig/${HWCONFIG_TARGET}/STM32H723XG_FLASH.ld
+    "LINKER:-u,protocol_rx_PingRequest"
+    "LINKER:-u,protocol_rx_GetConfigRequest"
+    "LINKER:-u,protocol_rx_SetAddressRequest"
 )

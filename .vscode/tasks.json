@@ -4,7 +4,7 @@
         {
             "label": "build",
             "type": "shell",
-            "command": "make",
+            "command": "make build REV=0",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -19,9 +19,37 @@
             "problemMatcher": "$gcc"
         },
         {
+            "label": "build REV=0",
+            "type": "shell",
+            "command": "make build REV=0",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": "$gcc"
+        },
+        {
+            "label": "build REV=1",
+            "type": "shell",
+            "command": "make build REV=1",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": "$gcc"
+        },
+        {
             "label": "build-release",
             "type": "shell",
-            "command": "make release",
+            "command": "make release REV=0",
             "options": {
                 "cwd": "${workspaceFolder}"
             },

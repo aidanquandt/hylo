@@ -5,15 +5,16 @@
 #include "FreeRTOS.h"
 #include "backoff.h"
 #include "common.h"
-#include "error_handler.h"
 #include "module.h"
+#include "protocol_tx.h"
+#include "uart_protocol.pb.h"
 #include "gpio_driver.h"
 #include "semphr.h"
 #include "task.h"
-#include "uart_manager.h"
 #include "uwb.h"
 #include "uwb_node.h"
 #include "uwb_protocol_messages.h"
+#include <string.h>
 
 
 /*---------------------------------------------------------------------------
@@ -161,8 +162,9 @@ STATIC void ota_config_protocol_handler(const uint8_t* data, uint16_t length, ui
 
         default:
             ota_config_stats.invalid_messages++;
-            error_handler_log(ERROR_SEVERITY_WARNING, "ota_config", "Unknown message type: 0x%02X",
-                              header->msg_type);
+            OtaConfigUnknownMessageTypeEvent ev = OtaConfigUnknownMessageTypeEvent_init_zero;
+            ev.message_type = header->msg_type;
+            protocol_tx_OtaConfigUnknownMessageTypeEvent(&ev);
             break;
     }
 }
@@ -187,8 +189,9 @@ STATIC void ota_config_handle_set_address(const uint8_t* data, uint16_t length, 
     // Validate parameters
     if (msg->new_address == INVALID_ADDRESS_MIN || msg->new_address == INVALID_ADDRESS_MAX)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "ota_config", "Invalid address: 0x%04X",
-                          msg->new_address);
+        OtaConfigInvalidAddressEvent ev = OtaConfigInvalidAddressEvent_init_zero;
+        ev.address = msg->new_address;
+        protocol_tx_OtaConfigInvalidAddressEvent(&ev);
         ota_config_send_response(src_addr, OTA_CONFIG_STATUS_INVALID_PARAM, msg->header.sequence);
         return;
     }
@@ -198,9 +201,11 @@ STATIC void ota_config_handle_set_address(const uint8_t* data, uint16_t length, 
     uint16_t pan_id = (msg->new_pan_id == PAN_ID_KEEP_CURRENT) ? uwb_get_pan_id() : msg->new_pan_id;
     uwb_set_address(msg->new_address, pan_id);
 
-    error_handler_log(ERROR_SEVERITY_INFO, "ota_config",
-                      "Address changed: 0x%04X -> 0x%04X, PAN: 0x%04X", old_address,
-                      msg->new_address, pan_id);
+    OtaConfigAddressChangedEvent ev = OtaConfigAddressChangedEvent_init_zero;
+    ev.old_address = old_address;
+    ev.new_address = msg->new_address;
+    ev.pan_id      = pan_id;
+    protocol_tx_OtaConfigAddressChangedEvent(&ev);
 
     ota_config_send_response(src_addr, OTA_CONFIG_STATUS_SUCCESS, msg->header.sequence);
 }
@@ -226,8 +231,11 @@ STATIC void ota_config_handle_set_position(const uint8_t* data, uint16_t length,
     vec3_t position = msg->position;
     uwb_node_set_position(&position);
 
-    error_handler_log(ERROR_SEVERITY_INFO, "ota_config", "Position set: (%.2f, %.2f, %.2f)",
-                      msg->position.x, msg->position.y, msg->position.z);
+    OtaConfigPositionSetEvent ev = OtaConfigPositionSetEvent_init_zero;
+    ev.x = msg->position.x;
+    ev.y = msg->position.y;
+    ev.z = msg->position.z;
+    protocol_tx_OtaConfigPositionSetEvent(&ev);
 
     ota_config_send_response(src_addr, OTA_CONFIG_STATUS_SUCCESS, msg->header.sequence);
 }
@@ -252,8 +260,9 @@ STATIC void ota_config_handle_set_node_type(const uint8_t* data, uint16_t length
     // Validate node type
     if (msg->uwb_node_type > UWB_NODE_TYPE_HYBRID)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "ota_config", "Invalid node type: %d",
-                          msg->uwb_node_type);
+        OtaConfigInvalidNodeTypeEvent ev = OtaConfigInvalidNodeTypeEvent_init_zero;
+        ev.node_type = (int32_t)msg->uwb_node_type;
+        protocol_tx_OtaConfigInvalidNodeTypeEvent(&ev);
         ota_config_send_response(src_addr, OTA_CONFIG_STATUS_INVALID_PARAM, msg->header.sequence);
         return;
     }
@@ -261,7 +270,9 @@ STATIC void ota_config_handle_set_node_type(const uint8_t* data, uint16_t length
     // Apply new node type
     uwb_node_set_type((uwb_node_type_e)msg->uwb_node_type);
 
-    error_handler_log(ERROR_SEVERITY_INFO, "ota_config", "Node type set: %d", msg->uwb_node_type);
+    OtaConfigNodeTypeSetEvent ev = OtaConfigNodeTypeSetEvent_init_zero;
+    ev.node_type = (int32_t)msg->uwb_node_type;
+    protocol_tx_OtaConfigNodeTypeSetEvent(&ev);
 
     ota_config_send_response(src_addr, OTA_CONFIG_STATUS_SUCCESS, msg->header.sequence);
 }
@@ -285,7 +296,9 @@ STATIC void ota_config_handle_set_gpio(const uint8_t* data, uint16_t length, uin
     // Validate pin (currently only LED_GREEN supported)
     if (msg->pin != 0)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "ota_config", "Invalid GPIO pin: %d", msg->pin);
+        OtaConfigInvalidGpioPinEvent ev = OtaConfigInvalidGpioPinEvent_init_zero;
+        ev.pin = msg->pin;
+        protocol_tx_OtaConfigInvalidGpioPinEvent(&ev);
         ota_config_send_response(src_addr, OTA_CONFIG_STATUS_INVALID_PARAM, msg->header.sequence);
         return;
     }
@@ -293,8 +306,9 @@ STATIC void ota_config_handle_set_gpio(const uint8_t* data, uint16_t length, uin
     // Validate state
     if (msg->state > 1)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "ota_config", "Invalid GPIO state: %d",
-                          msg->state);
+        OtaConfigInvalidGpioStateEvent ev = OtaConfigInvalidGpioStateEvent_init_zero;
+        ev.state = msg->state;
+        protocol_tx_OtaConfigInvalidGpioStateEvent(&ev);
         ota_config_send_response(src_addr, OTA_CONFIG_STATUS_INVALID_PARAM, msg->header.sequence);
         return;
     }
@@ -302,8 +316,10 @@ STATIC void ota_config_handle_set_gpio(const uint8_t* data, uint16_t length, uin
     // Apply GPIO state
     gpio_driver_set_leds((gpio_driver_state_t)msg->state);
 
-    error_handler_log(ERROR_SEVERITY_INFO, "ota_config", "GPIO set: pin=%d, state=%d", msg->pin,
-                      msg->state);
+    OtaConfigGpioSetEvent ev = OtaConfigGpioSetEvent_init_zero;
+    ev.pin  = msg->pin;
+    ev.state = msg->state;
+    protocol_tx_OtaConfigGpioSetEvent(&ev);
 
     ota_config_send_response(src_addr, OTA_CONFIG_STATUS_SUCCESS, msg->header.sequence);
 }
@@ -319,9 +335,12 @@ STATIC void ota_config_handle_response(const uint8_t* data, uint16_t length, uin
     const protocol_ota_config_response_msg_t* msg = (const protocol_ota_config_response_msg_t*)data;
     ota_config_stats.responses_received++;
 
-    error_handler_log(ERROR_SEVERITY_INFO, "ota_config",
-                      "Response from 0x%04X: status=%d, addr=0x%04X, type=%d", src_addr,
-                      msg->status, msg->current_address, msg->uwb_node_type);
+    OtaConfigResponseEvent ev = OtaConfigResponseEvent_init_zero;
+    ev.src_addr = src_addr;
+    ev.status   = msg->status;
+    ev.addr     = msg->current_address;
+    ev.type     = (int32_t)msg->uwb_node_type;
+    protocol_tx_OtaConfigResponseEvent(&ev);
 
     // Find matching pending request and notify waiting task
     if (xSemaphoreTake(pending_requests_mutex, portMAX_DELAY) == pdTRUE)
@@ -391,9 +410,11 @@ STATIC bool ota_config_verify_auth(uint32_t received_token, uint16_t src_addr, u
     if (received_token != auth_token)
     {
         ota_config_stats.auth_failures++;
-        error_handler_log(ERROR_SEVERITY_WARNING, "ota_config",
-                          "Auth failed from 0x%04X (got 0x%08X, expected 0x%08X)", src_addr,
-                          (unsigned int)received_token, (unsigned int)auth_token);
+        OtaConfigAuthFailedEvent ev = OtaConfigAuthFailedEvent_init_zero;
+        ev.src_addr     = src_addr;
+        ev.got_token    = received_token;
+        ev.expected_token = auth_token;
+        protocol_tx_OtaConfigAuthFailedEvent(&ev);
         ota_config_send_response(src_addr, OTA_CONFIG_STATUS_AUTH_FAILED, sequence);
         return false;
     }
@@ -512,15 +533,28 @@ STATIC bool ota_config_send_with_retry_ex(uint16_t target_addr, uint16_t new_add
             }
             // For SET_ADDRESS, show the new address in the log
             uint16_t response_addr = (new_addr != 0) ? new_addr : target_addr;
-            error_handler_log(ERROR_SEVERITY_INFO, "ota_config", "%s ACK from 0x%04X (attempts=%u)",
-                              msg_name, response_addr, attempt + 1);
+            OtaConfigAckFromEvent ev = OtaConfigAckFromEvent_init_zero;
+            if (msg_name != NULL)
+            {
+                strncpy(ev.msg_name, msg_name, sizeof(ev.msg_name) - 1);
+                ev.msg_name[sizeof(ev.msg_name) - 1] = '\0';
+            }
+            ev.response_addr = response_addr;
+            ev.attempts      = attempt + 1;
+            protocol_tx_OtaConfigAckFromEvent(&ev);
             return true;
         }
     }
 
-    error_handler_log(ERROR_SEVERITY_WARNING, "ota_config",
-                      "%s no ACK from 0x%04X after %u attempts", msg_name, target_addr,
-                      OTA_CONFIG_MAX_RETRIES + 1);
+    OtaConfigNoAckFromEvent ev = OtaConfigNoAckFromEvent_init_zero;
+    if (msg_name != NULL)
+    {
+        strncpy(ev.msg_name, msg_name, sizeof(ev.msg_name) - 1);
+        ev.msg_name[sizeof(ev.msg_name) - 1] = '\0';
+    }
+    ev.target_addr = target_addr;
+    ev.attempts    = OTA_CONFIG_MAX_RETRIES + 1;
+    protocol_tx_OtaConfigNoAckFromEvent(&ev);
     return false;
 }
 
@@ -530,8 +564,9 @@ STATIC bool ota_config_send_with_retry_ex(uint16_t target_addr, uint16_t new_add
 void ota_config_set_auth_token(uint32_t token)
 {
     auth_token = token;
-    error_handler_log(ERROR_SEVERITY_INFO, "ota_config", "Auth token set: 0x%08X",
-                      (unsigned int)token);
+    OtaConfigAuthTokenSetEvent ev = OtaConfigAuthTokenSetEvent_init_zero;
+    ev.token = token;
+    protocol_tx_OtaConfigAuthTokenSetEvent(&ev);
 }
 
 uint32_t ota_config_get_auth_token(void)

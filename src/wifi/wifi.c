@@ -10,7 +10,6 @@
 #include "wifi_config.h"
 #include "imu.h"
 #include "module.h"
-#include "uart_manager.h"
 #include "uart_driver.h"
 #include "state_machine.h"
 #include "FreeRTOS.h"
@@ -27,8 +26,10 @@
 #define STARTUP_DELAY_MS            (4000U)  // ESP8266 boot time
 #define AT_COMMAND_TIMEOUT_MS       (2000U)  // AT command response timeout
 
-extern StreamBufferHandle_t rxStream;
-extern uint8_t rx_dma_buf[128];
+STATIC inline StreamBufferHandle_t wifi_rx_stream(void)
+{
+    return uart_driver_get_rx_stream(UART_WIFI);
+}
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -195,22 +196,16 @@ STATIC struct
 
 STATIC void wifi_init(void)
 {
-
-    // Create stream buffer for RX data (DMA ISR -> State machine)
-    rxStream = xStreamBufferCreate(512, 1);
-    configASSERT(rxStream != NULL);
-    
-    // Create telemetry queue
     telemetry_queue = xQueueCreate(TELEMETRY_QUEUE_SIZE, sizeof(telemetry_event_t));
     configASSERT(telemetry_queue != NULL);
-    
+
     telemetry_stats.events_pushed = 0;
     telemetry_stats.events_dropped = 0;
     telemetry_stats.events_transmitted = 0;
     telemetry_stats.sequence = 0;
-    
+
     ota_parser_init();
-    uart_driver_wifi_rx_init();
+    uart_driver_rx_start(UART_WIFI);
 }
 
 STATIC void wifi_process_10Hz(void)
@@ -238,7 +233,6 @@ STATIC uint16_t wifi_transition_logic(uint16_t currentState, uint32_t stateTimer
         "WAIT_CIPMODE", "SEND_CIPSEND", "WAIT_CIPSEND", "ACTIVE", "FAULTED"};
         
         if (currentState < 18) {
-            uart_manager_print("[WiFi] State: %s\r\n", state_names[currentState]);
         }
         last_printed_state = currentState;
     }
@@ -297,7 +291,6 @@ STATIC uint16_t wifi_transition_logic(uint16_t currentState, uint32_t stateTimer
                 // Retry up to 3 times
                 if (state_inputs.retry_count < 3) {
                     state_inputs.retry_count++;
-                    uart_manager_print("[WiFi] Join retry %d/3\r\n", state_inputs.retry_count);
                     nextState = STATE_SEND_JOIN_WIFI;
                 } else {
                     nextState = STATE_FAULTED;
@@ -354,7 +347,6 @@ STATIC uint16_t wifi_transition_logic(uint16_t currentState, uint32_t stateTimer
 
         case STATE_ACTIVE:
             if (tcp_closed_detected) {
-                uart_manager_print("[WiFi] TCP connection closed - reconnecting\r\n");
                 tcp_closed_detected = false;
                 nextState = STATE_SEND_TCP_CONNECT;
             }
@@ -421,7 +413,6 @@ STATIC void wifi_state_wait_join_wifi_process(void)
     // During CWJAP, "WIFI DISCONNECT" happens sometimes before we connect again.
     // Only treat it as a failure if we also see FAIL/ERROR or we timeout.
     if (strstr(cmd_response_window, "FAIL") || strstr(cmd_response_window, "ERROR")) {
-        uart_manager_print("[WiFi] Join failed (FAIL/ERROR)\r\n");
         state_inputs.response_received = true;
         state_inputs.response_ok = false;
         state_inputs.fault_present = true;
@@ -464,7 +455,6 @@ STATIC void wifi_state_wait_tcp_connect_process(void)
     }
 
     if (!checking_started) {
-        uart_manager_print("[WiFi] Starting to check for CONNECT response...\r\n");
         checking_started = true;
     }
 
@@ -475,8 +465,6 @@ STATIC void wifi_state_wait_tcp_connect_process(void)
 
     // Timeout
     if ((xTaskGetTickCount() - cmd_start_time) > pdMS_TO_TICKS(timeout_ms)) {
-        uart_manager_print("[WiFi] CIPSTART TIMEOUT after %lu ms\r\n", (unsigned long)timeout_ms);
-        //uart_manager_print("[WiFi] Final window: '%s'\r\n", cmd_response_window);
 
         state_inputs.response_received = true;
         state_inputs.response_ok = false;
@@ -489,7 +477,7 @@ STATIC void wifi_state_wait_tcp_connect_process(void)
     uint8_t tmp[256];
     size_t n;
 
-    while ((n = xStreamBufferReceive(rxStream, tmp, sizeof(tmp), 0)) > 0) {
+    while ((n = xStreamBufferReceive(wifi_rx_stream(), tmp, sizeof(tmp), 0)) > 0) {
 
         // Make room
         size_t free = (sizeof(cmd_response_window) - 1) - cmd_response_used;
@@ -524,8 +512,6 @@ STATIC void wifi_state_wait_tcp_connect_process(void)
         strstr(cmd_response_window, "CLOSED") ||
         strstr(cmd_response_window, "LINK IS NOT VALID")) {
 
-        uart_manager_print("[WiFi] CIPSTART FAILED\r\n");
-        //uart_manager_print("[WiFi] Final window: '%s'\r\n", cmd_response_window);
 
         state_inputs.response_received = true;
         state_inputs.response_ok = false;
@@ -538,8 +524,6 @@ STATIC void wifi_state_wait_tcp_connect_process(void)
     if (strstr(cmd_response_window, "ALREADY CONNECTED") ||
         strstr(cmd_response_window, "CONNECT")) {
 
-        uart_manager_print("[WiFi] CIPSTART CONNECTED\r\n");
-        //uart_manager_print("[WiFi] Final window: '%s'\r\n", cmd_response_window);
 
         state_inputs.response_received = true;
         state_inputs.response_ok = true;
@@ -572,9 +556,8 @@ STATIC void wifi_state_verify_tcp_process(void)
     if (!state_inputs.command_sent) {
         // Drain old RX
         uint8_t dump[256];
-        while (xStreamBufferReceive(rxStream, dump, sizeof(dump), 0) > 0) {}
+        while (xStreamBufferReceive(wifi_rx_stream(), dump, sizeof(dump), 0) > 0) {}
 
-        uart_manager_print("[WiFi] Sending CIPSTATUS...\r\n");
         wifi_start_command("AT+CIPSTATUS\r\n");
         return;
     }
@@ -588,7 +571,6 @@ STATIC void wifi_state_verify_tcp_process(void)
 
     // We got some STATUS response in cmd_response_window now.
     if (strstr(cmd_response_window, "STATUS:3")) {
-        uart_manager_print("[WiFi] STATUS:3 (TCP connected)\r\n");
         state_inputs.response_ok = true;
         state_inputs.fault_present = false;
         state_inputs.command_sent = false;
@@ -596,7 +578,6 @@ STATIC void wifi_state_verify_tcp_process(void)
     }
 
     if (strstr(cmd_response_window, "STATUS:2")) {
-        uart_manager_print("[WiFi] STATUS:2 (no TCP) -> retry CIPSTART\r\n");
 
         // Not a hard fault; trigger retry path
         state_inputs.response_ok = false;
@@ -606,7 +587,6 @@ STATIC void wifi_state_verify_tcp_process(void)
     }
 
     // Anything else treat as fault
-    uart_manager_print("[WiFi] Unexpected CIPSTATUS: '%s'\r\n", cmd_response_window);
     state_inputs.response_ok = false;
     state_inputs.fault_present = true;
     state_inputs.command_sent = false;
@@ -622,7 +602,6 @@ STATIC void wifi_state_send_cipmode_on_entry(uint16_t prevState)
     state_inputs.response_ok = false;
     state_inputs.fault_present = false;
     
-    uart_manager_print("[WiFi] Enabling transparent mode...\r\n");
 }
 
 STATIC void wifi_state_wait_cipmode_process(void)
@@ -637,7 +616,7 @@ STATIC void wifi_state_wait_cipmode_process(void)
     if (!state_inputs.command_sent) {
         // Extra drain to ensure clean state
         uint8_t dump[256];
-        while (xStreamBufferReceive(rxStream, dump, sizeof(dump), 0) > 0) {}
+        while (xStreamBufferReceive(wifi_rx_stream(), dump, sizeof(dump), 0) > 0) {}
         
         wifi_start_command("AT+CIPMODE=1\r\n");
         return;
@@ -648,7 +627,6 @@ STATIC void wifi_state_wait_cipmode_process(void)
     
     // Debug: print what we received if we got a response
     // if (state_inputs.response_received) {
-    //     uart_manager_print("[WiFi] CIPMODE response: '%s'\r\n", cmd_response_window);
     // }
 }
 
@@ -662,7 +640,6 @@ STATIC void wifi_state_send_cipsend_on_entry(uint16_t prevState)
     state_inputs.response_ok = false;
     state_inputs.fault_present = false;
     
-    uart_manager_print("[WiFi] Starting transparent transmission...\r\n");
 }
 
 STATIC void wifi_state_wait_cipsend_process(void)
@@ -676,7 +653,7 @@ STATIC void wifi_state_wait_cipsend_process(void)
     if (!state_inputs.command_sent) {
         // Extra drain to ensure clean state
         uint8_t dump[256];
-        while (xStreamBufferReceive(rxStream, dump, sizeof(dump), 0) > 0) {}
+        while (xStreamBufferReceive(wifi_rx_stream(), dump, sizeof(dump), 0) > 0) {}
         
         wifi_start_command("AT+CIPSEND\r\n");
         return;
@@ -689,8 +666,6 @@ STATIC void wifi_state_wait_cipsend_process(void)
 
     // Check for timeout
     if ((xTaskGetTickCount() - cmd_start_time) > pdMS_TO_TICKS(2000)) {
-        uart_manager_print("[WiFi] CIPSEND timeout\r\n");
-        //uart_manager_print("[WiFi] Response was: '%s'\r\n", cmd_response_window);
         state_inputs.response_received = true;
         state_inputs.response_ok = false;
         state_inputs.fault_present = true;
@@ -701,7 +676,7 @@ STATIC void wifi_state_wait_cipsend_process(void)
     uint8_t tmp[256];
     size_t n;
 
-    while ((n = xStreamBufferReceive(rxStream, tmp, sizeof(tmp), 0)) > 0) {
+    while ((n = xStreamBufferReceive(wifi_rx_stream(), tmp, sizeof(tmp), 0)) > 0) {
         // Make room in response window
         size_t free = (sizeof(cmd_response_window) - 1) - cmd_response_used;
         if (n > free) {
@@ -723,7 +698,6 @@ STATIC void wifi_state_wait_cipsend_process(void)
 
         // Check for '>' prompt
         if (strchr(cmd_response_window, '>')) {
-            uart_manager_print("[WiFi] Transparent mode active\r\n");
             state_inputs.response_received = true;
             state_inputs.response_ok = true;
             state_inputs.command_sent = false;
@@ -733,8 +707,6 @@ STATIC void wifi_state_wait_cipsend_process(void)
 
     // Check for errors
     if (strstr(cmd_response_window, "ERROR")) {
-        uart_manager_print("[WiFi] CIPSEND failed with ERROR\r\n");
-        //uart_manager_print("[WiFi] Response: '%s'\r\n", cmd_response_window);
         state_inputs.response_received = true;
         state_inputs.response_ok = false;
         state_inputs.fault_present = true;
@@ -748,12 +720,11 @@ STATIC void wifi_state_active_on_entry(uint16_t prevState)
     
     // Drain any leftover RX data from initialization
     uint8_t dump[256];
-    while (xStreamBufferReceive(rxStream, dump, sizeof(dump), 0) > 0) {}
+    while (xStreamBufferReceive(wifi_rx_stream(), dump, sizeof(dump), 0) > 0) {}
     
     // Clear TCP closed flag
     tcp_closed_detected = false;
     
-    uart_manager_print("[WiFi] Transparent mode active - entering settling period\r\n");
 }
 
 STATIC void wifi_state_active_process(void)
@@ -768,7 +739,7 @@ STATIC void wifi_state_active_process(void)
         if (wifi_state_machine.timer < MS_TO_10HZ_TICKS(500)) {
             // Still draining during settling period
             uint8_t dump[256];
-            while (xStreamBufferReceive(rxStream, dump, sizeof(dump), 0) > 0) {}
+            while (xStreamBufferReceive(wifi_rx_stream(), dump, sizeof(dump), 0) > 0) {}
             return;
         }
         settling_complete = true;
@@ -782,7 +753,7 @@ STATIC void wifi_state_active_process(void)
     // -------------------------------------------------
 
     uint8_t rx_buf[256];
-    size_t rx_len = xStreamBufferReceive(rxStream, rx_buf, sizeof(rx_buf), 0);
+    size_t rx_len = xStreamBufferReceive(wifi_rx_stream(), rx_buf, sizeof(rx_buf), 0);
 
     if (rx_len == 0) {
         return;
@@ -810,7 +781,6 @@ STATIC void wifi_state_active_process(void)
     // -------------------------------------------------
 
     if (strstr(detect_window, "+++")) {
-        uart_manager_print("[WiFi] Detected TCP CLOSED\r\n");
 
         tcp_closed_detected = true;
 
@@ -833,7 +803,6 @@ STATIC void wifi_state_active_process(void)
 STATIC void wifi_state_faulted_on_entry(uint16_t prevState)
 {
     (void)prevState;
-    uart_manager_print("[WiFi] WiFi module FAULTED\r\n");
 }
 
 /**
@@ -898,7 +867,7 @@ STATIC void wifi_transmit_telemetry_queue(void)
         
         if (len > 0 && len < (int)sizeof(tx_buf))
         {
-            uart_driver_wifi_transmit_blocking((uint8_t*)tx_buf, (uint16_t)len);
+            uart_driver_transmit(UART_WIFI, (uint8_t*)tx_buf, (uint16_t)len);
             telemetry_stats.events_transmitted++;
         }
     }
@@ -909,11 +878,11 @@ STATIC void wifi_start_command(const char *cmd)
 {
     // Drain old RX data
     uint8_t dump[256];
-    while (xStreamBufferReceive(rxStream, dump, sizeof(dump), 0) > 0) {}
+    while (xStreamBufferReceive(wifi_rx_stream(), dump, sizeof(dump), 0) > 0) {}
 
     // Send command - use blocking for initialization commands
     // (wifi module runs in periodic callback, not dedicated task)
-    uart_driver_wifi_transmit_blocking((uint8_t*)cmd, (uint16_t)strlen(cmd));
+    uart_driver_transmit(UART_WIFI, (uint8_t*)cmd, (uint16_t)strlen(cmd));
 
     // Reset tracking
     cmd_response_window[0] = 0;
@@ -932,8 +901,6 @@ STATIC void wifi_check_response(const char *expected_token, uint32_t timeout_ms)
     }
 
     if ((xTaskGetTickCount() - cmd_start_time) > pdMS_TO_TICKS(timeout_ms)) {
-        uart_manager_print("[WiFi] Timeout waiting for: %s\r\n", expected_token);
-        //uart_manager_print("[WiFi] Received: '%s'\r\n", cmd_response_window);
         state_inputs.response_received = true;
         state_inputs.response_ok = false;
         state_inputs.fault_present = true;
@@ -944,7 +911,7 @@ STATIC void wifi_check_response(const char *expected_token, uint32_t timeout_ms)
     size_t n;
 
     // Drain ALL available bytes each call
-    while ((n = xStreamBufferReceive(rxStream, tmp, sizeof(tmp), 0)) > 0) {
+    while ((n = xStreamBufferReceive(wifi_rx_stream(), tmp, sizeof(tmp), 0)) > 0) {
         // Make room in rolling window if needed
         size_t free = (sizeof(cmd_response_window) - 1) - cmd_response_used;
         if (n > free) {
@@ -975,7 +942,6 @@ STATIC void wifi_check_response(const char *expected_token, uint32_t timeout_ms)
     }
 
     if (strstr(cmd_response_window, expected_token)) {
-        uart_manager_print("[WiFi] Found: %s\r\n", expected_token);
         state_inputs.response_received = true;
         state_inputs.response_ok = true;
         state_inputs.command_sent = false;
@@ -983,7 +949,6 @@ STATIC void wifi_check_response(const char *expected_token, uint32_t timeout_ms)
     }
 
     if (strstr(cmd_response_window, "ERROR")) {
-        uart_manager_print("[WiFi] Received ERROR\r\n");
         state_inputs.response_received = true;
         state_inputs.response_ok = false;
         state_inputs.fault_present = true;

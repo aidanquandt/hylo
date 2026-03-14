@@ -4,17 +4,19 @@
 #include "uwb.h"
 #include "FreeRTOS.h"
 #include "common.h"
-#include "error_handler.h"
 #include "mac_802154.h"
+#include "protocol_tx.h"
+#include "system_halt.h"
+#include "uart_protocol.pb.h"
 #include "module.h"
 #include "gpio_driver.h"
 #include "timer_driver.h"
 #include "semphr.h"
 #include "state_machine.h"
 #include "task.h"
-#include "uart_manager.h"
 #include "uwb_driver.h"
 #include "uwb_protocol_messages.h"
+#include <string.h>
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -217,7 +219,7 @@ STATIC void uwb_init(void)
     uwb_hw_mutex = xSemaphoreCreateBinary();
     if (uwb_hw_mutex == NULL)
     {
-        error_handler_fatal("uwb", "Failed to create UWB hardware mutex");
+        system_halt("uwb", "Failed to create UWB hardware mutex");
     }
     xSemaphoreGive(uwb_hw_mutex);
 }
@@ -384,7 +386,9 @@ STATIC void uwb_process_received_message(const uint8_t* data, uint16_t length,
     // Validate frame has minimum MAC header
     if (length < MAC_FRAME_SHORT_HEADER_SIZE)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Frame too small: %u bytes", length);
+        UwbFrameTooSmallEvent ev = UwbFrameTooSmallEvent_init_zero;
+        ev.length = length;
+        protocol_tx_UwbFrameTooSmallEvent(&ev);
         return;
     }
 
@@ -403,8 +407,9 @@ STATIC void uwb_process_received_message(const uint8_t* data, uint16_t length,
 
     if (payload_len > MAC_MAX_PAYLOAD_SIZE)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Payload too large: %u bytes",
-                          payload_len);
+        UwbPayloadTooLargeEvent ev = UwbPayloadTooLargeEvent_init_zero;
+        ev.payload_len = payload_len;
+        protocol_tx_UwbPayloadTooLargeEvent(&ev);
         return;
     }
 
@@ -417,8 +422,10 @@ STATIC void uwb_process_received_message(const uint8_t* data, uint16_t length,
 STATIC void uwb_state_retry_on_entry(uint16_t prevState)
 {
     (void)prevState;
-    error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Retry attempt %u/%u", state.init_retry_count,
-                      UWB_MAX_RETRY_ATTEMPTS);
+    UwbRetryAttemptEvent ev = UwbRetryAttemptEvent_init_zero;
+    ev.current = state.init_retry_count;
+    ev.max    = UWB_MAX_RETRY_ATTEMPTS;
+    protocol_tx_UwbRetryAttemptEvent(&ev);
 
     uwb_dev = NULL;
     uwb_driver_reset_tx_queue();
@@ -442,8 +449,11 @@ STATIC void uwb_state_faulted_on_entry(uint16_t prevState)
                                 ? fault_strings[state.fault_code]
                                 : "Unknown fault";
 
-    error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "%s (code=%u) - manual stop required", fault_str,
-                      state.fault_code);
+    UwbFaultManualStopRequiredEvent ev = UwbFaultManualStopRequiredEvent_init_zero;
+    strncpy(ev.fault_str, fault_str, sizeof(ev.fault_str) - 1);
+    ev.fault_str[sizeof(ev.fault_str) - 1] = '\0';
+    ev.fault_code = state.fault_code;
+    protocol_tx_UwbFaultManualStopRequiredEvent(&ev);
 
     uwb_dev = NULL;
     uwb_driver_reset_tx_queue();
@@ -456,8 +466,8 @@ STATIC void uwb_dispatch_protocol_message(const uint8_t* data, uint16_t length, 
 
     if (data == NULL || length < sizeof(protocol_header_t))
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "uwb",
-                          "Invalid protocol message: null data or too short");
+        UwbInvalidProtocolMessageEvent ev = UwbInvalidProtocolMessageEvent_init_zero;
+        protocol_tx_UwbInvalidProtocolMessageEvent(&ev);
         protocol.stats.invalid++;
         return;
     }
@@ -466,8 +476,9 @@ STATIC void uwb_dispatch_protocol_message(const uint8_t* data, uint16_t length, 
 
     if (protocol_type == 0x00 || protocol_type > 0x0F)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "Invalid protocol type: 0x%02X",
-                          protocol_type);
+        UwbInvalidProtocolTypeEvent ev = UwbInvalidProtocolTypeEvent_init_zero;
+        ev.protocol_type = protocol_type;
+        protocol_tx_UwbInvalidProtocolTypeEvent(&ev);
         protocol.stats.invalid++;
         return;
     }
@@ -616,7 +627,8 @@ uwb_send_result_t uwb_send_message(const uint8_t* data, uint16_t length, uint16_
     uint32_t message_id = uwb_driver_send_async(data, length, dest_addr);
     if (message_id == 0)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "uwb", "TX queue full");
+        UwbTxQueueFullEvent ev = UwbTxQueueFullEvent_init_zero;
+        protocol_tx_UwbTxQueueFullEvent(&ev);
         return result;
     }
 
@@ -635,8 +647,9 @@ bool uwb_register_protocol_handler(uint8_t protocol_type, uwb_protocol_handler_t
     // Validate protocol type range (per uwb_protocol_messages.h)
     if (protocol_type == 0 || protocol_type > 0x0F)
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "Invalid protocol type: 0x%02X",
-                          protocol_type);
+        UwbInvalidProtocolTypeEvent ev = UwbInvalidProtocolTypeEvent_init_zero;
+        ev.protocol_type = protocol_type;
+        protocol_tx_UwbInvalidProtocolTypeEvent(&ev);
         return false;
     }
 
@@ -653,7 +666,8 @@ bool uwb_register_protocol_handler(uint8_t protocol_type, uwb_protocol_handler_t
     // Add new handler
     if (protocol.handler_count >= MAX_PROTOCOL_HANDLERS)
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "uwb", "Protocol handler table full");
+        UwbProtocolHandlerTableFullEvent ev = UwbProtocolHandlerTableFullEvent_init_zero;
+        protocol_tx_UwbProtocolHandlerTableFullEvent(&ev);
         return false;
     }
 

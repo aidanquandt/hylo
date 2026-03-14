@@ -5,8 +5,9 @@
 #include "FreeRTOS.h"
 #include "backoff.h"
 #include "common.h"
-#include "error_handler.h"
+#include "protocol_tx.h"
 #include "task.h"
+#include "uart_protocol.pb.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -103,7 +104,8 @@ uint16_t twr_scheduler_get_next_target(void)
         case TWR_SCHED_STRATEGY_PRIORITY:
         case TWR_SCHED_STRATEGY_ADAPTIVE:
             // Future implementation
-            error_handler_log(ERROR_SEVERITY_WARNING, "twr_sched", "Strategy not implemented yet");
+            TwrSchedulerStrategyNotImplementedEvent ev = TwrSchedulerStrategyNotImplementedEvent_init_zero;
+            protocol_tx_TwrSchedulerStrategyNotImplementedEvent(&ev);
             next_address = get_next_round_robin(); // Fallback
             break;
 
@@ -145,15 +147,17 @@ bool twr_scheduler_add_target(uint16_t address)
     // Check if list is full
     if (target_count >= TWR_SCHEDULER_MAX_TARGETS)
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "twr_sched", "Target list full");
+        TwrSchedulerTargetListFullEvent ev = TwrSchedulerTargetListFullEvent_init_zero;
+        protocol_tx_TwrSchedulerTargetListFullEvent(&ev);
         return false;
     }
 
     // Check if already exists
     if (find_target_index(address) >= 0)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "twr_sched", "Target 0x%04X already exists",
-                          address);
+        TwrSchedulerTargetAlreadyExistsEvent ev = TwrSchedulerTargetAlreadyExistsEvent_init_zero;
+        ev.address = address;
+        protocol_tx_TwrSchedulerTargetAlreadyExistsEvent(&ev);
         return false;
     }
 
@@ -167,8 +171,10 @@ bool twr_scheduler_add_target(uint16_t address)
     target_list[target_count].backoff_until_ms     = 0;
     target_count++;
 
-    error_handler_log(ERROR_SEVERITY_INFO, "twr_sched", "Added target 0x%04X (total: %d)", address,
-                      target_count);
+    TwrSchedulerAddedTargetEvent ev = TwrSchedulerAddedTargetEvent_init_zero;
+    ev.address      = address;
+    ev.target_count = target_count;
+    protocol_tx_TwrSchedulerAddedTargetEvent(&ev);
 
     return true;
 }
@@ -198,8 +204,10 @@ bool twr_scheduler_remove_target(uint16_t address)
         current_index = 0; // Wrap around
     }
 
-    error_handler_log(ERROR_SEVERITY_INFO, "twr_sched", "Removed target 0x%04X (remaining: %d)",
-                      address, target_count);
+    TwrSchedulerRemovedTargetEvent ev = TwrSchedulerRemovedTargetEvent_init_zero;
+    ev.address   = address;
+    ev.remaining = target_count;
+    protocol_tx_TwrSchedulerRemovedTargetEvent(&ev);
 
     return true;
 }
@@ -208,14 +216,17 @@ bool twr_scheduler_set_targets(const uint16_t* addresses, uint8_t count)
 {
     if (addresses == NULL)
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "twr_sched", "NULL addresses pointer");
+        TwrSchedulerNullAddressesPointerEvent ev = TwrSchedulerNullAddressesPointerEvent_init_zero;
+        protocol_tx_TwrSchedulerNullAddressesPointerEvent(&ev);
         return false;
     }
 
     if (count > TWR_SCHEDULER_MAX_TARGETS)
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "twr_sched", "Target count %d exceeds maximum %d",
-                          count, TWR_SCHEDULER_MAX_TARGETS);
+        TwrSchedulerTargetCountExceedsMaximumEvent ev = TwrSchedulerTargetCountExceedsMaximumEvent_init_zero;
+        ev.count   = count;
+        ev.maximum = TWR_SCHEDULER_MAX_TARGETS;
+        protocol_tx_TwrSchedulerTargetCountExceedsMaximumEvent(&ev);
         return false;
     }
 
@@ -237,7 +248,9 @@ bool twr_scheduler_set_targets(const uint16_t* addresses, uint8_t count)
     target_count  = count;
     current_index = 0;
 
-    error_handler_log(ERROR_SEVERITY_INFO, "twr_sched", "Set %d targets", count);
+    TwrSchedulerSetTargetsEvent ev = TwrSchedulerSetTargetsEvent_init_zero;
+    ev.count = count;
+    protocol_tx_TwrSchedulerSetTargetsEvent(&ev);
 
     return true;
 }
@@ -252,7 +265,8 @@ void twr_scheduler_clear_all(void)
     target_count  = 0;
     current_index = 0;
 
-    error_handler_log(ERROR_SEVERITY_INFO, "twr_sched", "Cleared all targets");
+    TwrSchedulerClearedAllTargetsEvent ev = TwrSchedulerClearedAllTargetsEvent_init_zero;
+    protocol_tx_TwrSchedulerClearedAllTargetsEvent(&ev);
 }
 
 bool twr_scheduler_set_target_enabled(uint16_t address, bool enabled)
@@ -265,8 +279,10 @@ bool twr_scheduler_set_target_enabled(uint16_t address, bool enabled)
 
     target_list[index].enabled = enabled;
 
-    error_handler_log(ERROR_SEVERITY_INFO, "twr_sched", "Target 0x%04X %s", address,
-                      enabled ? "enabled" : "disabled");
+    TwrSchedulerTargetEnabledDisabledEvent ev = TwrSchedulerTargetEnabledDisabledEvent_init_zero;
+    ev.address = address;
+    ev.enabled = enabled;
+    protocol_tx_TwrSchedulerTargetEnabledDisabledEvent(&ev);
 
     return true;
 }
@@ -300,10 +316,11 @@ void twr_scheduler_report_result(uint16_t address, bool success)
 
         if (target_list[index].consecutive_failures > TWR_TARGET_WARN_THRESHOLD)
         {
-            error_handler_log(ERROR_SEVERITY_WARNING, "twr_sched",
-                              "Target 0x%04X backing off for %lu ms (failures=%u)", address,
-                              (unsigned long)backoff_delay,
-                              target_list[index].consecutive_failures);
+            TwrSchedulerTargetBackingOffEvent ev = TwrSchedulerTargetBackingOffEvent_init_zero;
+            ev.address    = address;
+            ev.backoff_ms = (uint32_t)backoff_delay;
+            ev.failures   = target_list[index].consecutive_failures;
+            protocol_tx_TwrSchedulerTargetBackingOffEvent(&ev);
         }
     }
 }
@@ -311,7 +328,9 @@ void twr_scheduler_report_result(uint16_t address, bool success)
 void twr_scheduler_set_strategy(twr_scheduler_strategy_e new_strategy)
 {
     strategy = new_strategy;
-    error_handler_log(ERROR_SEVERITY_INFO, "twr_sched", "Strategy set to %d", new_strategy);
+    TwrSchedulerStrategySetEvent ev = TwrSchedulerStrategySetEvent_init_zero;
+    ev.strategy = (int32_t)new_strategy;
+    protocol_tx_TwrSchedulerStrategySetEvent(&ev);
 }
 
 void twr_scheduler_get_status(twr_scheduler_status_t* status)

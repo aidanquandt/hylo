@@ -7,13 +7,15 @@
 #include "twr_algorithm.h"
 #include "twr_state_machine.h"
 #include "FreeRTOS.h"
-#include "error_handler.h"
+#include "protocol_tx.h"
 #include "stopwatch.h"
+#include "uart_protocol.pb.h"
 #include "task.h"
 #include "uwb.h"
 #include "uwb_node.h"
 #include "uwb_protocol_messages.h"
 #include "common.h"
+#include <string.h>
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -164,8 +166,9 @@ STATIC bool responder_send_message_impl(twr_msg_type_e msg_type, twr_context_t* 
     }
     else
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "responder", "Failed to send message type %d",
-                          msg_type);
+        ResponderFailedToSendMessageEvent ev = ResponderFailedToSendMessageEvent_init_zero;
+        ev.message_type = (int32_t)msg_type;
+        protocol_tx_ResponderFailedToSendMessageEvent(&ev);
         return false;
     }
 }
@@ -181,7 +184,8 @@ STATIC void responder_handle_message_impl(const twr_event_t* event, twr_context_
         {
             if (event->rx.length < sizeof(protocol_twr_poll_msg_t))
             {
-                error_handler_log(ERROR_SEVERITY_WARNING, "responder", "Poll too short");
+                ResponderPollTooShortEvent ev = ResponderPollTooShortEvent_init_zero;
+                protocol_tx_ResponderPollTooShortEvent(&ev);
                 return;
             }
 
@@ -212,7 +216,8 @@ STATIC void responder_handle_message_impl(const twr_event_t* event, twr_context_
         {
             if (event->rx.length < sizeof(protocol_twr_final_msg_t))
             {
-                error_handler_log(ERROR_SEVERITY_WARNING, "responder", "Final too short");
+                ResponderFinalTooShortEvent ev = ResponderFinalTooShortEvent_init_zero;
+                protocol_tx_ResponderFinalTooShortEvent(&ev);
                 return;
             }
 
@@ -230,15 +235,17 @@ STATIC void responder_handle_message_impl(const twr_event_t* event, twr_context_
             }
             else
             {
-                error_handler_log(ERROR_SEVERITY_ERROR, "responder", "Failed to send final ACK");
+                ResponderFailedToSendFinalAckEvent ev = ResponderFailedToSendFinalAckEvent_init_zero;
+                protocol_tx_ResponderFailedToSendFinalAckEvent(&ev);
                 twr_state_machine_transition_to(ctx, TWR_STATE_WAITING); // Back to listening
             }
             break;
         }
 
         default:
-            error_handler_log(ERROR_SEVERITY_WARNING, "responder", "Unexpected message type %d",
-                              msg_type);
+            ResponderUnexpectedMessageTypeEvent ev = ResponderUnexpectedMessageTypeEvent_init_zero;
+            ev.message_type = (int32_t)msg_type;
+            protocol_tx_ResponderUnexpectedMessageTypeEvent(&ev);
             break;
     }
 }
@@ -271,9 +278,10 @@ STATIC void responder_handle_tx_complete_impl(const twr_event_t* event, twr_cont
 
 STATIC void responder_handle_timeout_impl(const twr_event_t* event, twr_context_t* ctx)
 {
-    error_handler_log(ERROR_SEVERITY_WARNING, "responder",
-                      "Timeout waiting for message %d from initiator 0x%04X",
-                      event->timeout.expected_msg, ctx->peer_address);
+    ResponderTimeoutWaitingForMessageEvent ev = ResponderTimeoutWaitingForMessageEvent_init_zero;
+    ev.message_type   = (int32_t)event->timeout.expected_msg;
+    ev.initiator_addr = ctx->peer_address;
+    protocol_tx_ResponderTimeoutWaitingForMessageEvent(&ev);
 
     // For responder, timeout means transaction failed - return to listening
     ctx->failed_transactions++;
@@ -284,8 +292,11 @@ STATIC void responder_handle_timeout_impl(const twr_event_t* event, twr_context_
 
 STATIC void responder_handle_fault_impl(const twr_event_t* event, twr_context_t* ctx)
 {
-    error_handler_log(ERROR_SEVERITY_ERROR, "responder", "Fault: %d - %s", event->fault.fault_code,
-                      event->fault.description);
+    ResponderFaultEvent ev = ResponderFaultEvent_init_zero;
+    ev.fault_code = event->fault.fault_code;
+    strncpy(ev.description, event->fault.description, sizeof(ev.description) - 1);
+    ev.description[sizeof(ev.description) - 1] = '\0';
+    protocol_tx_ResponderFaultEvent(&ev);
 
     ctx->fault_code = event->fault.fault_code;
     ctx->failed_transactions++;
@@ -299,6 +310,7 @@ STATIC void responder_process_result_impl(twr_context_t* ctx)
 {
     // Responder doesn't process distance results, just completes transaction
     // Distance calculation is done by the initiator
-    error_handler_log(ERROR_SEVERITY_INFO, "responder",
-                      "Completed ranging transaction with initiator 0x%04X", ctx->peer_address);
+    ResponderCompletedRangingEvent ev = ResponderCompletedRangingEvent_init_zero;
+    ev.initiator_addr = ctx->peer_address;
+    protocol_tx_ResponderCompletedRangingEvent(&ev);
 }

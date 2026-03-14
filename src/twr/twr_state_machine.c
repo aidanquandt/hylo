@@ -2,7 +2,8 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "twr_state_machine.h"
-#include "error_handler.h"
+#include "protocol_tx.h"
+#include "uart_protocol.pb.h"
 #include "uwb_protocol_messages.h"
 #include "common.h"
 
@@ -173,8 +174,8 @@ void twr_state_machine_process(twr_context_t* ctx)
     {
         if (ctx->state_timer >= TWR_TX_COMPLETION_TIMEOUT_MS) // Safety timeout for TX completion
         {
-            error_handler_log(ERROR_SEVERITY_WARNING, "twr_sm",
-                              "TX completion timeout in SENDING state, resetting");
+            TwrSmTxCompletionTimeoutEvent ev = TwrSmTxCompletionTimeoutEvent_init_zero;
+            protocol_tx_TwrSmTxCompletionTimeoutEvent(&ev);
 
             ctx->timeout_count++;
             ctx->failed_transactions++;
@@ -209,15 +210,17 @@ void twr_state_machine_handle_event(twr_context_t* ctx, const twr_event_t* event
             }
             else if (ctx->state != TWR_STATE_SENDING)
             {
-                error_handler_log(ERROR_SEVERITY_WARNING, "twr_sm",
-                                  "TX_COMPLETE: wrong state (%d), expected SENDING(%d)", ctx->state,
-                                  TWR_STATE_SENDING);
+                TwrSmTxCompleteWrongStateEvent ev = TwrSmTxCompleteWrongStateEvent_init_zero;
+                ev.state    = ctx->state;
+                ev.expected = TWR_STATE_SENDING;
+                protocol_tx_TwrSmTxCompleteWrongStateEvent(&ev);
             }
             else
             {
-                error_handler_log(ERROR_SEVERITY_WARNING, "twr_sm",
-                                  "TX_COMPLETE: msg_id mismatch (exp:%lu, got:%lu)",
-                                  ctx->pending_tx_id, event->tx.message_id);
+                TwrSmTxCompleteMsgIdMismatchEvent ev = TwrSmTxCompleteMsgIdMismatchEvent_init_zero;
+                ev.expected = (uint32_t)ctx->pending_tx_id;
+                ev.got      = (uint32_t)event->tx.message_id;
+                protocol_tx_TwrSmTxCompleteMsgIdMismatchEvent(&ev);
             }
             break;
 
@@ -236,9 +239,11 @@ void twr_state_machine_handle_event(twr_context_t* ctx, const twr_event_t* event
                     rx_msg_type                     = (twr_msg_type_e)header->msg_type;
                 }
 
-                error_handler_log(ERROR_SEVERITY_WARNING, "twr_sm",
-                                  "RX_MESSAGE: wrong state (%d) or invalid msg_type=%d from 0x%04X",
-                                  ctx->state, rx_msg_type, event->rx.src_addr);
+                TwrSmRxMessageWrongStateEvent ev = TwrSmRxMessageWrongStateEvent_init_zero;
+                ev.state    = ctx->state;
+                ev.msg_type = (int32_t)rx_msg_type;
+                ev.from_addr = event->rx.src_addr;
+                protocol_tx_TwrSmRxMessageWrongStateEvent(&ev);
             }
             break;
 
@@ -249,8 +254,9 @@ void twr_state_machine_handle_event(twr_context_t* ctx, const twr_event_t* event
             }
             else
             {
-                error_handler_log(ERROR_SEVERITY_WARNING, "twr_sm",
-                                  "TIMEOUT: unexpected in state %d", ctx->state);
+                TwrSmTimeoutUnexpectedStateEvent ev = TwrSmTimeoutUnexpectedStateEvent_init_zero;
+                ev.state = ctx->state;
+                protocol_tx_TwrSmTimeoutUnexpectedStateEvent(&ev);
             }
             break;
 

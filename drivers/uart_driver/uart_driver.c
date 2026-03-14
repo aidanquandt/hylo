@@ -1,412 +1,236 @@
-/*---------------------------------------------------------------------------
- * Includes
- *---------------------------------------------------------------------------*/
 #include "uart_driver.h"
 #include "FreeRTOS.h"
-#include "feature_config.h"
 #include "main.h"
-#include "stream_buffer.h"
 #include "queue.h"
+#include "semphr.h"
+#include "stream_buffer.h"
+#include "task.h"
 #include "usart.h"
-#include <stdio.h>
-#include <stdarg.h>
+#include <stdbool.h>
 #include <string.h>
 
-/*---------------------------------------------------------------------------
- * Defines
- *---------------------------------------------------------------------------*/
-#define UART_TX_TIMEOUT_MS 100U
-#define UART_RX_TIMEOUT_MS 100U
-
-#define UART_DRIVER_TX_QUEUE_SIZE 32U
-#define UART_DRIVER_TX_MSG_MAX_LENGTH 256U
-#define UART_DRIVER_TX_TASK_STACK_SIZE 512U
-#define UART_DRIVER_TX_TASK_PRIORITY 3U
-#define UART_DRIVER_RX_BUFFER_SIZE 256U
-#define UART_DRIVER_LINE_MAX_LENGTH 128U
-#define UART_DRIVER_PRINT_BUFFER_SIZE 256U
-#define UART_CMD_DELIMITER '\n'
+#define UART_DMA_TIMEOUT_MS 50U
 
 #if (HWREV == 0)
 extern UART_HandleTypeDef huart3;
-#define UART_DRIVER_PRINT (&huart3)
-#define UART_DRIVER_RX (&huart3)
+extern UART_HandleTypeDef huart2;
+#define CONSOLE_HUART (&huart3)
+#define WIFI_HUART    (&huart2)
 #elif (HWREV == 1)
 extern UART_HandleTypeDef huart1;
-#define UART_DRIVER_PRINT (&huart1)
-#define UART_DRIVER_RX (&huart1)
+extern UART_HandleTypeDef huart2;
+#define CONSOLE_HUART (&huart1)
+#define WIFI_HUART    (&huart2)
 #endif
 
-extern UART_HandleTypeDef huart2;
-extern DMA_HandleTypeDef hdma_usart2_rx;
+typedef struct {
+    uint8_t  data[UART_TX_MAX_MSG_LEN];
+    uint16_t len;
+} uart_msg_t;
 
-#define WIFI_UART (&huart2)
-#define WIFI_UART_DMA_RX (&hdma_usart2_rx)
+typedef struct {
+    QueueHandle_t     queue;
+    SemaphoreHandle_t complete;
+    uint32_t          drop_count;
+} uart_tx_ctx_t;
 
-StreamBufferHandle_t rxStream = NULL;
+typedef struct {
+    StreamBufferHandle_t stream;
+    uint8_t             *buf;
+    uint16_t             buf_len;
+    uint16_t             last_received; /* for circular DMA: only push delta so framing sees one frame per callback */
+    volatile uint32_t    drop_count;
+} uart_rx_ctx_t;
+
+typedef struct {
+    UART_HandleTypeDef *huart;
+} uart_port_t;
+
+/* DMA buffers in DMA-accessible RAM (e.g. RAM_D2). DTCM is not reachable by DMA on H7. */
 __attribute__((section(".dma_buffer"))) __attribute__((aligned(32)))
-uint8_t rx_dma_buf[128] = {0};
+static uint8_t uart_rx_dma_buf[UART_COUNT][UART_RX_BUF_LEN];
+__attribute__((section(".dma_buffer"))) __attribute__((aligned(32)))
+static uint8_t uart_tx_dma_buf[UART_COUNT][UART_TX_MAX_MSG_LEN];
 
-/*---------------------------------------------------------------------------
- * Console TX/RX (queue + task + line assembly in driver)
- *---------------------------------------------------------------------------*/
-typedef struct
+static const uart_port_t uart_ports[UART_COUNT] = {
+    [UART_CONSOLE] = { .huart = CONSOLE_HUART },
+    [UART_WIFI]    = { .huart = WIFI_HUART },
+};
+
+static uart_tx_ctx_t tx_ctx[UART_COUNT];
+static uart_rx_ctx_t rx_ctx[UART_COUNT];
+
+static uart_id_t uart_id_from_handle(UART_HandleTypeDef *huart)
 {
-    uint8_t data[UART_DRIVER_TX_MSG_MAX_LENGTH];
-    uint16_t length;
-} uart_driver_tx_message_t;
+    for (uart_id_t id = 0; id < UART_COUNT; id++)
+        if (uart_ports[id].huart == huart)
+            return id;
+    return UART_COUNT;
+}
 
-STATIC QueueHandle_t console_tx_queue           = NULL;
-STATIC TaskHandle_t console_tx_task_handle      = NULL;
-STATIC volatile uint32_t console_tx_dropped     = 0U;
-STATIC volatile uint32_t console_tx_errors     = 0U;
-STATIC uint8_t console_tx_dma_buffer[UART_DRIVER_TX_MSG_MAX_LENGTH]
-    __attribute__((section(".dma_buffer")));
-
-STATIC uint8_t console_rx_dma_buffer[UART_DRIVER_RX_BUFFER_SIZE]
-    __attribute__((section(".dma_buffer")));
-STATIC uint8_t console_line_buffer[UART_DRIVER_LINE_MAX_LENGTH];
-STATIC uint16_t console_line_length             = 0U;
-STATIC uint16_t console_last_checked_pos        = 0U;
-STATIC bool console_last_was_cr                = false;
-STATIC uint32_t console_rx_overruns             = 0U;
-STATIC uart_driver_rx_line_callback_t console_rx_line_callback = NULL;
-
-STATIC void uart_driver_console_tx_task(void* argument);
-
-/*---------------------------------------------------------------------------
- * Private Variables (legacy)
- *---------------------------------------------------------------------------*/
-STATIC TaskHandle_t tx_task_to_notify = NULL;
-
-/*---------------------------------------------------------------------------
- * Console TX task and init
- *---------------------------------------------------------------------------*/
-STATIC void uart_driver_console_tx_task(void* argument)
+static bool uart_hal_transmit_dma(uart_id_t id, const uint8_t *buf, uint16_t len)
 {
-    (void)argument;
-    tx_task_to_notify = xTaskGetCurrentTaskHandle();
-    uart_driver_tx_message_t msg;
+    if (id >= UART_COUNT || buf == NULL || len == 0)
+        return false;
+    memcpy(uart_tx_dma_buf[id], buf, len);
+    return HAL_UART_Transmit_DMA(uart_ports[id].huart, uart_tx_dma_buf[id], len) == HAL_OK;
+}
+
+static bool uart_hal_receive_dma(uart_id_t id)
+{
+    if (id >= UART_COUNT || rx_ctx[id].buf == NULL || rx_ctx[id].buf_len == 0)
+        return false;
+    return HAL_UARTEx_ReceiveToIdle_DMA(uart_ports[id].huart,
+                                        rx_ctx[id].buf,
+                                        rx_ctx[id].buf_len) == HAL_OK;
+}
+
+static void uart_driver_tx_cplt_handler(uart_id_t id)
+{
+    BaseType_t woken = pdFALSE;
+    if (tx_ctx[id].complete != NULL)
+        xSemaphoreGiveFromISR(tx_ctx[id].complete, &woken);
+    portYIELD_FROM_ISR(woken);
+}
+
+static void uart_rx_push(uart_rx_ctx_t *rx, const uint8_t *p, uint16_t len, BaseType_t *woken)
+{
+    if (len == 0U)
+        return;
+    size_t w = xStreamBufferSendFromISR(rx->stream, p, len, woken);
+    if (w < (size_t)len)
+        rx->drop_count += (uint32_t)(len - (uint16_t)w);
+}
+
+static void uart_driver_rx_cplt_handler(uart_id_t id, uint16_t received)
+{
+    BaseType_t woken = pdFALSE;
+    uart_rx_ctx_t *rx = &rx_ctx[id];
+    uint16_t last = rx->last_received;
+    uint16_t buf_len = rx->buf_len;
+
+    if (received > last)
+        uart_rx_push(rx, rx->buf + last, received - last, &woken);
+    else if (received < last) {
+        uart_rx_push(rx, rx->buf + last, buf_len - last, &woken);
+        uart_rx_push(rx, rx->buf, received, &woken);
+    }
+
+    rx->last_received = received;
+    if (uart_hal_receive_dma(id))
+        rx->last_received = 0;
+    portYIELD_FROM_ISR(woken);
+}
+
+static void uart_driver_drain_task(void *arg)
+{
+    uart_id_t id = (uart_id_t)(uintptr_t)arg;
+    uart_msg_t msg;
 
     for (;;)
     {
-        if (xQueueReceive(console_tx_queue, &msg, portMAX_DELAY) != pdPASS)
+        xQueueReceive(tx_ctx[id].queue, &msg, portMAX_DELAY);
+        if (uart_hal_transmit_dma(id, msg.data, msg.len))
         {
-            continue;
-        }
-        if (msg.length == 0U || msg.length > UART_DRIVER_TX_MSG_MAX_LENGTH)
-        {
-            continue;
-        }
-        memcpy(console_tx_dma_buffer, msg.data, msg.length);
-        uart_driver_status_E status =
-            uart_driver_transmit_dma(console_tx_dma_buffer, msg.length);
-        if (status == UART_DRIVER_SUCCESS)
-        {
-            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100)) == 0)
-            {
-                console_tx_errors++;
-            }
+            if (!xSemaphoreTake(tx_ctx[id].complete, pdMS_TO_TICKS(UART_DMA_TIMEOUT_MS)))
+                tx_ctx[id].drop_count++;
         }
         else
-        {
-            console_tx_errors++;
-        }
+            tx_ctx[id].drop_count++;
     }
 }
 
-void uart_driver_console_init(void)
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
-    if (console_tx_queue != NULL)
-    {
+    uart_id_t id = uart_id_from_handle(huart);
+    if (id >= UART_COUNT)
         return;
-    }
-    console_tx_queue = xQueueCreate(UART_DRIVER_TX_QUEUE_SIZE, sizeof(uart_driver_tx_message_t));
-    (void)xTaskCreate(uart_driver_console_tx_task, "UART_TX", UART_DRIVER_TX_TASK_STACK_SIZE,
-                      NULL, UART_DRIVER_TX_TASK_PRIORITY, &console_tx_task_handle);
-    console_line_length    = 0U;
-    console_last_checked_pos = 0U;
-    console_last_was_cr    = false;
-    uart_driver_start_rx_dma(console_rx_dma_buffer, UART_DRIVER_RX_BUFFER_SIZE);
+    uart_driver_tx_cplt_handler(id);
 }
 
-bool uart_driver_send(const uint8_t* data, size_t length)
-{
-    if (console_tx_queue == NULL || data == NULL || length == 0U ||
-        length > UART_DRIVER_TX_MSG_MAX_LENGTH)
-    {
-        return false;
-    }
-    uart_driver_tx_message_t msg;
-    msg.length = (uint16_t)length;
-    memcpy(msg.data, data, length);
-    if (xQueueSend(console_tx_queue, &msg, 0) != pdPASS)
-    {
-        if (console_tx_dropped < UINT32_MAX)
-        {
-            console_tx_dropped++;
-        }
-        return false;
-    }
-    return true;
-}
-
-bool uart_driver_print(const char* format, ...)
-{
-    if (format == NULL || console_tx_queue == NULL)
-    {
-        return false;
-    }
-    char buffer[UART_DRIVER_PRINT_BUFFER_SIZE];
-    va_list args;
-    va_start(args, format);
-    int len = vsnprintf(buffer, sizeof(buffer), format, args);
-    va_end(args);
-    if (len < 0)
-    {
-        return false;
-    }
-    if (len >= (int)sizeof(buffer))
-    {
-        len = (int)sizeof(buffer) - 1;
-    }
-    return uart_driver_send((const uint8_t*)buffer, (size_t)len);
-}
-
-void uart_driver_register_rx_line_callback(uart_driver_rx_line_callback_t callback)
-{
-    console_rx_line_callback = callback;
-}
-
-void uart_driver_poll_rx(void)
-{
-    if (console_rx_line_callback == NULL)
-    {
-        return;
-    }
-    uint16_t dma_write_pos = uart_driver_get_rx_dma_position();
-    while (console_last_checked_pos != dma_write_pos)
-    {
-        char c = (char)console_rx_dma_buffer[console_last_checked_pos];
-
-        if (c == 0x08 || c == 0x7F)
-        {
-            if (console_line_length > 0U)
-            {
-                console_line_length--;
-            }
-            console_last_was_cr = false;
-            console_last_checked_pos = (console_last_checked_pos + 1) % UART_DRIVER_RX_BUFFER_SIZE;
-            continue;
-        }
-
-        if (c == UART_CMD_DELIMITER || c == '\r')
-        {
-            if (c == UART_CMD_DELIMITER && console_last_was_cr)
-            {
-                console_last_was_cr = false;
-                console_last_checked_pos =
-                    (console_last_checked_pos + 1) % UART_DRIVER_RX_BUFFER_SIZE;
-                continue;
-            }
-            console_last_was_cr = (c == '\r');
-            console_line_buffer[console_line_length] = '\0';
-            if (console_line_length > 0U)
-            {
-                console_rx_line_callback((const char*)console_line_buffer, console_line_length);
-            }
-            console_line_length = 0U;
-        }
-        else
-        {
-            console_last_was_cr = false;
-            if (console_line_length < UART_DRIVER_LINE_MAX_LENGTH - 1)
-            {
-                console_line_buffer[console_line_length++] = (uint8_t)c;
-            }
-            else
-            {
-                if (console_rx_overruns < UINT32_MAX)
-                {
-                    console_rx_overruns++;
-                }
-            }
-        }
-        console_last_checked_pos =
-            (console_last_checked_pos + 1) % UART_DRIVER_RX_BUFFER_SIZE;
-    }
-}
-
-uint32_t uart_driver_get_tx_queue_count(void)
-{
-    return (console_tx_queue != NULL) ? (uint32_t)uxQueueMessagesWaiting(console_tx_queue) : 0U;
-}
-
-uint32_t uart_driver_get_tx_dropped_count(void)
-{
-    return console_tx_dropped;
-}
-
-uint32_t uart_driver_get_tx_errors(void)
-{
-    return console_tx_errors;
-}
-
-uint32_t uart_driver_get_rx_overruns(void)
-{
-    return console_rx_overruns;
-}
-
-/*---------------------------------------------------------------------------
- * Public Function Implementations (legacy / low-level)
- *---------------------------------------------------------------------------*/
-
-uart_driver_status_E uart_driver_transmit_blocking(const uint8_t* data, size_t length)
-{
-    if (data == NULL || length == 0U)
-    {
-        return UART_DRIVER_ERROR;
-    }
-
-    HAL_StatusTypeDef status =
-        HAL_UART_Transmit(UART_DRIVER_PRINT, (uint8_t*)data, length, UART_TX_TIMEOUT_MS);
-
-    if (status == HAL_OK)
-    {
-        return UART_DRIVER_SUCCESS;
-    }
-    else if (status == HAL_TIMEOUT)
-    {
-        return UART_DRIVER_TIMEOUT;
-    }
-    else
-    {
-        return UART_DRIVER_ERROR;
-    }
-}
-
-uart_driver_status_E uart_driver_start_rx_dma(uint8_t* buffer, uint16_t size)
-{
-    if (buffer == NULL || size == 0U)
-    {
-        return UART_DRIVER_ERROR;
-    }
-
-    HAL_StatusTypeDef status = HAL_UART_Receive_DMA(UART_DRIVER_RX, buffer, size);
-
-    if (status == HAL_OK)
-    {
-        return UART_DRIVER_SUCCESS;
-    }
-    else
-    {
-        return UART_DRIVER_ERROR;
-    }
-}
-
-void uart_driver_register_tx_task(TaskHandle_t task_handle)
-{
-    tx_task_to_notify = task_handle;
-}
-
-uart_driver_status_E uart_driver_transmit_dma(const uint8_t* data, size_t length)
-{
-    if (data == NULL || length == 0U)
-    {
-        return UART_DRIVER_ERROR;
-    }
-
-    HAL_StatusTypeDef status = HAL_UART_Transmit_DMA(UART_DRIVER_PRINT, (uint8_t*)data, length);
-
-    if (status == HAL_OK)
-    {
-        return UART_DRIVER_SUCCESS;
-    }
-    else if (status == HAL_BUSY)
-    {
-        return UART_DRIVER_BUSY;
-    }
-    else
-    {
-        return UART_DRIVER_ERROR;
-    }
-}
-
-/*---------------------------------------------------------------------------
- * WIFI
- *---------------------------------------------------------------------------*/
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 {
-    if (huart == WIFI_UART) {
-        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-        xStreamBufferSendFromISR(rxStream, rx_dma_buf, size, &xHigherPriorityTaskWoken);
-
-        HAL_UARTEx_ReceiveToIdle_DMA(WIFI_UART, rx_dma_buf, sizeof(rx_dma_buf));
-        __HAL_DMA_DISABLE_IT(WIFI_UART_DMA_RX, DMA_IT_HT);
-
-        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-    }
+    uart_id_t id = uart_id_from_handle(huart);
+    if (id >= UART_COUNT)
+        return;
+    uart_driver_rx_cplt_handler(id, size);
 }
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
-    if (huart == WIFI_UART) {
-        HAL_UARTEx_ReceiveToIdle_DMA(WIFI_UART, rx_dma_buf, sizeof(rx_dma_buf));
-        __HAL_DMA_DISABLE_IT(WIFI_UART_DMA_RX, DMA_IT_HT);
+    uart_id_t id = uart_id_from_handle(huart);
+    if (id >= UART_COUNT)
+        return;
+    (void)uart_hal_receive_dma(id);
+}
+
+void uart_driver_init(void)
+{
+    for (uart_id_t id = 0; id < UART_COUNT; id++)
+    {
+        tx_ctx[id].complete = xSemaphoreCreateBinary();
+        tx_ctx[id].queue    = xQueueCreate(UART_TX_QUEUE_DEPTH, sizeof(uart_msg_t));
+        tx_ctx[id].drop_count = 0;
+        configASSERT(tx_ctx[id].complete);
+        configASSERT(tx_ctx[id].queue);
+
+        rx_ctx[id].stream        = xStreamBufferCreate(UART_RX_STREAM_SIZE, 1);
+        rx_ctx[id].buf           = uart_rx_dma_buf[id];
+        rx_ctx[id].buf_len       = UART_RX_BUF_LEN;
+        rx_ctx[id].last_received = 0;
+        rx_ctx[id].drop_count    = 0;
+        configASSERT(rx_ctx[id].stream);
+
+        configASSERT(uart_hal_receive_dma(id));
+
+        xTaskCreate(uart_driver_drain_task, id == UART_CONSOLE ? "UART_tx_console" : "UART_tx_wifi",
+                    256, (void *)(uintptr_t)id, tskIDLE_PRIORITY + 2, NULL);
     }
 }
 
-void uart_driver_wifi_rx_init(void)
+void uart_driver_rx_start(uart_id_t id)
 {
-    HAL_UARTEx_ReceiveToIdle_DMA(WIFI_UART, rx_dma_buf, sizeof(rx_dma_buf));
-    __HAL_DMA_DISABLE_IT(WIFI_UART_DMA_RX, DMA_IT_HT);
+    if (id >= UART_COUNT)
+        return;
+    (void)uart_hal_receive_dma(id);
 }
 
-uart_driver_status_E uart_driver_wifi_transmit_blocking(const uint8_t* data, size_t length)
+StreamBufferHandle_t uart_driver_get_rx_stream(uart_id_t id)
 {
-    if (data == NULL || length == 0U)
-    {
-        return UART_DRIVER_ERROR;
-    }
-
-    HAL_StatusTypeDef status =
-        HAL_UART_Transmit(WIFI_UART, (uint8_t*)data, length, UART_TX_TIMEOUT_MS);
-
-    if (status == HAL_OK)
-    {
-        return UART_DRIVER_SUCCESS;
-    }
-    else if (status == HAL_TIMEOUT)
-    {
-        return UART_DRIVER_TIMEOUT;
-    }
-    else
-    {
-        return UART_DRIVER_ERROR;
-    }
+    if (id >= UART_COUNT)
+        return NULL;
+    return rx_ctx[id].stream;
 }
 
-/*---------------------------------------------------------------------------
- * HAL Callback - Called from DMA TX Complete ISR
- *---------------------------------------------------------------------------*/
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart)
+uint32_t uart_driver_get_drop_count(uart_id_t id)
 {
-    if (huart == UART_DRIVER_PRINT)
-    {
-        if (tx_task_to_notify != NULL)
-        {
-            BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-            vTaskNotifyGiveFromISR(tx_task_to_notify, &xHigherPriorityTaskWoken);
-            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-        }
-    }
+    if (id >= UART_COUNT)
+        return 0U;
+    uint32_t n_rx, n_tx;
+    taskENTER_CRITICAL();
+    n_rx = rx_ctx[id].drop_count;
+    rx_ctx[id].drop_count = 0;
+    n_tx = tx_ctx[id].drop_count;
+    tx_ctx[id].drop_count = 0;
+    taskEXIT_CRITICAL();
+    return n_rx + n_tx;
 }
 
-uint16_t uart_driver_get_rx_dma_position(void)
+void uart_driver_transmit(uart_id_t id, const uint8_t *buf, size_t len)
 {
-    uint16_t dma_counter = (uint16_t)__HAL_DMA_GET_COUNTER(UART_DRIVER_RX->hdmarx);
-    uint16_t buffer_size = UART_DRIVER_RX->RxXferSize;
-    uint16_t write_pos   = buffer_size - dma_counter;
-    return write_pos;
+    if (buf == NULL || len == 0 || id >= UART_COUNT)
+        return;
+
+    if (len > UART_TX_MAX_MSG_LEN)
+    {
+        taskENTER_CRITICAL();
+        tx_ctx[id].drop_count++;
+        taskEXIT_CRITICAL();
+        return;
+    }
+
+    uart_msg_t msg;
+    msg.len = (uint16_t)len;
+    memcpy(msg.data, buf, msg.len);
+    xQueueSend(tx_ctx[id].queue, &msg, portMAX_DELAY);
 }

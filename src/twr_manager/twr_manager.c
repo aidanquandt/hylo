@@ -7,8 +7,9 @@
 #include "FreeRTOS.h"
 #include "backoff.h"
 #include "common.h"
-#include "error_handler.h"
 #include "feature_config.h"
+#include "protocol_tx.h"
+#include "uart_protocol.pb.h"
 #include "module.h"
 #include "sensor_fusion.h"
 #include "state_machine.h"
@@ -125,8 +126,9 @@ STATIC void twr_manager_push_to_sensor_fusion(const twr_result_t* result)
     sensor_fusion_status_e sf_status = sensor_fusion_push_event(&event);
     if (sf_status != SENSOR_FUSION_SUCCESS)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "twr_mgr",
-                          "Failed to push ranging event to sensor fusion: %d", sf_status);
+        TwrMgrFailedToPushRangingEventEvent ev = TwrMgrFailedToPushRangingEventEvent_init_zero;
+        ev.sf_status = (int32_t)sf_status;
+        protocol_tx_TwrMgrFailedToPushRangingEventEvent(&ev);
     }
 }
 
@@ -137,19 +139,17 @@ STATIC void twr_manager_handle_ranging_success(const twr_result_t* result, uint1
 
 #if FEATURE_PRINT_RANGING_SUCCESS_AND_DISTANCE
     // Log result with position if available
+    TwrMgrRangeEvent ev = TwrMgrRangeEvent_init_zero;
+    ev.distance_m        = result->distance_m;
+    ev.addr              = result->remote_addr;
+    ev.position_unknown  = !result->anchor_position_valid;
     if (result->anchor_position_valid)
     {
-        error_handler_log(ERROR_SEVERITY_INFO, "twr_mgr",
-                          "Range: %.2f m to 0x%04X at (%.2f, %.2f, %.2f)", result->distance_m,
-                          result->remote_addr, result->anchor_position.x, result->anchor_position.y,
-                          result->anchor_position.z);
+        ev.x = result->anchor_position.x;
+        ev.y = result->anchor_position.y;
+        ev.z = result->anchor_position.z;
     }
-    else
-    {
-        error_handler_log(ERROR_SEVERITY_INFO, "twr_mgr",
-                          "Range: %.2f m to 0x%04X (position unknown)", result->distance_m,
-                          result->remote_addr);
-    }
+    protocol_tx_TwrMgrRangeEvent(&ev);
 #endif
     // Push to sensor fusion for localization
     twr_manager_push_to_sensor_fusion(result);
@@ -255,7 +255,8 @@ STATIC uint16_t twr_manager_transition_logic(uint16_t current_state, uint32_t st
 STATIC void twr_manager_state_idle_on_entry(uint16_t prev_state)
 {
     (void)prev_state;
-    error_handler_log(ERROR_SEVERITY_INFO, "twr_mgr", "Entering IDLE state");
+    TwrMgrEnteringIdleStateEvent ev = TwrMgrEnteringIdleStateEvent_init_zero;
+    protocol_tx_TwrMgrEnteringIdleStateEvent(&ev);
 }
 
 STATIC void twr_manager_state_idle_process(void)
@@ -265,8 +266,9 @@ STATIC void twr_manager_state_idle_process(void)
 
 STATIC void twr_manager_state_ranging_on_entry(uint16_t prev_state)
 {
-    error_handler_log(ERROR_SEVERITY_INFO, "twr_mgr", "Entering RANGING state (from state %d)",
-                      prev_state);
+    TwrMgrEnteringRangingStateEvent ev = TwrMgrEnteringRangingStateEvent_init_zero;
+    ev.prev_state = prev_state;
+    protocol_tx_TwrMgrEnteringRangingStateEvent(&ev);
 
     ctx.rate_prescaler      = 0;
     ctx.ranging_in_progress = false;
@@ -300,8 +302,8 @@ STATIC void twr_manager_state_ranging_process(void)
 STATIC void twr_manager_state_faulted_on_entry(uint16_t prev_state)
 {
     (void)prev_state;
-    error_handler_log(ERROR_SEVERITY_ERROR, "twr_mgr",
-                      "Entering FAULTED state - manual recovery required");
+    TwrMgrEnteringFaultedStateEvent ev = TwrMgrEnteringFaultedStateEvent_init_zero;
+    protocol_tx_TwrMgrEnteringFaultedStateEvent(&ev);
 }
 
 /*---------------------------------------------------------------------------
@@ -313,9 +315,8 @@ bool twr_manager_start(void)
     // Validate that targets are configured
     if (twr_scheduler_get_target_count() == 0)
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "twrmgr",
-                          "Cannot start: No targets configured. Use twrmgr.add.target or "
-                          "twrmgr.set.targets first");
+        TwrMgrCannotStartNoTargetsEvent ev = TwrMgrCannotStartNoTargetsEvent_init_zero;
+        protocol_tx_TwrMgrCannotStartNoTargetsEvent(&ev);
         return false;
     }
 
@@ -323,7 +324,8 @@ bool twr_manager_start(void)
     initiator_init();
     if (!initiator_start())
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "twr_mgr", "Failed to start initiator");
+        TwrMgrFailedToStartInitiatorEvent ev = TwrMgrFailedToStartInitiatorEvent_init_zero;
+        protocol_tx_TwrMgrFailedToStartInitiatorEvent(&ev);
         state_machine_force_transition(&twr_manager_state_machine, STATE_FAULTED);
         return false;
     }
@@ -371,17 +373,21 @@ bool twr_manager_set_ranging_rate(uint16_t rate_hz)
 {
     if (rate_hz < RANGING_RATE_HZ_MIN || rate_hz > RANGING_RATE_HZ_MAX)
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "twrmgr",
-                          "Invalid ranging rate %u Hz (valid range: %u-%u Hz)", rate_hz,
-                          RANGING_RATE_HZ_MIN, RANGING_RATE_HZ_MAX);
+        TwrMgrInvalidRangingRateEvent ev = TwrMgrInvalidRangingRateEvent_init_zero;
+        ev.rate_hz     = rate_hz;
+        ev.valid_min_hz = RANGING_RATE_HZ_MIN;
+        ev.valid_max_hz = RANGING_RATE_HZ_MAX;
+        protocol_tx_TwrMgrInvalidRangingRateEvent(&ev);
         return false;
     }
 
     ranging_rate_hz      = rate_hz;
     ranging_period_ticks = (1000 / rate_hz);
 
-    error_handler_log(ERROR_SEVERITY_INFO, "twrmgr", "Ranging rate set to %u Hz (period: %u ms)",
-                      rate_hz, ranging_period_ticks);
+    TwrMgrRangingRateSetEvent ev = TwrMgrRangingRateSetEvent_init_zero;
+    ev.rate_hz  = rate_hz;
+    ev.period_ms = (uint32_t)ranging_period_ticks;
+    protocol_tx_TwrMgrRangingRateSetEvent(&ev);
     return true;
 }
 

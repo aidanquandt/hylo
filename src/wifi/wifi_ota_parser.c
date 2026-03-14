@@ -1,5 +1,4 @@
 #include "wifi_ota_parser.h"
-#include "uart_manager.h"
 
 // --------------------------
 // OTA Settings
@@ -76,17 +75,14 @@ static void process_ota_line(char* line_buf)
     if (!type || strcmp(type, "OTA") != 0) return; // ignore non-OTA
     
     if (!cmd) {
-        uart_manager_print("[OTA] Missing command\r\n");
         return;
     }
 
     if (strcmp(cmd, "set-imu-off") == 0 && arg1) {
         set_imu_off(atoi(arg1));
-        uart_manager_print("[OTA] imu-off=%d\r\n", get_imu_off());
     }
     else if (strcmp(cmd, "set-fusion") == 0 && arg1) {
         set_fusion_on(atoi(arg1));
-        uart_manager_print("[OTA] fusion-on=%d\r\n", get_fusion_on());
     }
     else if (strcmp(cmd, "set-anchor") == 0 && arg1 && arg2) {
         int anchor_id = atoi(arg1);
@@ -96,11 +92,7 @@ static void process_ota_line(char* line_buf)
             case 1: set_anchor_1_pos(pos); break;
             case 2: set_anchor_2_pos(pos); break;
             case 3: set_anchor_3_pos(pos); break;
-            default: uart_manager_print("[OTA] unknown anchor: %d\r\n", anchor_id); break;
+            default: break;
         }
-        uart_manager_print("[OTA] anchor_%d_pos=%.2f\r\n", anchor_id, pos);
-    }
-    else {
-        uart_manager_print("[OTA] unknown cmd: %s\r\n", cmd);
     }
 }

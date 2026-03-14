@@ -4,7 +4,7 @@
         {
             "type": "cortex-debug",
             "request": "launch",
-            "name": "Debug (OpenOCD)",
+            "name": "Debug (OpenOCD) rev0",
             "cwd": "${workspaceFolder}",
             "executable": "${workspaceFolder}/build/arm-gcc-debug/hwconfig/stm32_hwrev_0/stm32_hwrev_0.elf",
             "servertype": "openocd",
@@ -13,16 +13,44 @@
                 "interface/stlink.cfg",
                 "target/stm32h7x.cfg"
             ],
-            "runToEntryPoint": "main",
-            "preLaunchTask": "build",
+            "preLaunchTask": "build REV=0",
+            "gdbPath": "gdb-multiarch"
+        },
+        {
+            "type": "cortex-debug",
+            "request": "launch",
+            "name": "Debug (OpenOCD) rev1",
+            "cwd": "${workspaceFolder}",
+            "executable": "${workspaceFolder}/build/arm-gcc-debug/hwconfig/stm32_hwrev_1/stm32_hwrev_1.elf",
+            "servertype": "openocd",
+            "device": "STM32H723xG",
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32h7x.cfg"
+            ],
+            "preLaunchTask": "build REV=1",
             "gdbPath": "gdb-multiarch"
         },
         {
             "type": "cortex-debug",
             "request": "attach",
-            "name": "Attach (OpenOCD)",
+            "name": "Attach (OpenOCD) rev0",
             "cwd": "${workspaceFolder}",
             "executable": "${workspaceFolder}/build/arm-gcc-debug/hwconfig/stm32_hwrev_0/stm32_hwrev_0.elf",
+            "servertype": "openocd",
+            "device": "STM32H723xG",
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32h7x.cfg"
+            ],
+            "gdbPath": "gdb-multiarch"
+        },
+        {
+            "type": "cortex-debug",
+            "request": "attach",
+            "name": "Attach (OpenOCD) rev1",
+            "cwd": "${workspaceFolder}",
+            "executable": "${workspaceFolder}/build/arm-gcc-debug/hwconfig/stm32_hwrev_1/stm32_hwrev_1.elf",
             "servertype": "openocd",
             "device": "STM32H723xG",
             "configFiles": [
