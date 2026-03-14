@@ -15,7 +15,7 @@ typedef struct imu_dev_s imu_dev_t;
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define IMU_DRIVER_CS_PIN SPI_DRIVER_CS_IMU
+#define IMU_DRIVER_CS_PIN SPI_DRIVER_INTERFACE_IMU
 
 /*---------------------------------------------------------------------------
  * Typedefs

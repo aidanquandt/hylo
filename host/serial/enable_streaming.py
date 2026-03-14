@@ -1,8 +1,13 @@
+import argparse
 import serial
 import time
 
-# Open serial port
-ser = serial.Serial('COM10', 115200, timeout=1)
+parser = argparse.ArgumentParser(description="Enable IMU streaming on device")
+parser.add_argument("--port", default="/dev/ttyUSB0", help="Serial port (e.g. /dev/ttyUSB0, COM10)")
+parser.add_argument("--baud", type=int, default=115200, help="Baud rate")
+args = parser.parse_args()
+
+ser = serial.Serial(args.port, args.baud, timeout=1)
 time.sleep(0.5)  # Wait for connection to establish
 
 # Send command to enable IMU streaming (legacy text protocol; use protocol_tool for protobuf)

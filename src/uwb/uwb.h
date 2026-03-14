@@ -68,6 +68,7 @@ typedef void (*uwb_tx_complete_handler_t)(uint32_t message_id, uint64_t tx_times
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
+void uwb_init(void);
 void uwb_get_status(uwb_status_t* status);
 void uwb_get_rx_stats(uwb_rx_stats_t* stats);
 void uwb_reset_rx_stats(void);

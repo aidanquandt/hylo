@@ -51,6 +51,7 @@ typedef struct
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
+void wifi_init(void);
 
 /**
  * @brief Push telemetry event to WiFi transmission queue

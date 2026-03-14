@@ -38,6 +38,7 @@ STATIC int32_t uwb_spi_write_crc(uint16_t headerLength, const uint8_t* headerBuf
 STATIC void uwb_spi_set_slow_rate(void);
 STATIC void uwb_spi_set_fast_rate(void);
 STATIC void uwb_wakeup_device_impl(void);
+STATIC void uwb_driver_irq_task(void* argument);
 STATIC void uwb_driver_rx_task(void* argument);
 STATIC void uwb_driver_tx_task(void* argument);
 
@@ -60,6 +61,8 @@ STATIC void uwb_driver_tx_task(void* argument);
 #define UWB_DRIVER_RX_QUEUE_LENGTH (20U)
 #define UWB_DRIVER_TX_QUEUE_LENGTH (16U)
 #define UWB_DRIVER_TX_TIMEOUT_MS (3U)
+#define UWB_DRIVER_IRQ_TASK_STACK_SIZE (1024U)
+#define UWB_DRIVER_IRQ_TASK_PRIORITY (8U)
 #define UWB_DRIVER_RX_TASK_STACK_SIZE (768U)
 #define UWB_DRIVER_RX_TASK_PRIORITY (6U)
 #define UWB_DRIVER_TX_TASK_STACK_SIZE (512U)
@@ -103,8 +106,9 @@ STATIC uwb_driver_statistics_t uwb_driver_stats         = {0};
 
 STATIC QueueHandle_t rx_queue = NULL;
 STATIC QueueHandle_t tx_queue = NULL;
+STATIC TaskHandle_t irq_task_handle = NULL;
 STATIC TaskHandle_t tx_task_handle = NULL;
-STATIC volatile uint64_t tx_done_timestamp = 0;
+STATIC uint64_t tx_done_timestamp = 0;
 STATIC uint32_t tx_next_message_id = 1;
 STATIC uint32_t tx_queue_overflows = 0;
 STATIC uint32_t rx_queue_overflows = 0;
@@ -123,11 +127,15 @@ STATIC int32_t uwb_spi_read(uint16_t headerLength, uint8_t* headerBuffer, uint16
         return DWT_ERROR;
     }
 
-    spi_driver_cs_low(UWB_DRIVER_CS_PIN);
-
-    if (spi_driver_transmit(headerBuffer, headerLength) != SPI_DRIVER_SUCCESS)
+    if (spi_driver_acquire(UWB_DRIVER_CS_PIN) != SPI_DRIVER_SUCCESS)
     {
-        spi_driver_cs_high(UWB_DRIVER_CS_PIN);
+        return DWT_ERROR;
+    }
+
+    if (spi_driver_transmit_in_session(UWB_DRIVER_CS_PIN, headerBuffer, headerLength)
+        != SPI_DRIVER_SUCCESS)
+    {
+        spi_driver_release(UWB_DRIVER_CS_PIN);
         return DWT_ERROR;
     }
 
@@ -135,13 +143,14 @@ STATIC int32_t uwb_spi_read(uint16_t headerLength, uint8_t* headerBuffer, uint16
     for (volatile uint32_t i = 0; i < SPI_READ_SETUP_DELAY_CYCLES; i++)
         ;
 
-    if (spi_driver_receive(readBuffer, readLength) != SPI_DRIVER_SUCCESS)
+    if (spi_driver_receive_in_session(UWB_DRIVER_CS_PIN, readBuffer, readLength)
+        != SPI_DRIVER_SUCCESS)
     {
-        spi_driver_cs_high(UWB_DRIVER_CS_PIN);
+        spi_driver_release(UWB_DRIVER_CS_PIN);
         return DWT_ERROR;
     }
 
-    spi_driver_cs_high(UWB_DRIVER_CS_PIN);
+    spi_driver_release(UWB_DRIVER_CS_PIN);
 
     return DWT_SUCCESS;
 }
@@ -154,24 +163,29 @@ STATIC int32_t uwb_spi_write(uint16_t headerLength, const uint8_t* headerBuffer,
         return DWT_ERROR;
     }
 
-    spi_driver_cs_low(UWB_DRIVER_CS_PIN);
-
-    if (spi_driver_transmit(headerBuffer, headerLength) != SPI_DRIVER_SUCCESS)
+    if (spi_driver_acquire(UWB_DRIVER_CS_PIN) != SPI_DRIVER_SUCCESS)
     {
-        spi_driver_cs_high(UWB_DRIVER_CS_PIN);
+        return DWT_ERROR;
+    }
+
+    if (spi_driver_transmit_in_session(UWB_DRIVER_CS_PIN, headerBuffer, headerLength)
+        != SPI_DRIVER_SUCCESS)
+    {
+        spi_driver_release(UWB_DRIVER_CS_PIN);
         return DWT_ERROR;
     }
 
     if ((bodyLength > 0U) && (bodyBuffer != NULL))
     {
-        if (spi_driver_transmit(bodyBuffer, bodyLength) != SPI_DRIVER_SUCCESS)
+        if (spi_driver_transmit_in_session(UWB_DRIVER_CS_PIN, bodyBuffer, bodyLength)
+            != SPI_DRIVER_SUCCESS)
         {
-            spi_driver_cs_high(UWB_DRIVER_CS_PIN);
+            spi_driver_release(UWB_DRIVER_CS_PIN);
             return DWT_ERROR;
         }
     }
 
-    spi_driver_cs_high(UWB_DRIVER_CS_PIN);
+    spi_driver_release(UWB_DRIVER_CS_PIN);
 
     return DWT_SUCCESS;
 }
@@ -184,46 +198,55 @@ STATIC int32_t uwb_spi_write_crc(uint16_t headerLength, const uint8_t* headerBuf
         return DWT_ERROR;
     }
 
-    spi_driver_cs_low(UWB_DRIVER_CS_PIN);
-
-    if (spi_driver_transmit(headerBuffer, headerLength) != SPI_DRIVER_SUCCESS)
+    if (spi_driver_acquire(UWB_DRIVER_CS_PIN) != SPI_DRIVER_SUCCESS)
     {
-        spi_driver_cs_high(UWB_DRIVER_CS_PIN);
+        return DWT_ERROR;
+    }
+
+    if (spi_driver_transmit_in_session(UWB_DRIVER_CS_PIN, headerBuffer, headerLength)
+        != SPI_DRIVER_SUCCESS)
+    {
+        spi_driver_release(UWB_DRIVER_CS_PIN);
         return DWT_ERROR;
     }
 
     if ((bodyLength > 0U) && (bodyBuffer != NULL))
     {
-        if (spi_driver_transmit(bodyBuffer, bodyLength) != SPI_DRIVER_SUCCESS)
+        if (spi_driver_transmit_in_session(UWB_DRIVER_CS_PIN, bodyBuffer, bodyLength)
+            != SPI_DRIVER_SUCCESS)
         {
-            spi_driver_cs_high(UWB_DRIVER_CS_PIN);
+            spi_driver_release(UWB_DRIVER_CS_PIN);
             return DWT_ERROR;
         }
     }
 
-    if (spi_driver_transmit(&crc8, 1) != SPI_DRIVER_SUCCESS)
+    if (spi_driver_transmit_in_session(UWB_DRIVER_CS_PIN, &crc8, 1) != SPI_DRIVER_SUCCESS)
     {
-        spi_driver_cs_high(UWB_DRIVER_CS_PIN);
+        spi_driver_release(UWB_DRIVER_CS_PIN);
         return DWT_ERROR;
     }
 
-    spi_driver_cs_high(UWB_DRIVER_CS_PIN);
+    spi_driver_release(UWB_DRIVER_CS_PIN);
 
     return DWT_SUCCESS;
 }
 
 STATIC void uwb_spi_set_slow_rate(void)
 {
-    spi_driver_cs_low(UWB_DRIVER_CS_PIN);
-    spi_driver_set_speed(SPI_DRIVER_SPEED_SLOW);
-    spi_driver_cs_high(UWB_DRIVER_CS_PIN);
+    if (spi_driver_acquire(UWB_DRIVER_CS_PIN) == SPI_DRIVER_SUCCESS)
+    {
+        spi_driver_set_speed(UWB_DRIVER_CS_PIN, SPI_DRIVER_SPEED_SLOW);
+        spi_driver_release(UWB_DRIVER_CS_PIN);
+    }
 }
 
 STATIC void uwb_spi_set_fast_rate(void)
 {
-    spi_driver_cs_low(UWB_DRIVER_CS_PIN);
-    spi_driver_set_speed(SPI_DRIVER_SPEED_FAST);
-    spi_driver_cs_high(UWB_DRIVER_CS_PIN);
+    if (spi_driver_acquire(UWB_DRIVER_CS_PIN) == SPI_DRIVER_SUCCESS)
+    {
+        spi_driver_set_speed(UWB_DRIVER_CS_PIN, SPI_DRIVER_SPEED_FAST);
+        spi_driver_release(UWB_DRIVER_CS_PIN);
+    }
 }
 
 STATIC void uwb_driver_rx_ok_callback(const dwt_cb_data_t* cb_data)
@@ -248,12 +271,10 @@ STATIC void uwb_driver_rx_ok_callback(const dwt_cb_data_t* cb_data)
     dwt_readrxtimestamp((uint8_t*)&event.timestamp, DWT_COMPAT_NONE);
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
 
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    if (xQueueSendFromISR(rx_queue, &event, &xHigherPriorityTaskWoken) != pdPASS)
+    if (xQueueSend(rx_queue, &event, 0) != pdPASS)
     {
         rx_queue_overflows++;
     }
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 STATIC void uwb_driver_rx_timeout_callback(const dwt_cb_data_t* cb_data)
@@ -284,13 +305,23 @@ STATIC void uwb_driver_tx_done_callback(const dwt_cb_data_t* cb_data)
         tx_done_timestamp = current_device->last_tx_ts;
         if (tx_task_handle != NULL)
         {
-            BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-            vTaskNotifyGiveFromISR(tx_task_handle, &xHigherPriorityTaskWoken);
-            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+            xTaskNotifyGive(tx_task_handle);
         }
     }
 
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
+}
+
+STATIC void uwb_driver_irq_task(void* argument)
+{
+    (void)argument;
+    for (;;)
+    {
+        // Block until signaled by the UWB IRQ pin GPIO callback.
+        // dwt_isr() runs here in task context so SPI mutex calls are safe.
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        dwt_isr();
+    }
 }
 
 STATIC void uwb_driver_rx_task(void* argument)
@@ -433,9 +464,9 @@ uwb_driver_status_t uwb_driver_soft_reset(uwb_dev_t* dev)
 
 STATIC void uwb_wakeup_device_impl(void)
 {
-    spi_driver_cs_low(UWB_DRIVER_CS_PIN);
+    spi_driver_acquire(UWB_DRIVER_CS_PIN);
     os_driver_delay_us_blocking(WAKEUP_PULSE_DURATION_US);
-    spi_driver_cs_high(UWB_DRIVER_CS_PIN);
+    spi_driver_release(UWB_DRIVER_CS_PIN);
     vTaskDelay(pdMS_TO_TICKS(WAKEUP_STABILIZATION_DELAY_MS));
 }
 
@@ -584,9 +615,16 @@ void uwb_driver_enable_rx_interrupt(void)
                         0 , DWT_ENABLE_INT_ONLY);
 }
 
+// Called from GPIO EXTI ISR — only signals the IRQ task; no SPI access in ISR context.
 void uwb_driver_handle_irq(void)
 {
-    dwt_isr();
+    if (irq_task_handle == NULL)
+    {
+        return;
+    }
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    vTaskNotifyGiveFromISR(irq_task_handle, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 // Override the weak callback from platform layer
@@ -603,6 +641,8 @@ void uwb_driver_register_isr_callbacks(uwb_dev_t* dev)
     {
         rx_queue = xQueueCreate(UWB_DRIVER_RX_QUEUE_LENGTH, sizeof(uwb_driver_rx_event_t));
         tx_queue = xQueueCreate(UWB_DRIVER_TX_QUEUE_LENGTH, sizeof(uwb_driver_tx_item_t));
+        (void)xTaskCreate(uwb_driver_irq_task, "uwb_irq", UWB_DRIVER_IRQ_TASK_STACK_SIZE, NULL,
+                          UWB_DRIVER_IRQ_TASK_PRIORITY, &irq_task_handle);
         (void)xTaskCreate(uwb_driver_rx_task, "uwb_rx", UWB_DRIVER_RX_TASK_STACK_SIZE, NULL,
                           UWB_DRIVER_RX_TASK_PRIORITY, NULL);
         (void)xTaskCreate(uwb_driver_tx_task, "uwb_tx", UWB_DRIVER_TX_TASK_STACK_SIZE, NULL,

@@ -9,7 +9,8 @@
 #include "wifi.h"
 #include "wifi_config.h"
 #include "imu.h"
-#include "module.h"
+#include "system_halt.h"
+#include "task_config.h"
 #include "uart_driver.h"
 #include "state_machine.h"
 #include "FreeRTOS.h"
@@ -101,31 +102,11 @@ STATIC void wifi_transmit_telemetry_queue(void);
 
 
 /*---------------------------------------------------------------------------
- * Module Functions
+ * Private Function Prototypes (module-internal)
  *---------------------------------------------------------------------------*/
 #if FEATURE_WIFI_MODULE
-STATIC void wifi_init(void);
 STATIC void wifi_process_10Hz(void);
-
-const module_S wifi_module= {
-    .module_name         = "wifi",
-    .module_init         = wifi_init,
-    .module_create_task  = NULL,
-    .module_process_1Hz   = NULL,
-    .module_process_10Hz  = wifi_process_10Hz,
-    .module_process_100Hz = NULL,
-    .module_process_1kHz  = NULL,
-};
-#else
-const module_S wifi_module= {
-    .module_name         = "wifi",
-    .module_init         = NULL,
-    .module_create_task  = NULL,
-    .module_process_1Hz   = NULL,
-    .module_process_10Hz  = NULL,
-    .module_process_100Hz = NULL,
-    .module_process_1kHz  = NULL,
-};
+STATIC void wifi_10Hz_task(void* pvParameters);
 #endif
 
 /*---------------------------------------------------------------------------
@@ -193,7 +174,18 @@ STATIC struct
  *---------------------------------------------------------------------------*/
 
 #if FEATURE_WIFI_MODULE
-STATIC void wifi_init(void)
+STATIC void wifi_10Hz_task(void* pvParameters)
+{
+    (void)pvParameters;
+    TickType_t lastWake = xTaskGetTickCount();
+    for (;;)
+    {
+        wifi_process_10Hz();
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(100));
+    }
+}
+
+void wifi_init(void)
 {
     telemetry_queue = xQueueCreate(TELEMETRY_QUEUE_SIZE, sizeof(telemetry_event_t));
     configASSERT(telemetry_queue != NULL);
@@ -205,12 +197,21 @@ STATIC void wifi_init(void)
 
     ota_parser_init();
     uart_driver_rx_start(UART_WIFI);
+
+    BaseType_t result = xTaskCreate(wifi_10Hz_task, "wifi_10hz", TASK_STACK_2KB,
+                                    NULL, TASK_PRIORITY_WIFI, NULL);
+    if (result != pdPASS)
+    {
+        system_halt("wifi", "Failed to create 10Hz task");
+    }
 }
 
 STATIC void wifi_process_10Hz(void)
 {
     state_machine_periodic(&wifi_state_machine);
 }
+#else
+void wifi_init(void) {}
 #endif /* FEATURE_WIFI_MODULE */
 
 STATIC uint16_t wifi_transition_logic(uint16_t currentState, uint32_t stateTimer)

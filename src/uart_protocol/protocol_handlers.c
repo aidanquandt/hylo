@@ -35,7 +35,7 @@
 static uint32_t s_ping_seq;
 
 /* IMU stream: 10 Hz task sends ImuStreamPayload; mode 0 = array (per-IMU), 1 = avg */
-#define IMU_STREAM_TASK_STACK  256
+#define IMU_STREAM_TASK_STACK  512 /* 2KB: calls protocol_send_frame (245B) + uart_driver_transmit (130B) */
 #define IMU_STREAM_TASK_PRIORITY (tskIDLE_PRIORITY + 1)
 #define IMU_STREAM_PERIOD_MS    100
 

@@ -7,8 +7,9 @@
 #include "feature_config.h"
 #include "protocol_tx.h"
 #include "protocol.pb.h"
-#include "module.h"
+#include "system_halt.h"
 #include "task.h"
+#include "task_config.h"
 #include "twr_state_machine.h" // For twr_process
 #include "initiator.h"
 #include "responder.h"
@@ -22,23 +23,8 @@
 STATIC void twr_protocol_handler(const uint8_t* data, uint16_t length, uint16_t src_addr,
                                  uint64_t rx_timestamp);
 STATIC void twr_tx_complete_handler(uint32_t message_id, uint64_t tx_timestamp);
-STATIC void twr_module_init(void);
 STATIC void twr_process_1kHz(void);
-
-/*---------------------------------------------------------------------------
- * Module Functions
- *---------------------------------------------------------------------------*/
-extern const module_S twr_module;
-
-const module_S twr_module = {
-    .module_name         = "twr",
-    .module_init         = twr_module_init,
-    .module_create_task  = NULL,
-    .module_process_1Hz   = NULL,
-    .module_process_10Hz  = NULL,
-    .module_process_100Hz = NULL,
-    .module_process_1kHz  = twr_process_1kHz,
-};
+STATIC void twr_1kHz_task(void* pvParameters);
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -50,7 +36,18 @@ extern twr_context_t initiator_twr_ctx;
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
-STATIC void twr_module_init(void)
+STATIC void twr_1kHz_task(void* pvParameters)
+{
+    (void)pvParameters;
+    TickType_t lastWake = xTaskGetTickCount();
+    for (;;)
+    {
+        twr_process_1kHz();
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(1));
+    }
+}
+
+void twr_init(void)
 {
     // Initialize both initiator and responder - all nodes can do both
     initiator_init();
@@ -66,6 +63,13 @@ STATIC void twr_module_init(void)
     module_initialized = true;
 
     // Note: Auto-start is deferred to twr_process_1kHz() to ensure UWB is ready
+
+    BaseType_t result = xTaskCreate(twr_1kHz_task, "twr_1khz", TASK_STACK_4KB,
+                                    NULL, TASK_PRIORITY_TWR, NULL);
+    if (result != pdPASS)
+    {
+        system_halt("twr", "Failed to create 1kHz task");
+    }
 }
 
 STATIC void twr_process_1kHz(void)

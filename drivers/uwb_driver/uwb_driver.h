@@ -15,7 +15,7 @@ typedef struct uwb_dev_s uwb_dev_t;
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define UWB_DRIVER_CS_PIN SPI_DRIVER_CS_UWB
+#define UWB_DRIVER_CS_PIN SPI_DRIVER_INTERFACE_UWB
 #define UWB_MAX_MESSAGE_LENGTH (127U)
 
 #define UWB_DTUH_TO_MS(dtuh_ticks) (((dtuh_ticks) * 1000ULL) / DW3000_DTU_FREQ)

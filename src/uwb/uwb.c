@@ -8,7 +8,7 @@
 #include "protocol_tx.h"
 #include "system_halt.h"
 #include "protocol.pb.h"
-#include "module.h"
+#include "task_config.h"
 #include "gpio_driver.h"
 #include "timer_driver.h"
 #include "semphr.h"
@@ -122,23 +122,10 @@ STATIC void uwb_state_faulted_on_entry(uint16_t prevState);
 STATIC bool uwb_is_transient_fault(uwb_fault_code_e fault);
 
 /*---------------------------------------------------------------------------
- * Module Functions
+ * Private Function Prototypes (module-internal)
  *---------------------------------------------------------------------------*/
-STATIC void uwb_init(void);
-STATIC void uwb_create_task(void);
 STATIC void uwb_process_100Hz(void);
-
-extern const module_S uwb_module;
-
-const module_S uwb_module = {
-    .module_name          = "uwb",
-    .module_init          = uwb_init,
-    .module_create_task   = uwb_create_task,
-    .module_process_1Hz   = NULL,
-    .module_process_10Hz  = NULL,
-    .module_process_100Hz = uwb_process_100Hz, // State machine for fault detection
-    .module_process_1kHz  = NULL,
-};
+STATIC void uwb_100Hz_task(void* pvParameters);
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -214,7 +201,18 @@ STATIC bool verify_device_id(void)
     return (device_id == UWB_EXPECTED_DEV_ID);
 }
 
-STATIC void uwb_init(void)
+STATIC void uwb_100Hz_task(void* pvParameters)
+{
+    (void)pvParameters;
+    TickType_t lastWake = xTaskGetTickCount();
+    for (;;)
+    {
+        uwb_process_100Hz();
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(10));
+    }
+}
+
+void uwb_init(void)
 {
     uwb_hw_mutex = xSemaphoreCreateBinary();
     if (uwb_hw_mutex == NULL)
@@ -222,11 +220,15 @@ STATIC void uwb_init(void)
         system_halt("uwb", "Failed to create UWB hardware mutex");
     }
     xSemaphoreGive(uwb_hw_mutex);
-}
 
-STATIC void uwb_create_task(void)
-{
     uwb_start();
+
+    BaseType_t result = xTaskCreate(uwb_100Hz_task, "uwb_100hz", TASK_STACK_2KB,
+                                    NULL, TASK_PRIORITY_UWB_STATE_MACHINE, NULL);
+    if (result != pdPASS)
+    {
+        system_halt("uwb", "Failed to create 100Hz task");
+    }
 }
 
 STATIC void uwb_state_machine_sample_inputs(void)

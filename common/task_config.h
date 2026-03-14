@@ -29,18 +29,24 @@
 #define TASK_PRIORITY_UART_TX 3 // Communication I/O
 
 // Background processing
-#define TASK_PRIORITY_SENSOR_FUSION 2 // Kalman filter updates
-#define TASK_PRIORITY_TWR 2           // Ranging algorithm
-#define TASK_PRIORITY_TWR_MANAGER 2   // Ranging coordination
-#define TASK_PRIORITY_UWB_NODE 2      // Node state management
+#define TASK_PRIORITY_SENSOR_FUSION 2     // Kalman filter updates
+#define TASK_PRIORITY_TWR 2               // Ranging algorithm
+#define TASK_PRIORITY_TWR_MANAGER 2       // Ranging coordination
+#define TASK_PRIORITY_UWB_NODE 2          // Node state management
+#define TASK_PRIORITY_UWB_STATE_MACHINE 3 // UWB chip state machine (100 Hz)
+#define TASK_PRIORITY_WIFI 2              // WiFi state machine (10 Hz)
 
 // Low priority / monitoring
 #define TASK_PRIORITY_DATALOGGER 1 // Statistics logging
 #define TASK_PRIORITY_WATCHDOG 0   // System health monitor (lowest)
 
 /*---------------------------------------------------------------------------
- * Task Stack Sizes (in 32-bit words)
+ * Task Stack Sizes
+ *---------------------------------------------------------------------------
+ * Named in bytes for readability; values are in 32-bit words as required
+ * by xTaskCreate (1 KB = 256 words, 2 KB = 512 words, 4 KB = 1024 words).
  *---------------------------------------------------------------------------*/
-#define TASK_STACK_SMALL 256  // Minimal tasks
-#define TASK_STACK_MEDIUM 512 // Standard tasks
-#define TASK_STACK_LARGE 1024 // Complex processing
+#define TASK_STACK_1KB 256  // 1024 bytes
+#define TASK_STACK_2KB 512  // 2048 bytes
+#define TASK_STACK_4KB 1024 // 4096 bytes
+#define TASK_STACK_8KB 2048 // 8192 bytes

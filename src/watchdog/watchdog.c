@@ -7,7 +7,7 @@
 #include "protocol_tx.h"
 #include "system_halt.h"
 #include "protocol.pb.h"
-#include "module.h"
+#include "task_config.h"
 #include "watchdog_driver.h"
 #include "task.h"
 
@@ -16,7 +16,6 @@
  *---------------------------------------------------------------------------*/
 #define WATCHDOG_CHECK_RATE_MS 1000U // Check heartbeats every 1 second
 #define PRIORITY_WATCHDOG_TASK 0     // Lowest priority - only runs if all others can run
-#define TASK_STACK_SMALL 256
 
 // Heartbeat bitmask - one bit per task rate
 #define HEARTBEAT_1KHZ_BIT (1U << 0)
@@ -37,26 +36,16 @@ STATIC volatile uint32_t task_heartbeats = 0; // Bitmask of which tasks have run
 STATIC void watchdog_task(void* argument);
 
 /*---------------------------------------------------------------------------
- * Module Functions
+ * Private Function Prototypes (module-internal)
  *---------------------------------------------------------------------------*/
-STATIC void watchdog_init(void);
-STATIC void watchdog_create_task(void);
 STATIC void watchdog_process_1khz(void);
 STATIC void watchdog_process_100hz(void);
 STATIC void watchdog_process_10hz(void);
 STATIC void watchdog_process_1hz(void);
-
-extern const module_S watchdog_module;
-
-const module_S watchdog_module = {
-    .module_name          = "watchdog",
-    .module_init          = watchdog_init,
-    .module_create_task   = watchdog_create_task,
-    .module_process_1Hz   = watchdog_process_1hz,
-    .module_process_10Hz  = watchdog_process_10hz,
-    .module_process_100Hz = watchdog_process_100hz,
-    .module_process_1kHz  = watchdog_process_1khz,
-};
+STATIC void watchdog_1khz_task(void* pvParameters);
+STATIC void watchdog_100hz_task(void* pvParameters);
+STATIC void watchdog_10hz_task(void* pvParameters);
+STATIC void watchdog_1hz_task(void* pvParameters);
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -97,19 +86,87 @@ STATIC void watchdog_task(void* argument)
     }
 }
 
-STATIC void watchdog_init(void)
+STATIC void watchdog_1khz_task(void* pvParameters)
 {
-    // Module initialization (called before RTOS starts)
-    // Nothing to do here - watchdog task will init IWDG
+    (void)pvParameters;
+    TickType_t lastWake = xTaskGetTickCount();
+    for (;;)
+    {
+        watchdog_process_1khz();
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(1));
+    }
 }
 
-STATIC void watchdog_create_task(void)
+STATIC void watchdog_100hz_task(void* pvParameters)
 {
-    BaseType_t result = xTaskCreate(watchdog_task, "watchdog", TASK_STACK_SMALL, NULL,
-                                    PRIORITY_WATCHDOG_TASK, NULL);
+    (void)pvParameters;
+    TickType_t lastWake = xTaskGetTickCount();
+    for (;;)
+    {
+        watchdog_process_100hz();
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(10));
+    }
+}
+
+STATIC void watchdog_10hz_task(void* pvParameters)
+{
+    (void)pvParameters;
+    TickType_t lastWake = xTaskGetTickCount();
+    for (;;)
+    {
+        watchdog_process_10hz();
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(100));
+    }
+}
+
+STATIC void watchdog_1hz_task(void* pvParameters)
+{
+    (void)pvParameters;
+    TickType_t lastWake = xTaskGetTickCount();
+    for (;;)
+    {
+        watchdog_process_1hz();
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(1000));
+    }
+}
+
+void watchdog_init(void)
+{
+    BaseType_t result;
+
+    result = xTaskCreate(watchdog_task, "watchdog", TASK_STACK_1KB, NULL,
+                         PRIORITY_WATCHDOG_TASK, NULL);
     if (result != pdPASS)
     {
         system_halt("watchdog", "Failed to create watchdog task");
+    }
+
+    result = xTaskCreate(watchdog_1khz_task, "wdog_1khz", TASK_STACK_1KB, NULL,
+                         PRIORITY_WATCHDOG_TASK, NULL);
+    if (result != pdPASS)
+    {
+        system_halt("watchdog", "Failed to create 1kHz task");
+    }
+
+    result = xTaskCreate(watchdog_100hz_task, "wdog_100hz", TASK_STACK_1KB, NULL,
+                         PRIORITY_WATCHDOG_TASK, NULL);
+    if (result != pdPASS)
+    {
+        system_halt("watchdog", "Failed to create 100Hz task");
+    }
+
+    result = xTaskCreate(watchdog_10hz_task, "wdog_10hz", TASK_STACK_1KB, NULL,
+                         PRIORITY_WATCHDOG_TASK, NULL);
+    if (result != pdPASS)
+    {
+        system_halt("watchdog", "Failed to create 10Hz task");
+    }
+
+    result = xTaskCreate(watchdog_1hz_task, "wdog_1hz", TASK_STACK_1KB, NULL,
+                         PRIORITY_WATCHDOG_TASK, NULL);
+    if (result != pdPASS)
+    {
+        system_halt("watchdog", "Failed to create 1Hz task");
     }
 }
 

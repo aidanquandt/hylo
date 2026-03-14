@@ -35,6 +35,7 @@ typedef struct
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
+void imu_init(void);
 void imu_get_status(imu_status_t* status);
 imu_state_e imu_get_state(imu_device_e device);
 bool imu_get_data(imu_data_t* data);

@@ -54,9 +54,9 @@ help:
 	@echo "  make flash REV=0 or make flash REV=1  Flash via OpenOCD (ST-Link); builds first if no build"
 	@echo "  make check-deps Verify cmake, ninja, arm-none-eabi-gcc"
 	@echo ""
-	@echo "Host tools (Python; in host/; scripts use COM10 by default):"
+	@echo "Host tools (Python; in host/; scripts use /dev/ttyUSB0 by default on Linux/WSL):"
 	@echo "  make host-help   List host targets"
-	@echo "  make host-interactive    Protocol: listen + send commands (PORT=COM10)"
+	@echo "  make host-interactive    Protocol: listen + send commands (PORT=/dev/ttyUSB0)"
 	@echo "  make host-monitor        Serial monitor"
 	@echo "  make host-enable-streaming  Enable IMU streaming on device"
 	@echo "  make host-visualization  IMU 3D visualization"
@@ -67,22 +67,27 @@ help:
 # Host tools (run from repo root; require Python + pyserial, optional: pygame, PyOpenGL)
 host host-help:
 	@echo "Host targets: host-interactive, host-monitor, host-enable-streaming, host-visualization, host-webapp"
-	@echo "Run from repo root. For host-interactive: make host-interactive PORT=COM10"
+	@echo "Run from repo root. For host-interactive: make host-interactive [PORT=/dev/ttyUSB0]"
 
-PORT ?= COM10
+PORT ?= /dev/ttyUSB0
 host-interactive:
+	@bash tools/scripts/attach-usb.sh serial
 	cd host/serial && python protocol_tool.py --port $(PORT) interactive
 
 host-monitor:
-	cd host/serial && python monitor_serial.py
+	@bash tools/scripts/attach-usb.sh serial
+	cd host/serial && python monitor_serial.py --port $(PORT)
 
 host-enable-streaming:
-	cd host/serial && python enable_streaming.py
+	@bash tools/scripts/attach-usb.sh serial
+	cd host/serial && python enable_streaming.py --port $(PORT)
 
 host-visualization:
-	cd host/visualization && python attitude.py
+	@bash tools/scripts/attach-usb.sh serial
+	cd host/visualization && python attitude.py --port $(PORT)
 
 host-webapp:
+	@bash tools/scripts/attach-usb.sh serial
 	(python -c "import time, webbrowser; time.sleep(2); webbrowser.open('http://127.0.0.1:8000')") &
 	uvicorn host.webapp.backend.main:app --reload
 
