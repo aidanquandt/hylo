@@ -326,7 +326,7 @@ STATIC void send_imu_telemetry(const sensor_event_t* event)
     // IMU runs at 200Hz, so only send every 20th sample to avoid flooding
     static uint8_t imu_decimation_counter = 0;
 
-    if (counter_uint8_t(&imu_decimation_counter, 20))
+    if (counter_uint8_t(&imu_decimation_counter, 20)) // log every 20th sample to get ~10Hz (200Hz / 20)
     {
         if (wifi_telemetry_is_ready())
         {
@@ -348,8 +348,8 @@ STATIC void send_position_telemetry(const sensor_fusion_position_t* position)
     static uint32_t last_position_send = 0;
     uint32_t now = timer_driver_get_time_ms();
     
-    // Throttle to max 10 Hz and only send when valid
-    if (position->valid && (now - last_position_send) >= 100)
+    // Throttle to max 10 Hz and always send (even if position invalid)
+    if ((now - last_position_send) >= 100)
     {
         if (wifi_telemetry_is_ready())
         {
@@ -392,7 +392,7 @@ STATIC void sdcard_log_ranging(const sensor_ranging_data_t* ranging, uint32_t ti
 STATIC void sdcard_log_imu(const sensor_event_t* event)
 {
     static uint8_t imu_sd_counter = 0;
-    if (counter_uint8_t(&imu_sd_counter, 20))
+    if (counter_uint8_t(&imu_sd_counter, 5)) // log every 5th sample to get ~40Hz (200Hz / 5) - adjust as needed for desired logging rate
     {
         sdcard_driver_event_t entry = {
             .type         = SDCARD_DRIVER_EVENT_IMU,
@@ -419,24 +419,27 @@ STATIC void sdcard_log_position(const sensor_fusion_position_t* position)
     static uint32_t last_sd_position_send = 0;
     uint32_t now = timer_driver_get_time_ms();
 
-    if (position->valid && (now - last_sd_position_send) >= 100U)
+    if ((now - last_sd_position_send) >= 100U) // Throttle to max 10 Hz CHANGE IF WANT MORE FREQUENT LOGGING!!!
     {
-        sdcard_driver_event_t entry = {
-            .type             = SDCARD_DRIVER_EVENT_POSITION,
-            .timestamp_ms     = position->timestamp_ms,
-            .data.position = {
-                .x = position->x,
-                .y = position->y,
-                .z = position->z,
-                .vx = position->vx,
-                .vy = position->vy,
-                .vz = position->vz,
-                .confidence = position->confidence,
-                .valid = position->valid,
-            },
-        };
-        (void)sdcard_driver_push_event(&entry);
-        last_sd_position_send = now;
+        if (position->valid)
+        {
+            sdcard_driver_event_t entry = {
+                .type             = SDCARD_DRIVER_EVENT_POSITION,
+                .timestamp_ms     = position->timestamp_ms,
+                .data.position = {
+                    .x = position->x,
+                    .y = position->y,
+                    .z = position->z,
+                    .vx = position->vx,
+                    .vy = position->vy,
+                    .vz = position->vz,
+                    .confidence = position->confidence,
+                    .valid = position->valid,
+                },
+            };
+            (void)sdcard_driver_push_event(&entry);
+            last_sd_position_send = now;
+        }
     }
 }
 #endif

@@ -7,8 +7,6 @@
 #include "task.h"
 #include "usart.h"
 #include <stdbool.h>
-#include <stdio.h>
-#include <stdarg.h>
 #include <string.h>
 
 #define UART_DMA_TIMEOUT_MS 50U
@@ -235,31 +233,4 @@ void uart_driver_transmit(uart_id_t id, const uint8_t *buf, size_t len)
     msg.len = (uint16_t)len;
     memcpy(msg.data, buf, msg.len);
     xQueueSend(tx_ctx[id].queue, &msg, portMAX_DELAY);
-}
-
-void uart_driver_vprintf(uart_id_t id, const char *fmt, va_list args)
-{
-    char buffer[UART_TX_MAX_MSG_LEN];
-    int len;
-
-    if (fmt == NULL || id >= UART_COUNT)
-        return;
-
-    len = vsnprintf(buffer, sizeof(buffer), fmt, args);
-    if (len <= 0)
-        return;
-
-    if ((size_t)len >= sizeof(buffer))
-        len = sizeof(buffer) - 1;
-
-    uart_driver_transmit(id, (const uint8_t *)buffer, (size_t)len);
-}
-
-void uart_driver_printf(uart_id_t id, const char *fmt, ...)
-{
-    va_list args;
-
-    va_start(args, fmt);
-    uart_driver_vprintf(id, fmt, args);
-    va_end(args);
 }
