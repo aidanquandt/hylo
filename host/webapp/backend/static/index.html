@@ -22,16 +22,18 @@
       color: var(--text);
       margin: 0;
       padding: 0;
-      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
       font-size: 0.9rem;
     }
-    h1 { font-size: 1.1rem; margin: 0 0 0.4rem 0; color: var(--accent); }
+    h1 { font-size: 1.1rem; margin: 0 0 0.4rem 0; color: var(--accent); flex-shrink: 0; }
     .toolbar {
       display: flex;
       align-items: center;
       gap: 0.5rem;
       margin-bottom: 0.5rem;
       flex-wrap: wrap;
+      flex-shrink: 0;
     }
     .toolbar label { margin: 0; font-size: 0.85rem; }
     .toolbar select, .toolbar input[type="text"] {
@@ -133,6 +135,21 @@
       font-size: 0.85rem;
     }
     .toolbar .btn-refresh:hover { filter: brightness(1.1); }
+    .btn-monitor {
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      border: 1px solid var(--accent);
+      background: var(--surface);
+      color: var(--accent);
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .btn-monitor:hover { filter: brightness(1.1); }
+    .btn-monitor.active {
+      background: var(--accent);
+      color: var(--bg);
+    }
+    .monitor-status { font-size: 0.8rem; color: var(--muted); }
     .load-err { color: var(--error); padding: 0.5rem 0; font-size: 0.85rem; }
     .no-results { color: var(--muted); padding: 0.25rem 0; font-size: 0.85rem; }
     .module-section { margin-bottom: 0.75rem; }
@@ -150,13 +167,35 @@
     .module-header::before { content: "▾ "; }
     .module-section.collapsed .module-header::before { content: "▸ "; }
     .module-section.collapsed .module-commands { display: none; }
-    /* Two-panel layout: commands left, event log right */
-    .app-body { display: flex; flex-direction: column; min-height: 100vh; padding: 0.5rem 1rem; }
-    .app-main { display: flex; flex: 1; min-height: 0; gap: 0; }
-    .panel-commands { flex: 0 1 50%; min-width: 20rem; overflow: auto; }
+    /* Two-panel layout: fixed viewport, left/right scroll independently like fixed windows */
+    .app-body {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 0.5rem 1rem;
+      overflow: hidden;
+    }
+    .app-main {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      gap: 0;
+    }
+    .panel-commands {
+      flex: 0 1 50%;
+      min-width: 20rem;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
     .panel-events {
-      flex: 1 1 50%; min-width: 18rem;
-      display: flex; flex-direction: column;
+      flex: 1 1 50%;
+      min-width: 18rem;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
       border-left: 1px solid var(--surface2);
       background: var(--bg);
     }
@@ -178,11 +217,27 @@
       cursor: pointer;
     }
     .event-log-header .btn-clear:hover { filter: brightness(1.1); }
+    .event-log-header .btn-jump {
+      padding: 0.2rem 0.5rem;
+      font-size: 0.75rem;
+      border-radius: 3px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: var(--surface2);
+      color: var(--text);
+      cursor: pointer;
+      margin-right: 0.25rem;
+    }
+    .event-log-header .btn-jump:hover { filter: brightness(1.1); }
     .event-log-content {
-      flex: 1; overflow: auto;
-      font-size: 0.78rem; padding: 0.5rem;
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      font-size: 0.78rem;
+      padding: 0.5rem;
       font-family: inherit;
-      white-space: pre-wrap; word-break: break-word;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
     .event-log-line {
       padding: 0.15rem 0;
@@ -202,6 +257,8 @@
         <option value="">Loading…</option>
       </select>
       <button type="button" id="refreshPorts" class="btn-refresh" title="Refresh port list">⟳</button>
+      <button type="button" id="monitorBtn" class="btn-monitor" title="Start background monitoring so event log receives all device messages (e.g. TWR range, logs)">Start monitoring</button>
+      <span id="monitorStatus" class="monitor-status" style="display: none;"></span>
       <label for="search">Search</label>
       <input type="text" id="search" placeholder="Filter commands…" />
     </div>
@@ -214,10 +271,13 @@
       <div class="panel-events">
         <div class="event-log-header">
           <span>Event log</span>
-          <button type="button" id="clearEvents" class="btn-clear" title="Clear event log">Clear</button>
+          <span>
+            <button type="button" id="jumpToBottom" class="btn-jump" title="Scroll to latest">Jump to bottom</button>
+            <button type="button" id="clearEvents" class="btn-clear" title="Clear event log">Clear</button>
+          </span>
         </div>
         <div id="eventLogContent" class="event-log-content">
-          <div id="eventLogEmpty" class="event-log-empty">No events yet. Send a command to see interleaved events (e.g. log events) here.</div>
+          <div id="eventLogEmpty" class="event-log-empty">Select a port to connect and see device events (e.g. TWR range, logs) here.</div>
           <div id="eventLogLines"></div>
         </div>
       </div>
@@ -233,10 +293,13 @@
     const eventLogLinesEl = document.getElementById("eventLogLines");
     const eventLogEmptyEl = document.getElementById("eventLogEmpty");
     const eventLogContentEl = document.getElementById("eventLogContent");
+    const monitorBtn = document.getElementById("monitorBtn");
+    const monitorStatusEl = document.getElementById("monitorStatus");
 
     let allCommands = [];
     let moduleOrder = [];
     let eventLogEntries = [];
+    let eventStreamSource = null;
 
     async function loadPorts() {
       const currentPort = portEl.value;
@@ -254,8 +317,14 @@
       }
     }
 
+    function isEventLogAtBottom() {
+      const el = eventLogContentEl;
+      return el.scrollHeight - el.clientHeight - el.scrollTop <= 50;
+    }
+
     function appendEvents(events) {
       if (!events || events.length === 0) return;
+      const wasAtBottom = isEventLogAtBottom();
       eventLogEntries = eventLogEntries.concat(events);
       eventLogEmptyEl.style.display = "none";
       events.forEach(text => {
@@ -265,10 +334,11 @@
         line.innerHTML = safe.replace(/^(\[rx\]\s*)/, "<span class=\"event-prefix\">$1</span>");
         eventLogLinesEl.appendChild(line);
       });
-      eventLogContentEl.scrollTop = eventLogContentEl.scrollHeight;
+      if (wasAtBottom) eventLogContentEl.scrollTop = eventLogContentEl.scrollHeight;
     }
 
     function renderEventLog() {
+      const wasAtBottom = eventLogEntries.length === 0 || isEventLogAtBottom();
       eventLogLinesEl.innerHTML = "";
       if (eventLogEntries.length === 0) {
         eventLogEmptyEl.style.display = "block";
@@ -282,7 +352,7 @@
         line.innerHTML = safe.replace(/^(\[rx\]\s*)/, "<span class=\"event-prefix\">$1</span>");
         eventLogLinesEl.appendChild(line);
       });
-      eventLogContentEl.scrollTop = eventLogContentEl.scrollHeight;
+      if (wasAtBottom) eventLogContentEl.scrollTop = eventLogContentEl.scrollHeight;
     }
 
     async function loadEvents() {
@@ -292,6 +362,51 @@
         const data = await r.json();
         eventLogEntries = data.events || [];
         renderEventLog();
+      } catch (e) { /* ignore */ }
+    }
+
+    function connectEventStream() {
+      if (eventStreamSource) return;
+      eventStreamSource = new EventSource("/api/events/stream");
+      eventStreamSource.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.line) appendEvents([data.line]);
+        } catch (err) { /* ignore */ }
+      };
+      eventStreamSource.onerror = () => {
+        if (eventStreamSource) {
+          eventStreamSource.close();
+          eventStreamSource = null;
+        }
+      };
+      loadEvents();
+    }
+
+    function disconnectEventStream() {
+      if (eventStreamSource) {
+        eventStreamSource.close();
+        eventStreamSource = null;
+      }
+    }
+
+    async function updateMonitorStatus() {
+      try {
+        const r = await fetch("/api/monitor/status");
+        if (!r.ok) return;
+        const data = await r.json();
+        const active = data.active && data.port;
+        monitorBtn.textContent = active ? "Stop monitoring" : "Start monitoring";
+        monitorBtn.classList.toggle("active", !!active);
+        monitorBtn.disabled = !portEl.value && !active;
+        if (active) {
+          monitorStatusEl.textContent = "Monitoring " + data.port;
+          monitorStatusEl.style.display = "inline";
+          connectEventStream();
+        } else {
+          monitorStatusEl.style.display = "none";
+          disconnectEventStream();
+        }
       } catch (e) { /* ignore */ }
     }
 
@@ -455,6 +570,33 @@
 
     searchEl.addEventListener("input", applyFilter);
     document.getElementById("refreshPorts").addEventListener("click", loadPorts);
+    monitorBtn.addEventListener("click", async () => {
+      try {
+        const r = await fetch("/api/monitor/status");
+        if (!r.ok) return;
+        const data = await r.json();
+        if (data.active) {
+          await fetch("/api/monitor/stop", { method: "POST" });
+        } else {
+          if (!portEl.value) return;
+          const res = await fetch("/api/monitor/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ port: portEl.value })
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert(err.detail || "Failed to start monitoring");
+            return;
+          }
+        }
+        await updateMonitorStatus();
+        if (!data.active) await loadEvents();
+      } catch (e) { /* ignore */ }
+    });
+    document.getElementById("jumpToBottom").addEventListener("click", () => {
+      eventLogContentEl.scrollTop = eventLogContentEl.scrollHeight;
+    });
     document.getElementById("clearEvents").addEventListener("click", async () => {
       try {
         await fetch("/api/events/clear", { method: "POST" });
@@ -475,9 +617,32 @@
       }
     }
 
+    async function connectPort() {
+      const port = portEl.value;
+      try {
+        if (port) {
+          const res = await fetch("/api/monitor/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ port })
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            console.warn("Monitor start failed:", err.detail || res.statusText);
+          }
+        } else {
+          await fetch("/api/monitor/stop", { method: "POST" });
+        }
+        await updateMonitorStatus();
+        await loadEvents();
+      } catch (e) { /* ignore */ }
+    }
+
     loadPorts();
     loadCommands();
     loadEvents();
+    updateMonitorStatus();
+    portEl.addEventListener("change", connectPort);
   </script>
 </body>
 </html>

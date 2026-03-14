@@ -267,6 +267,17 @@ def get_msg_id_for_type(type_name):
     return None
 
 
+def get_response_type_for_request(request_message_name):
+    """Return the expected response type name for a request (e.g. PingRequest -> PingResponse)."""
+    return _get_response_type_for_request(request_message_name)
+
+
+def get_expected_response_msg_id(request_message_name):
+    """Return the protocol msg_id for the expected response of a request."""
+    resp_type = _get_response_type_for_request(request_message_name)
+    return get_msg_id_for_type(resp_type)
+
+
 def format_response(msg_id, payload):
     """Decode payload with pb2 and return a human-readable string. Uses LOG_EVENT_FORMAT_TABLE for event types."""
     if msg_id >= len(protocol_ids.MSG_NAMES):
@@ -316,6 +327,7 @@ LOG_EVENT_FORMAT_TABLE = {
     "UwbNodeInvalidTypeEvent": "Invalid UWB node type: %(node_type)d",
     "ResponderFailedToSendMessageEvent": "Responder failed to send message type %(message_type)d",
     "TwrSchedulerTargetListFullEvent": "TWR target list full",
+    "TwrMgrRangeEvent": "TWR range addr=0x%(addr)04X distance_m=%(distance_m)s pos_unknown=%(position_unknown)s",
     "SystemFatalEvent": "FATAL [%(module)s] %(message)s",
 }
 
