@@ -36,13 +36,11 @@ STATIC void sensor_fusion_task(void* pvParameters);
 STATIC void sensor_fusion_process_10Hz(void);
 STATIC void sensor_fusion_update_position_estimate(void);
 
-// Telemetry helpers (WIFI)
+// Telemetry helpers (WIFI + SD card) — only used on HWREV 1
+#if (HWREV == 1)
 STATIC void send_ranging_telemetry(const sensor_ranging_data_t* ranging, uint32_t timestamp_ms);
 STATIC void send_imu_telemetry(const sensor_event_t* event);
 STATIC void send_position_telemetry(const sensor_fusion_position_t* position);
-
-// Telemetry helpers (SD card)
-#if (HWREV == 1)
 STATIC void sdcard_log_ranging(const sensor_ranging_data_t* ranging, uint32_t timestamp_ms);
 STATIC void sdcard_log_imu(const sensor_event_t* event);
 STATIC void sdcard_log_position(const sensor_fusion_position_t* position);
@@ -298,8 +296,9 @@ STATIC void sensor_fusion_update_position_estimate(void)
 }
 
 /*---------------------------------------------------------------------------
- * Telemetry Helper Functions
+ * Telemetry Helper Functions (HWREV 1 only: WiFi + SD card)
  *---------------------------------------------------------------------------*/
+#if (HWREV == 1)
 
 /**
  * @brief Send ranging telemetry to WiFi (non-blocking)
@@ -443,6 +442,8 @@ STATIC void sdcard_log_position(const sensor_fusion_position_t* position)
         }
     }
 }
+
+#endif /* HWREV == 1 */
 
 
 /*---------------------------------------------------------------------------

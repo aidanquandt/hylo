@@ -14,8 +14,12 @@
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define SDCARD_QUEUE_SIZE        (256U)
+#define SDCARD_QUEUE_SIZE         (256U)
 #define SDCARD_SYNC_INTERVAL_MS  (5000U)
+#define SDCARD_POLL_MS            (100U)   /* queue receive timeout so task can run sync check */
+#define SDCARD_REMOUNT_DELAY_MS  (1000U)
+#define SDCARD_MAX_LOG_FILES     (1000U)
+#define SDCARD_ROW_BUF_SIZE      (320U)
 #define SDCARD_TASK_STACK_SIZE   (1024U)
 #define SDCARD_TASK_PRIORITY     (2U)
 
@@ -24,14 +28,13 @@
  *---------------------------------------------------------------------------*/
 #if (HWREV == 1)
 static QueueHandle_t sdcard_queue = NULL;
-static StaticTask_t sdcard_task_tcb;
-static StackType_t  sdcard_task_stack[SDCARD_TASK_STACK_SIZE];
-static TaskHandle_t sdcard_task_handle = NULL;
+static StaticTask_t  sdcard_task_tcb;
+static StackType_t   sdcard_task_stack[SDCARD_TASK_STACK_SIZE];
 
-static bool          sdcard_mounted = false;
-static bool          file_open = false;
-static uint32_t      last_sync_time = 0U;
-static char          current_log_filename[16];
+static bool     sdcard_mounted = false;
+static bool     file_open = false;
+static uint32_t last_sync_tick = 0U;
+static char     current_log_filename[16];
 #endif
 
 /*---------------------------------------------------------------------------
@@ -55,14 +58,14 @@ void sdcard_driver_init(void)
     sdcard_queue = xQueueCreate(SDCARD_QUEUE_SIZE, sizeof(sdcard_driver_event_t));
     if (!sdcard_queue) return;
 
-    sdcard_task_handle = xTaskCreateStatic(
-                        sdcard_driver_task,
-                        "SD_LOG",
-                        SDCARD_TASK_STACK_SIZE,
-                        NULL,
-                        SDCARD_TASK_PRIORITY,
-                        sdcard_task_stack,
-                        &sdcard_task_tcb);
+    (void)xTaskCreateStatic(
+        sdcard_driver_task,
+        "SD_LOG",
+        SDCARD_TASK_STACK_SIZE,
+        NULL,
+        SDCARD_TASK_PRIORITY,
+        sdcard_task_stack,
+        &sdcard_task_tcb);
 #endif
 }
 
@@ -79,6 +82,15 @@ sdcard_driver_push_status_E sdcard_driver_push_event(const sdcard_driver_event_t
 #else
     (void)event;
     return SDCARD_DRIVER_PUSH_ERROR_NOT_INITIALIZED;
+#endif
+}
+
+bool sdcard_driver_is_logging(void)
+{
+#if (HWREV == 1)
+    return sdcard_mounted && file_open;
+#else
+    return false;
 #endif
 }
 
@@ -99,47 +111,50 @@ static bool sdcard_mount_and_open(void)
     }
     sdcard_mounted = true;
 
-    // File Rotation Logic: finds next available LOGxxx.CSV
+    /* Find next free slot LOG000.CSV .. LOG999.CSV */
     FILINFO fno;
-    uint16_t file_index = 0;
-    for (file_index = 0; file_index < 1000; file_index++) {
-        snprintf(current_log_filename, sizeof(current_log_filename), "LOG%03u.CSV", file_index);
-        if (f_stat(current_log_filename, &fno) != FR_OK) break; 
+    uint32_t file_index;
+    for (file_index = 0U; file_index < SDCARD_MAX_LOG_FILES; file_index++) {
+        snprintf(current_log_filename, sizeof(current_log_filename), "LOG%03lu.CSV", (unsigned long)file_index);
+        if (f_stat(current_log_filename, &fno) != FR_OK)
+            break;
     }
+    if (file_index >= SDCARD_MAX_LOG_FILES)
+        return false;
 
     result = f_open(&SDFile, current_log_filename, FA_CREATE_NEW | FA_WRITE);
     if (result != FR_OK) return false;
 
     file_open = true;
     sdcard_write_csv_header();
-    
-    last_sync_time = xTaskGetTickCount();
+    last_sync_tick = xTaskGetTickCount();
     return true;
 }
 
 static void sdcard_write_csv_header(void)
 {
-    // 24 Columns total (23 commas)
-    static const char header[] = 
+    static const char header[] =
         "type,timestamp_ms,"
         "dist_m,anchor_addr,anchor_x,anchor_y,anchor_z,quality,rssi_dbm,"
         "accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,temp_c,"
         "pos_x,pos_y,pos_z,vel_x,vel_y,vel_z,confidence,pos_valid,imu_enable\n";
 
     UINT written;
-    f_write(&SDFile, header, sizeof(header) - 1, &written);
+    if (f_write(&SDFile, header, sizeof(header) - 1U, &written) != FR_OK)
+        file_open = false;
 }
 
 static void sdcard_write_event(const sdcard_driver_event_t* event)
 {
-    if (!event || !file_open) return;
-    char row[320];
+    if (!event || !file_open)
+        return;
+
+    char row[SDCARD_ROW_BUF_SIZE];
     int len = 0;
 
     switch (event->type) {
         case SDCARD_DRIVER_EVENT_RANGING: {
             const sdcard_driver_ranging_event_t* r = &event->data.ranging;
-            // Columns 1-9 have data. Need 15 trailing commas to reach 24 columns total.
             len = snprintf(row, sizeof(row), 
                 "RANGING,%lu,%.4f,%u,%.3f,%.3f,%.3f,%.3f,%.1f,,,,,,,,,,,,,,,,\n",
                 (unsigned long)event->timestamp_ms, r->distance_m, (unsigned)r->anchor_addr,
@@ -148,7 +163,6 @@ static void sdcard_write_event(const sdcard_driver_event_t* event)
         }
         case SDCARD_DRIVER_EVENT_IMU: {
             const sdcard_driver_imu_event_t* i = &event->data.imu;
-            // Columns 1-2 (Data), 3-9 (Skip 7), 10-16 (Data), 17-24 (Skip 8).
             len = snprintf(row, sizeof(row), 
                 "IMU,%lu,,,,,,,,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.2f,,,,,,,,,\n",
                 (unsigned long)event->timestamp_ms, i->accel_x, i->accel_y, i->accel_z,
@@ -157,17 +171,21 @@ static void sdcard_write_event(const sdcard_driver_event_t* event)
         }
         case SDCARD_DRIVER_EVENT_POSITION: {
             const sdcard_driver_position_event_t* p = &event->data.position;
-            // Columns 1-2 (Data), 3-16 (Skip 14), 17-24 (Data).
             len = snprintf(row, sizeof(row), 
                 "POSITION,%lu,,,,,,,,,,,,,,,,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%d,%d\n",
                 (unsigned long)event->timestamp_ms, p->x, p->y, p->z, p->vx, p->vy, p->vz, p->confidence, (int)p->valid, p->imu_enable);
             break;
         }
-        default: return;
+        default:
+            return;
     }
 
+    if (len <= 0 || (size_t)len >= sizeof(row))
+        return;
+
     UINT written;
-    if (f_write(&SDFile, row, (UINT)len, &written) != FR_OK) file_open = false;
+    if (f_write(&SDFile, row, (UINT)len, &written) != FR_OK)
+        file_open = false;
 }
 
 static void sdcard_driver_task(void* argument)
@@ -178,27 +196,23 @@ static void sdcard_driver_task(void* argument)
     for (;;) {
         if (!sdcard_mounted || !file_open) {
             if (!sdcard_mount_and_open()) {
-                vTaskDelay(pdMS_TO_TICKS(1000));
+                vTaskDelay(pdMS_TO_TICKS(SDCARD_REMOUNT_DELAY_MS));
                 continue;
             }
         }
 
-        // Event-driven: wake immediately when queue is pushed
-        if (xQueueReceive(sdcard_queue, &event, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (xQueueReceive(sdcard_queue, &event, pdMS_TO_TICKS(SDCARD_POLL_MS)) == pdTRUE) {
             sdcard_write_event(&event);
-            while (xQueueReceive(sdcard_queue, &event, 0) == pdTRUE) {
+            while (xQueueReceive(sdcard_queue, &event, 0) == pdTRUE)
                 sdcard_write_event(&event);
-            }
         }
 
-        // Time-based sync every 5 seconds
         uint32_t now = xTaskGetTickCount();
-        if ((now - last_sync_time) >= pdMS_TO_TICKS(SDCARD_SYNC_INTERVAL_MS)) {
-            if (f_sync(&SDFile) == FR_OK) {
-                last_sync_time = now;
-            } else {
+        if ((now - last_sync_tick) >= pdMS_TO_TICKS(SDCARD_SYNC_INTERVAL_MS)) {
+            if (file_open && f_sync(&SDFile) == FR_OK)
+                last_sync_tick = now;
+            else if (file_open)
                 file_open = false;
-            }
         }
     }
 }

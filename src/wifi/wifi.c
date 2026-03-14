@@ -71,8 +71,6 @@ typedef struct {
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
-
-STATIC void wifi_state_machine_sample_inputs(void);
 STATIC uint16_t wifi_transition_logic(uint16_t currentState, uint32_t stateTimer);
 STATIC void wifi_state_send_reset_on_entry(uint16_t prevState);
 STATIC void wifi_state_wait_reset_process(void);
@@ -105,10 +103,10 @@ STATIC void wifi_transmit_telemetry_queue(void);
 /*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
+#if FEATURE_WIFI_MODULE
 STATIC void wifi_init(void);
 STATIC void wifi_process_10Hz(void);
 
-#if FEATURE_WIFI_MODULE
 const module_S wifi_module= {
     .module_name         = "wifi",
     .module_init         = wifi_init,
@@ -194,6 +192,7 @@ STATIC struct
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
 
+#if FEATURE_WIFI_MODULE
 STATIC void wifi_init(void)
 {
     telemetry_queue = xQueueCreate(TELEMETRY_QUEUE_SIZE, sizeof(telemetry_event_t));
@@ -210,30 +209,17 @@ STATIC void wifi_init(void)
 
 STATIC void wifi_process_10Hz(void)
 {
-    // Update state machine
-    wifi_state_machine_sample_inputs();
     state_machine_periodic(&wifi_state_machine);
 }
-
-STATIC void wifi_state_machine_sample_inputs(void)
-{
-    // State inputs updated by init task and state handlers
-}
+#endif /* FEATURE_WIFI_MODULE */
 
 STATIC uint16_t wifi_transition_logic(uint16_t currentState, uint32_t stateTimer)
 {
     uint16_t nextState = currentState;
     static uint16_t last_printed_state = 0xFF;
 
-    // Print state on first entry
+    /* Track state for first-entry / change detection when FEATURE_WIFI_PRINT_STATE is used */
     if (FEATURE_WIFI_PRINT_STATE && (currentState != last_printed_state)) {
-        const char* state_names[] = {"STARTUP", "SEND_RESET", "WAIT_RESET",    "SEND_MODE", "WAIT_MODE", 
-        "SEND_ECHO_OFF", "WAIT_ECHO_OFF","SEND_JOIN_WIFI", "WAIT_JOIN_WIFI",
-        "SEND_TCP_CONNECT", "WAIT_TCP_CONNECT", "VERIFY_TCP", "SEND_CIPMODE", 
-        "WAIT_CIPMODE", "SEND_CIPSEND", "WAIT_CIPSEND", "ACTIVE", "FAULTED"};
-        
-        if (currentState < 18) {
-        }
         last_printed_state = currentState;
     }
 

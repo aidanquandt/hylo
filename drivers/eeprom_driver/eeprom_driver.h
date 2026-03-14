@@ -30,11 +30,5 @@ typedef enum
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
-eeprom_status_e eeprom_write_u8(uint16_t reg_addr, uint8_t value);
-eeprom_status_e eeprom_read_u8(uint16_t reg_addr, uint8_t* value);
-
-eeprom_status_e eeprom_write_buffer(uint16_t start_reg_addr, const uint8_t* data, uint16_t len);
-eeprom_status_e eeprom_read_buffer(uint16_t start_reg_addr, uint8_t* data, uint16_t len);
-
-// eeprom_status_e eeprom_write_calibration_data(const uint8_t* data, uint8_t len);
-// eeprom_status_e eeprom_read_calibration_data(uint8_t* data, uint8_t len);
+eeprom_status_e eeprom_driver_write_buffer(uint16_t start_reg_addr, const uint8_t* data, uint16_t len);
+eeprom_status_e eeprom_driver_read_buffer(uint16_t start_reg_addr, uint8_t* data, uint16_t len);
