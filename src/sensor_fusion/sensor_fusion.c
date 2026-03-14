@@ -5,8 +5,8 @@
 #include "FreeRTOS.h"
 #include "common.h"
 #include "counter.h"
-#include "error_handler.h"
 #include "feature_config.h"
+#include "system_halt.h"
 #include "kalman_core.h"
 #include "module.h"
 #include "timer_driver.h"
@@ -133,7 +133,7 @@ STATIC void sensor_fusion_init(void)
     sensor_queue = xQueueCreate(SENSOR_FUSION_QUEUE_SIZE, sizeof(sensor_event_t));
     if (sensor_queue == NULL)
     {
-        error_handler_fatal("sensor_fusion", "Failed to create event queue");
+        system_halt("sensor_fusion", "Failed to create event queue");
     }
 
     stats.events_pushed = 0;
@@ -163,7 +163,7 @@ STATIC void sensor_fusion_init(void)
 
     if (result != pdPASS)
     {
-        error_handler_fatal("sensor_fusion", "Failed to create processing task");
+        system_halt("sensor_fusion", "Failed to create processing task");
     }
 }
 
@@ -268,7 +268,6 @@ STATIC void sensor_fusion_update_position_estimate(void)
 
     position_estimate.valid = valid_updates && reasonable_pos && no_nans;
 
-    // DEBUG: Log why position is invalid (uart logging removed with uart_manager)
     (void)no_nans;
     (void)reasonable_pos;
 

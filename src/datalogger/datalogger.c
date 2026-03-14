@@ -5,9 +5,11 @@
 #include "FreeRTOS.h"
 #include "app.h"
 #include "common.h"
-#include "error_handler.h"
 #include "module.h"
+#include "protocol_tx.h"
 #include "task.h"
+#include "uart_protocol.pb.h"
+#include <string.h>
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -19,7 +21,6 @@
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
 STATIC void datalogger_monitor_rtos_usage(void);
-STATIC void datalogger_monitor_uart_health(void);
 STATIC void datalogger_monitor_heap_usage(void);
 STATIC void datalogger_monitor_deadline_misses(void);
 STATIC void datalogger_process_1Hz(void);
@@ -148,10 +149,16 @@ STATIC void datalogger_monitor_deadline_misses(void)
         if (stats.miss_count > prev_miss_count[module])
         {
             uint32_t new_misses = stats.miss_count - prev_miss_count[module];
-            error_handler_log(ERROR_SEVERITY_INFO, "timing",
-                              "%s: %u miss(es), deadline=%ums, worst_latency=%ums\n",
-                              modules[module]->module_name, (unsigned int)new_misses,
-                              (unsigned int)stats.period_ms, (unsigned int)stats.worst_latency_ms);
+            DataloggerTimingMissesEvent ev = DataloggerTimingMissesEvent_init_zero;
+            if (modules[module]->module_name != NULL)
+            {
+                strncpy(ev.task_name, modules[module]->module_name, sizeof(ev.task_name) - 1);
+                ev.task_name[sizeof(ev.task_name) - 1] = '\0';
+            }
+            ev.miss_count      = new_misses;
+            ev.deadline_ms     = stats.period_ms;
+            ev.worst_latency_ms = stats.worst_latency_ms;
+            protocol_tx_DataloggerTimingMissesEvent(&ev);
             prev_miss_count[module] = stats.miss_count;
         }
     }
@@ -160,7 +167,6 @@ STATIC void datalogger_monitor_deadline_misses(void)
 STATIC void datalogger_process_1Hz(void)
 {
     datalogger_monitor_rtos_usage();
-    datalogger_monitor_uart_health();
     datalogger_monitor_heap_usage();
     datalogger_monitor_deadline_misses();
 }
@@ -173,14 +179,10 @@ STATIC void datalogger_monitor_heap_usage(void)
     // Log warning if free heap is getting low (less than 1KB)
     if (current_free_heap < HEAP_LOW_MEMORY_THRESHOLD_BYTES)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "datalogger",
-                          "[HEAP] Low memory: %u bytes free\n", (unsigned int)current_free_heap);
+        DataloggerLowMemoryEvent ev = DataloggerLowMemoryEvent_init_zero;
+        ev.bytes_free = current_free_heap;
+        protocol_tx_DataloggerLowMemoryEvent(&ev);
     }
-}
-
-STATIC void datalogger_monitor_uart_health(void)
-{
-    /* UART health monitoring disabled - uart_manager removed pending new UART architecture */
 }
 
 /*---------------------------------------------------------------------------

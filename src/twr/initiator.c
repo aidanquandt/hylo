@@ -10,13 +10,15 @@
 #include "twr_state_machine.h"
 #include "FreeRTOS.h"
 #include "common.h"
-#include "error_handler.h"
 #include "feature_config.h"
+#include "protocol_tx.h"
+#include "uart_protocol.pb.h"
 #include "timer_driver.h"
 #include "stopwatch.h"
 #include "task.h"
 #include "uwb.h"
 #include "uwb_protocol_messages.h"
+#include <string.h>
 
 /*---------------------------------------------------------------------------
 
@@ -89,8 +91,9 @@ STATIC bool initiator_send_message_impl(twr_msg_type_e msg_type, twr_context_t* 
     }
     else
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "initiator", "Failed to send message type %d",
-                          msg_type);
+        InitiatorFailedToSendMessageEvent ev = InitiatorFailedToSendMessageEvent_init_zero;
+        ev.message_type = (int32_t)msg_type;
+        protocol_tx_InitiatorFailedToSendMessageEvent(&ev);
         return false;
     }
 }
@@ -106,7 +109,8 @@ STATIC void initiator_handle_message_impl(const twr_event_t* event, twr_context_
         {
             if (event->rx.length < sizeof(protocol_twr_response_msg_t))
             {
-                error_handler_log(ERROR_SEVERITY_WARNING, "initiator", "Response too short");
+                InitiatorResponseTooShortEvent ev = InitiatorResponseTooShortEvent_init_zero;
+                protocol_tx_InitiatorResponseTooShortEvent(&ev);
                 return;
             }
 
@@ -150,7 +154,8 @@ STATIC void initiator_handle_message_impl(const twr_event_t* event, twr_context_
         {
             if (event->rx.length < sizeof(protocol_twr_final_ack_msg_t))
             {
-                error_handler_log(ERROR_SEVERITY_WARNING, "initiator", "Final ACK too short");
+                InitiatorFinalAckTooShortEvent ev = InitiatorFinalAckTooShortEvent_init_zero;
+                protocol_tx_InitiatorFinalAckTooShortEvent(&ev);
                 return;
             }
 
@@ -177,8 +182,9 @@ STATIC void initiator_handle_message_impl(const twr_event_t* event, twr_context_
         }
 
         default:
-            error_handler_log(ERROR_SEVERITY_WARNING, "initiator", "Unexpected message type %d",
-                              msg_type);
+            InitiatorUnexpectedMessageTypeEvent ev = InitiatorUnexpectedMessageTypeEvent_init_zero;
+            ev.message_type = (int32_t)msg_type;
+            protocol_tx_InitiatorUnexpectedMessageTypeEvent(&ev);
             break;
     }
 }
@@ -222,8 +228,11 @@ STATIC void initiator_handle_timeout_impl(const twr_event_t* event, twr_context_
 
 STATIC void initiator_handle_fault_impl(const twr_event_t* event, twr_context_t* ctx)
 {
-    error_handler_log(ERROR_SEVERITY_ERROR, "initiator", "Fault: %d - %s", event->fault.fault_code,
-                      event->fault.description);
+    InitiatorFaultEvent ev = InitiatorFaultEvent_init_zero;
+    ev.fault_code = event->fault.fault_code;
+    strncpy(ev.description, event->fault.description, sizeof(ev.description) - 1);
+    ev.description[sizeof(ev.description) - 1] = '\0';
+    protocol_tx_InitiatorFaultEvent(&ev);
 
     ctx->fault_code = event->fault.fault_code;
     ctx->failed_transactions++;
@@ -261,8 +270,9 @@ STATIC void initiator_process_result_impl(twr_context_t* ctx)
     }
     else
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "initiator", "Distance calculation failed: %d",
-                          status);
+        InitiatorDistanceCalculationFailedEvent ev = InitiatorDistanceCalculationFailedEvent_init_zero;
+        ev.error_code = (int32_t)status;
+        protocol_tx_InitiatorDistanceCalculationFailedEvent(&ev);
         ctx->failed_transactions++;
     }
 }
@@ -298,7 +308,8 @@ bool initiator_start_ranging(uint16_t responder_addr)
 {
     if (!uwb_is_ready())
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "initiator", "UWB not ready");
+        InitiatorUwbNotReadyEvent ev = InitiatorUwbNotReadyEvent_init_zero;
+        protocol_tx_InitiatorUwbNotReadyEvent(&ev);
         return false;
     }
 

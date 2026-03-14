@@ -6,8 +6,10 @@
 #include "common.h"
 #include <stdio.h>
 #include "datalogger.h"
-#include "error_handler.h"
 #include "feature_config.h"
+#include "protocol_tx.h"
+#include "system_halt.h"
+#include "uart_protocol.pb.h"
 #include "module.h"
 #include "gpio_driver.h"
 #include "os_driver.h"
@@ -214,7 +216,7 @@ STATIC void app_create_module_tasks(void)
                                  (void*)(uintptr_t)module_idx, PRIORITY_1KHZ_TASK, NULL);
             if (result != pdPASS)
             {
-                error_handler_fatal("app", "Failed to create task '%s' (1kHz)", task_name);
+                system_halt("app", "Failed to create task (1kHz)");
             }
         }
 
@@ -227,7 +229,7 @@ STATIC void app_create_module_tasks(void)
                                  (void*)(uintptr_t)module_idx, PRIORITY_100HZ_TASK, NULL);
             if (result != pdPASS)
             {
-                error_handler_fatal("app", "Failed to create task '%s' (100Hz)", task_name);
+                system_halt("app", "Failed to create task (100Hz)");
             }
         }
 
@@ -240,7 +242,7 @@ STATIC void app_create_module_tasks(void)
                                  (void*)(uintptr_t)module_idx, PRIORITY_10HZ_TASK, NULL);
             if (result != pdPASS)
             {
-                error_handler_fatal("app", "Failed to create task '%s' (10Hz)", task_name);
+                system_halt("app", "Failed to create task (10Hz)");
             }
         }
 
@@ -253,7 +255,7 @@ STATIC void app_create_module_tasks(void)
                                  (void*)(uintptr_t)module_idx, PRIORITY_1HZ_TASK, NULL);
             if (result != pdPASS)
             {
-                error_handler_fatal("app", "Failed to create task '%s' (1Hz)", task_name);
+                system_halt("app", "Failed to create task (1Hz)");
             }
         }
     }
@@ -276,18 +278,18 @@ STATIC void app_post_module_initialization(void)
         }
         else
         {
-            error_handler_log(ERROR_SEVERITY_WARNING, "app",
-                              "Device not in mapping table (UUID word2: 0x%08lX)",
-                              (unsigned long)dev_info.uuid_word2);
-            error_handler_log(ERROR_SEVERITY_INFO, "app",
-                              "Using default address 0x%04X. Add to config/device_mapping.c if needed",
-                              uwb_get_address());
+            AppDeviceNotInMappingTableEvent ev = AppDeviceNotInMappingTableEvent_init_zero;
+            ev.uuid_word2 = dev_info.uuid_word2;
+            protocol_tx_AppDeviceNotInMappingTableEvent(&ev);
+            AppUsingDefaultAddressEvent ev2 = AppUsingDefaultAddressEvent_init_zero;
+            ev2.address = uwb_get_address();
+            protocol_tx_AppUsingDefaultAddressEvent(&ev2);
         }
     }
     else
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "app",
-                          "Failed to initialize device ID system");
+        AppFailedToInitDeviceIdEvent ev = AppFailedToInitDeviceIdEvent_init_zero;
+        protocol_tx_AppFailedToInitDeviceIdEvent(&ev);
     }
 #endif
 }

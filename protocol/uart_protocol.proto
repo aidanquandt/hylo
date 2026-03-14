@@ -2,29 +2,618 @@ syntax = "proto3";
 
 import "nanopb.proto";
 
-message PingRequest {}
+// =============================================================================
+// Enums
+// =============================================================================
 
+enum NodeType {
+  NODE_TYPE_TAG = 0;
+  NODE_TYPE_ANCHOR = 1;
+  NODE_TYPE_HYBRID = 2;
+}
+
+// =============================================================================
+// Common
+// =============================================================================
+
+message AckResponse {
+  bool success = 1;
+  uint32 error_code = 2;
+}
+
+// =============================================================================
+// System
+// =============================================================================
+
+message SystemGetUuidRequest {}
+message SystemGetUuidResponse {
+  uint32 uuid_word0 = 1;
+  uint32 uuid_word1 = 2;
+  uint32 uuid_word2 = 3;
+}
+
+message SystemGetInfoRequest {}
+message SystemGetInfoResponse {
+  string info = 1 [(nanopb).max_length = 64];
+}
+
+// =============================================================================
+// Beacon (Ping)
+// =============================================================================
+
+message PingRequest {}
 message PingResponse {
   uint32 seq = 1;
 }
+
+// =============================================================================
+// UWB node config (address, PAN)
+// =============================================================================
 
 message SetAddressRequest {
   uint32 address = 1;
   uint32 pan_id = 2;
 }
-
 message SetAddressResponse {
   bool success = 1;
 }
 
 message GetConfigRequest {}
-
 message GetConfigResponse {
   uint32 pan_id = 1;
   uint32 short_addr = 2;
 }
 
-message LogLine {
-  uint32 level = 1;
-  string text = 2 [(nanopb).max_length = 64];
+// =============================================================================
+// IMU
+// =============================================================================
+
+message ImuGetStatusRequest {}
+message ImuGetStatusResponse {
+  bool active = 1;
+  uint32 fault_code = 2;
+  uint32 state = 3;
+}
+
+message ImuGetDataRequest {}
+message ImuGetDataResponse {
+  float accel_x = 1;
+  float accel_y = 2;
+  float accel_z = 3;
+  float gyro_x = 4;
+  float gyro_y = 5;
+  float gyro_z = 6;
+  float temp_c = 7;
+}
+
+message ImuStreamStartRequest {
+  uint32 mode = 1;  // 0 = array, 1 = avg
+}
+message ImuStreamStopRequest {}
+message ImuStreamPayload {
+  float accel_x = 1;
+  float accel_y = 2;
+  float accel_z = 3;
+  float gyro_x = 4;
+  float gyro_y = 5;
+  float gyro_z = 6;
+  float temp_c = 7;
+  uint32 imu_index = 8;
+}
+
+// =============================================================================
+// UWB node (type, position, address, status)
+// =============================================================================
+
+message UwbNodeSetTypeRequest {
+  NodeType node_type = 1;
+}
+message UwbNodeGetTypeRequest {}
+message UwbNodeGetTypeResponse {
+  NodeType node_type = 1;
+}
+
+message UwbNodeSetPositionRequest {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+message UwbNodeGetPositionRequest {}
+message UwbNodeGetPositionResponse {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+  bool position_known = 4;
+}
+
+message UwbNodeGetStatusRequest {}
+message UwbNodeGetStatusResponse {
+  NodeType node_type = 1;
+  float pos_x = 2;
+  float pos_y = 3;
+  float pos_z = 4;
+  bool position_known = 5;
+  uint32 address = 6;
+  uint32 pan_id = 7;
+}
+
+// =============================================================================
+// UWB (radio status, stats, start/stop)
+// =============================================================================
+
+message UwbGetStatusRequest {}
+message UwbGetStatusResponse {
+  bool initialized = 1;
+  uint32 fault_code = 2;
+}
+
+message UwbGetStatsRequest {}
+message UwbGetStatsResponse {
+  uint32 tx_ok = 1;
+  uint32 tx_fail = 2;
+  uint32 rx_ok = 3;
+}
+
+message UwbStartRequest {}
+message UwbStopRequest {}
+message UwbResetStatsRequest {}
+
+// =============================================================================
+// Error (clear only; no history)
+// =============================================================================
+
+message ErrorClearRequest {}
+
+// =============================================================================
+// Datalogger
+// =============================================================================
+
+message DataloggerGetTasksRequest {}
+message DataloggerGetTasksResponse {
+  repeated string task_names = 1 [(nanopb).max_count = 16, (nanopb).max_length = 32];
+}
+
+message DataloggerGetStatsRequest {}
+message DataloggerGetStatsResponse {
+  uint32 task_count = 1;
+  uint32 free_heap = 2;
+}
+
+// =============================================================================
+// TWR
+// =============================================================================
+
+message TwrGetStatusRequest {}
+message TwrGetStatusResponse {
+  uint32 state = 1;
+  uint32 role = 2;
+  bool initiator_running = 3;
+  bool responder_running = 4;
+}
+
+message TwrGetResultRequest {}
+message TwrGetResultResponse {
+  float distance_m = 1;
+  uint32 responder_addr = 2;
+  bool valid = 3;
+}
+
+message TwrRangeRequest {
+  uint32 target_addr = 1;
+}
+
+// =============================================================================
+// TWR manager
+// =============================================================================
+
+message TwrMgrStartRequest {}
+message TwrMgrStopRequest {}
+message TwrMgrGetStatusRequest {}
+message TwrMgrGetStatusResponse {
+  uint32 state = 1;
+  uint32 target_count = 2;
+  uint32 ranging_rate_hz = 3;
+}
+
+message TwrMgrAddTargetRequest {
+  uint32 address = 1;
+}
+message TwrMgrRemoveTargetRequest {
+  uint32 address = 1;
+}
+message TwrMgrSetTargetsRequest {
+  repeated uint32 addresses = 1 [(nanopb).max_count = 16];
+}
+message TwrMgrClearTargetsRequest {}
+message TwrMgrSetRangingRateRequest {
+  uint32 rate_hz = 1;
+}
+message TwrMgrGetRangingRateRequest {}
+message TwrMgrGetRangingRateResponse {
+  uint32 rate_hz = 1;
+}
+
+// =============================================================================
+// Stopwatch
+// =============================================================================
+
+message StopwatchGetRequest {}
+message StopwatchGetResponse {
+  uint32 elapsed_ms = 1;
+  bool running = 2;
+}
+message StopwatchStartRequest {}
+message StopwatchStopRequest {}
+
+// =============================================================================
+// OTA config
+// =============================================================================
+
+message OtaConfigSendAddressRequest {
+  uint32 target_addr = 1;
+  uint32 new_address = 2;
+  uint32 pan_id = 3;
+}
+message OtaConfigSendPositionRequest {
+  uint32 target_addr = 1;
+  float x = 2;
+  float y = 3;
+  float z = 4;
+}
+message OtaConfigSendTypeRequest {
+  uint32 target_addr = 1;
+  NodeType node_type = 2;
+}
+message OtaConfigSendGpioRequest {
+  uint32 target_addr = 1;
+  uint32 pin = 2;
+  uint32 state = 3;
+}
+message OtaConfigSetTokenRequest {
+  uint32 token = 1;
+}
+message OtaConfigGetTokenRequest {}
+message OtaConfigGetTokenResponse {
+  uint32 token = 1;
+}
+message OtaConfigGetStatsRequest {}
+message OtaConfigGetStatsResponse {
+  uint32 requests_sent = 1;
+  uint32 responses_received = 2;
+}
+
+// =============================================================================
+// Sensor fusion
+// =============================================================================
+
+message SensorFusionGetDebugRequest {}
+message SensorFusionSetDebugRequest {
+  uint32 debug_flags = 1;
+}
+message SensorFusionGetStatusRequest {}
+message SensorFusionGetStatusResponse {
+  bool active = 1;
+  float pos_x = 2;
+  float pos_y = 3;
+  float pos_z = 4;
+  float confidence = 5;
+}
+message SensorFusionSetActiveRequest {
+  bool active = 1;
+}
+message SensorFusionGetImuEnabledRequest {}
+message SensorFusionGetImuEnabledResponse {
+  bool imu_enabled = 1;
+}
+message SensorFusionSetImuEnabledRequest {
+  bool imu_enabled = 1;
+}
+message SensorFusionSetNoiseRequest {
+  float pos = 1;
+  float vel = 2;
+  float att = 3;
+}
+message SensorFusionGetNoiseRequest {}
+message SensorFusionGetNoiseResponse {
+  float pos = 1;
+  float vel = 2;
+  float att = 3;
+}
+message SensorFusionGetConfigRequest {}
+message SensorFusionSetConfigRequest {
+  bytes config = 1 [(nanopb).max_length = 32];
+}
+
+// =============================================================================
+// Beacon (DATA beacon ping for UWB)
+// =============================================================================
+
+message BeaconPingRequest {}
+message BeaconPingResponse {
+  bool success = 1;
+}
+
+// =============================================================================
+// Log events (~50+ typed events; no severity on wire; host maps type -> severity)
+// =============================================================================
+
+// IMU events
+message ImuInitReturnedNullEvent {
+  uint32 imu_index = 1;
+}
+message ImuProbeInitFailedEvent {
+  uint32 imu_index = 1;
+}
+message ImuInvalidChipIdEvent {
+  uint32 imu_index = 1;
+  uint32 chip_id = 2;
+}
+message ImuAccelConfigFailedEvent {
+  uint32 imu_index = 1;
+}
+message ImuGyroConfigFailedEvent {
+  uint32 imu_index = 1;
+}
+message ImuFaultEvent {
+  uint32 imu_index = 1;
+  uint32 fault_code = 2;
+  string description = 3 [(nanopb).max_length = 32];
+}
+message ImuFailedToPushEventToSensorFusionEvent {
+  uint32 imu_index = 1;
+  uint32 sf_status = 2;
+}
+
+// OTA config events
+message OtaConfigUnknownMessageTypeEvent {
+  uint32 message_type = 1;
+}
+message OtaConfigInvalidAddressEvent {
+  uint32 address = 1;
+}
+message OtaConfigAddressChangedEvent {
+  uint32 old_address = 1;
+  uint32 new_address = 2;
+  uint32 pan_id = 3;
+}
+message OtaConfigPositionSetEvent {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+message OtaConfigInvalidNodeTypeEvent {
+  int32 node_type = 1;
+}
+message OtaConfigNodeTypeSetEvent {
+  int32 node_type = 1;
+}
+message OtaConfigInvalidGpioPinEvent {
+  uint32 pin = 1;
+}
+message OtaConfigInvalidGpioStateEvent {
+  uint32 state = 1;
+}
+message OtaConfigGpioSetEvent {
+  uint32 pin = 1;
+  uint32 state = 2;
+}
+message OtaConfigResponseEvent {
+  uint32 src_addr = 1;
+  uint32 status = 2;
+  uint32 addr = 3;
+  int32 type = 4;
+}
+message OtaConfigAuthFailedEvent {
+  uint32 src_addr = 1;
+  uint32 got_token = 2;
+  uint32 expected_token = 3;
+}
+message OtaConfigAckFromEvent {
+  string msg_name = 1 [(nanopb).max_length = 24];
+  uint32 response_addr = 2;
+  uint32 attempts = 3;
+}
+message OtaConfigNoAckFromEvent {
+  string msg_name = 1 [(nanopb).max_length = 24];
+  uint32 target_addr = 2;
+  uint32 attempts = 3;
+}
+message OtaConfigAuthTokenSetEvent {
+  uint32 token = 1;
+}
+
+// UWB events
+message UwbFrameTooSmallEvent {
+  uint32 length = 1;
+}
+message UwbPayloadTooLargeEvent {
+  uint32 payload_len = 1;
+}
+message UwbRetryAttemptEvent {
+  uint32 current = 1;
+  uint32 max = 2;
+}
+message UwbFaultManualStopRequiredEvent {
+  string fault_str = 1 [(nanopb).max_length = 32];
+  uint32 fault_code = 2;
+}
+message UwbInvalidProtocolMessageEvent {}
+message UwbInvalidProtocolTypeEvent {
+  uint32 protocol_type = 1;
+}
+message UwbTxQueueFullEvent {}
+message UwbProtocolHandlerTableFullEvent {}
+
+// UWB node events
+message UwbNodeInvalidTypeEvent {
+  int32 node_type = 1;
+}
+message UwbNodeTypeSetEvent {
+  string type_str = 1 [(nanopb).max_length = 16];
+}
+message UwbNodePositionSetEvent {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+
+// TWR events
+message TwrFailedToRegisterProtocolHandlerEvent {}
+message TwrResponderAutoStartFailedEvent {}
+message TwrModuleNotInitializedEvent {}
+
+// Responder events
+message ResponderFailedToSendMessageEvent {
+  int32 message_type = 1;
+}
+message ResponderPollTooShortEvent {}
+message ResponderFinalTooShortEvent {}
+message ResponderFailedToSendFinalAckEvent {}
+message ResponderUnexpectedMessageTypeEvent {
+  int32 message_type = 1;
+}
+message ResponderTimeoutWaitingForMessageEvent {
+  int32 message_type = 1;
+  uint32 initiator_addr = 2;
+}
+message ResponderFaultEvent {
+  uint32 fault_code = 1;
+  string description = 2 [(nanopb).max_length = 32];
+}
+message ResponderCompletedRangingEvent {
+  uint32 initiator_addr = 1;
+}
+
+// Initiator events
+message InitiatorFailedToSendMessageEvent {
+  int32 message_type = 1;
+}
+message InitiatorResponseTooShortEvent {}
+message InitiatorFinalAckTooShortEvent {}
+message InitiatorUnexpectedMessageTypeEvent {
+  int32 message_type = 1;
+}
+message InitiatorFaultEvent {
+  uint32 fault_code = 1;
+  string description = 2 [(nanopb).max_length = 32];
+}
+message InitiatorDistanceCalculationFailedEvent {
+  int32 error_code = 1;
+}
+message InitiatorUwbNotReadyEvent {}
+
+// TWR state machine events
+message TwrSmTxCompletionTimeoutEvent {}
+message TwrSmTxCompleteWrongStateEvent {
+  uint32 state = 1;
+  uint32 expected = 2;
+}
+message TwrSmTxCompleteMsgIdMismatchEvent {
+  uint32 expected = 1;
+  uint32 got = 2;
+}
+message TwrSmRxMessageWrongStateEvent {
+  uint32 state = 1;
+  int32 msg_type = 2;
+  uint32 from_addr = 3;
+}
+message TwrSmTimeoutUnexpectedStateEvent {
+  uint32 state = 1;
+}
+
+// TWR scheduler events
+message TwrSchedulerStrategyNotImplementedEvent {}
+message TwrSchedulerTargetListFullEvent {}
+message TwrSchedulerTargetAlreadyExistsEvent {
+  uint32 address = 1;
+}
+message TwrSchedulerAddedTargetEvent {
+  uint32 address = 1;
+  uint32 target_count = 2;
+}
+message TwrSchedulerRemovedTargetEvent {
+  uint32 address = 1;
+  uint32 remaining = 2;
+}
+message TwrSchedulerNullAddressesPointerEvent {}
+message TwrSchedulerTargetCountExceedsMaximumEvent {
+  uint32 count = 1;
+  uint32 maximum = 2;
+}
+message TwrSchedulerSetTargetsEvent {
+  uint32 count = 1;
+}
+message TwrSchedulerClearedAllTargetsEvent {}
+message TwrSchedulerTargetEnabledDisabledEvent {
+  uint32 address = 1;
+  bool enabled = 2;
+}
+message TwrSchedulerTargetBackingOffEvent {
+  uint32 address = 1;
+  uint32 backoff_ms = 2;
+  uint32 failures = 3;
+}
+message TwrSchedulerStrategySetEvent {
+  int32 strategy = 1;
+}
+
+// TWR manager events
+message TwrMgrFailedToPushRangingEventEvent {
+  int32 sf_status = 1;
+}
+message TwrMgrRangeEvent {
+  float distance_m = 1;
+  uint32 addr = 2;
+  float x = 3;
+  float y = 4;
+  float z = 5;
+  bool position_unknown = 6;
+}
+message TwrMgrEnteringIdleStateEvent {}
+message TwrMgrEnteringRangingStateEvent {
+  uint32 prev_state = 1;
+}
+message TwrMgrEnteringFaultedStateEvent {}
+message TwrMgrCannotStartNoTargetsEvent {}
+message TwrMgrFailedToStartInitiatorEvent {}
+message TwrMgrInvalidRangingRateEvent {
+  uint32 rate_hz = 1;
+  uint32 valid_min_hz = 2;
+  uint32 valid_max_hz = 3;
+}
+message TwrMgrRangingRateSetEvent {
+  uint32 rate_hz = 1;
+  uint32 period_ms = 2;
+}
+
+// Datalogger events
+message DataloggerTimingMissesEvent {
+  string task_name = 1 [(nanopb).max_length = 24];
+  uint32 miss_count = 2;
+  uint32 deadline_ms = 3;
+  uint32 worst_latency_ms = 4;
+}
+message DataloggerLowMemoryEvent {
+  uint32 bytes_free = 1;
+}
+
+// App events
+message AppDeviceNotInMappingTableEvent {
+  uint32 uuid_word2 = 1;
+}
+message AppUsingDefaultAddressEvent {
+  uint32 address = 1;
+}
+message AppFailedToInitDeviceIdEvent {}
+
+// Watchdog events
+message WatchdogTaskFailureEvent {
+  uint32 current_heartbeats = 1;
+  uint32 expected_heartbeats = 2;
+}
+
+// System fatal (send before halt when in task context)
+message SystemFatalEvent {
+  string module = 1 [(nanopb).max_length = 16];
+  string message = 2 [(nanopb).max_length = 64];
 }

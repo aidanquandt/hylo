@@ -33,8 +33,8 @@ if not os.path.isdir(generator_dir):
 sys.path.insert(0, generator_dir)
 os.chdir(repo_root)
 
-# Run generator: -D protocol/generated -I protocol -I generator/proto protocol/uart_protocol.proto
-out_dir = os.path.join(repo_root, "protocol", "generated")
+# Run generator: -D generated/protocol -I protocol -I generator/proto protocol/uart_protocol.proto
+out_dir = os.path.join(repo_root, "generated", "protocol")
 os.makedirs(out_dir, exist_ok=True)
 
 # Invoke as module to use generator's main

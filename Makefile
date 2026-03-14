@@ -7,7 +7,7 @@ PRESET_RELEASE := arm-gcc-release
 
 .PHONY: all build clean rebuild help check-deps flash distclean debug release
 .PHONY: clean-debug clean-release rebuild-release
-.PHONY: host host-help host-monitor host-enable-streaming host-visualization
+.PHONY: host host-help host-monitor host-enable-streaming host-visualization host-interactive
 .PHONY: protocol-codegen
 
 all build debug:
@@ -59,6 +59,7 @@ help:
 	@echo ""
 	@echo "Host tools (Python; in tools/host; scripts use COM10 by default):"
 	@echo "  make host-help   List host targets"
+	@echo "  make host-interactive    UART protocol: listen + send commands (PORT=COM10)"
 	@echo "  make host-monitor        Serial monitor"
 	@echo "  make host-enable-streaming  Enable IMU streaming on device"
 	@echo "  make host-visualization  IMU 3D visualization"
@@ -67,8 +68,12 @@ help:
 
 # Host tools (run from repo root; require Python + pyserial, optional: pygame, PyOpenGL)
 host host-help:
-	@echo "Host targets: host-monitor, host-enable-streaming, host-visualization"
-	@echo "Run from repo root. Edit scripts in tools/host/serial and tools/host/visualization to change COM port."
+	@echo "Host targets: host-interactive, host-monitor, host-enable-streaming, host-visualization"
+	@echo "Run from repo root. For host-interactive: make host-interactive PORT=COM10"
+
+PORT ?= COM10
+host-interactive:
+	cd tools/host/serial && python uart_protocol_tool.py --port $(PORT) interactive
 
 host-monitor:
 	cd tools/host/serial && python monitor_serial.py

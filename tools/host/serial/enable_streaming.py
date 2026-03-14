@@ -5,7 +5,7 @@ import time
 ser = serial.Serial('COM10', 115200, timeout=1)
 time.sleep(0.5)  # Wait for connection to establish
 
-# Send command to enable IMU streaming (correct format: module.action.target args)
+# Send command to enable IMU streaming (legacy text protocol; use uart_protocol_tool for protobuf)
 command = "imu.set.stream on\r\n"
 ser.write(command.encode('utf-8'))
 print(f"Sent: {command.strip()}")

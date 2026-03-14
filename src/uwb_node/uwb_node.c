@@ -4,9 +4,11 @@
 #include "uwb_node.h"
 #include "FreeRTOS.h"
 #include "common.h"
-#include "error_handler.h"
 #include "module.h"
+#include "protocol_tx.h"
+#include "uart_protocol.pb.h"
 #include "uwb.h"
+#include <string.h>
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -73,16 +75,21 @@ void uwb_node_set_type(uwb_node_type_e type)
 {
     if (type > UWB_NODE_TYPE_HYBRID)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "uwb_node", "Invalid node type: %d", type);
+        UwbNodeInvalidTypeEvent ev = UwbNodeInvalidTypeEvent_init_zero;
+        ev.node_type = (int32_t)type;
+        protocol_tx_UwbNodeInvalidTypeEvent(&ev);
         return;
     }
 
     uwb_node_config.type = type;
 
-    const char* type_str = (type == UWB_NODE_TYPE_TAG)      ? "TAG"
-                           : (type == UWB_NODE_TYPE_ANCHOR) ? "ANCHOR"
-                                                            : "HYBRID";
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_node", "Type set to: %s", type_str);
+    UwbNodeTypeSetEvent ev = UwbNodeTypeSetEvent_init_zero;
+    const char* type_str   = (type == UWB_NODE_TYPE_TAG)      ? "TAG"
+                             : (type == UWB_NODE_TYPE_ANCHOR) ? "ANCHOR"
+                                                              : "HYBRID";
+    strncpy(ev.type_str, type_str, sizeof(ev.type_str) - 1);
+    ev.type_str[sizeof(ev.type_str) - 1] = '\0';
+    protocol_tx_UwbNodeTypeSetEvent(&ev);
 }
 
 uwb_node_type_e uwb_node_get_type(void)
@@ -102,8 +109,11 @@ void uwb_node_set_position(const vec3_t* position)
     uwb_node_config.position_z     = position->z;
     uwb_node_config.position_known = true;
 
-    error_handler_log(ERROR_SEVERITY_INFO, "uwb_node", "Position set: (%.2f, %.2f, %.2f)",
-                      position->x, position->y, position->z);
+    UwbNodePositionSetEvent ev = UwbNodePositionSetEvent_init_zero;
+    ev.x = position->x;
+    ev.y = position->y;
+    ev.z = position->z;
+    protocol_tx_UwbNodePositionSetEvent(&ev);
 }
 
 bool uwb_node_get_position(vec3_t* position)

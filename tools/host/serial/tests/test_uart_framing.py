@@ -8,9 +8,9 @@ from __future__ import print_function
 import os
 import sys
 
-# Add tool and protocol/generated to path
+# Add tool and generated/protocol to path
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
-sys.path.insert(0, os.path.join(ROOT, "protocol", "generated"))
+sys.path.insert(0, os.path.join(ROOT, "generated", "protocol"))
 sys.path.insert(0, os.path.join(ROOT, "tools", "host", "serial"))
 
 import protocol_ids  # noqa: E402

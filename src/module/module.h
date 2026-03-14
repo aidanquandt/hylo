@@ -11,9 +11,7 @@
  *---------------------------------------------------------------------------*/
 typedef enum
 {
-    UART_MANAGER_MODULE = 0U,
-    ERROR_HANDLER_MODULE,
-    DATALOGGER_MODULE,
+    DATALOGGER_MODULE = 0U,
     SENSOR_FUSION_MODULE,
     UWB_MODULE,
     IMU_MODULE,

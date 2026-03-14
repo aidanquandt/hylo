@@ -4,8 +4,9 @@
 #include "twr.h"
 #include "FreeRTOS.h"
 #include "common.h"
-#include "error_handler.h"
 #include "feature_config.h"
+#include "protocol_tx.h"
+#include "uart_protocol.pb.h"
 #include "module.h"
 #include "task.h"
 #include "twr_state_machine.h" // For twr_process
@@ -57,7 +58,8 @@ STATIC void twr_module_init(void)
 
     if (!uwb_register_protocol_handler(PROTOCOL_TYPE_TWR, twr_protocol_handler))
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "twr", "Failed to register TWR protocol handler");
+        TwrFailedToRegisterProtocolHandlerEvent ev = TwrFailedToRegisterProtocolHandlerEvent_init_zero;
+        protocol_tx_TwrFailedToRegisterProtocolHandlerEvent(&ev);
     }
 
     uwb_register_tx_complete_handler(twr_tx_complete_handler);
@@ -74,7 +76,8 @@ STATIC void twr_process_1kHz(void)
         // Start responder listening
         if (!responder_start())
         {
-            error_handler_log(ERROR_SEVERITY_ERROR, "twr", "Responder auto-start failed");
+            TwrResponderAutoStartFailedEvent ev = TwrResponderAutoStartFailedEvent_init_zero;
+            protocol_tx_TwrResponderAutoStartFailedEvent(&ev);
         }
         auto_start_completed = true;
     }
@@ -159,7 +162,8 @@ bool twr_start_ranging(uint16_t peer_addr)
 {
     if (!module_initialized)
     {
-        error_handler_log(ERROR_SEVERITY_ERROR, "twr", "Module not initialized");
+        TwrModuleNotInitializedEvent ev = TwrModuleNotInitializedEvent_init_zero;
+        protocol_tx_TwrModuleNotInitializedEvent(&ev);
         return false;
     }
 

@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
-GENERATED = os.path.join(os.path.dirname(__file__), "generated")
+GENERATED = os.path.join(REPO_ROOT, "generated", "protocol")
 
 
 def run(cmd, description):
@@ -43,27 +43,56 @@ def main():
     # 1. Nanopb generator (.pb.c / .pb.h)
     run([sys.executable, "protocol/run_nanopb_gen.py"], "nanopb generator")
     if not check_file(
-        "protocol/generated/uart_protocol.pb.h",
+        "generated/protocol/uart_protocol.pb.h",
         "PingRequest",
         "SetAddressRequest",
         "pb.h",
     ):
         sys.exit(1)
-    if not check_file("protocol/generated/uart_protocol.pb.c", "PB_BIND"):
+    if not check_file("generated/protocol/uart_protocol.pb.c", "PB_BIND"):
         sys.exit(1)
 
     # 2. Project codegen (ids, dispatch, tx, Python ids)
     run([sys.executable, "protocol/codegen_protocol.py"], "project codegen")
-    if not check_file("protocol/generated/protocol_ids.h", "MSG_ID_PingRequest", "MSG_ID_COUNT"):
+    if not check_file("generated/protocol/protocol_ids.h", "MSG_ID_PingRequest", "MSG_ID_COUNT"):
         sys.exit(1)
-    if not check_file("protocol/generated/protocol_dispatch.c", "protocol_dispatch", "protocol_rx_PingRequest"):
+    if not check_file("generated/protocol/protocol_dispatch.c", "protocol_dispatch", "protocol_rx_PingRequest"):
         sys.exit(1)
-    if not check_file("protocol/generated/protocol_tx.c", "protocol_send_frame", "protocol_tx_PingRequest"):
+    if not check_file("generated/protocol/protocol_tx.c", "protocol_send_frame", "protocol_tx_PingRequest"):
         sys.exit(1)
-    if not check_file("protocol/generated/protocol_ids.py", "MSG_ID_PingRequest", "MSG_NAMES"):
+    if not check_file("generated/protocol/protocol_ids.py", "MSG_ID_PingRequest", "MSG_NAMES"):
         sys.exit(1)
 
-    print("Codegen OK: nanopb + project codegen ran and outputs look correct.")
+    # 3a. protoc --python_out for nanopb.proto (required by uart_protocol_pb2.py)
+    nanopb_proto_dir = "third_party/nanopb/generator/proto"
+    nanopb_proto_file = os.path.join(REPO_ROOT, nanopb_proto_dir, "nanopb.proto")
+    if os.path.isfile(nanopb_proto_file):
+        run([
+            "protoc",
+            "--python_out=generated/protocol",
+            "-I", nanopb_proto_dir,
+            os.path.join(nanopb_proto_dir, "nanopb.proto"),
+        ], "protoc --python_out (nanopb_pb2.py)")
+        if not os.path.isfile(os.path.join(REPO_ROOT, "generated/protocol/nanopb_pb2.py")):
+            print("Missing: generated/protocol/nanopb_pb2.py", file=sys.stderr)
+            sys.exit(1)
+    else:
+        print("Warning: %s not found (nanopb submodule?). Run: git submodule update --init third_party/nanopb" % nanopb_proto_file, file=sys.stderr)
+        print("Host tool (uart_protocol_tool.py) will fail to import uart_protocol_pb2 until nanopb_pb2.py exists.", file=sys.stderr)
+
+    # 3b. protoc --python_out for host (uart_protocol_pb2.py)
+    run([
+        "protoc",
+        "--python_out=generated/protocol",
+        "-I", "protocol",
+        "-I", nanopb_proto_dir,
+        "protocol/uart_protocol.proto",
+    ], "protoc --python_out (uart_protocol_pb2.py)")
+    if not os.path.isfile(os.path.join(REPO_ROOT, "generated/protocol/uart_protocol_pb2.py")):
+        print("Missing: generated/protocol/uart_protocol_pb2.py", file=sys.stderr)
+        sys.exit(1)
+
+    print("Codegen OK: nanopb + project codegen + protoc --python_out ran and outputs look correct.")
     print("Rebuild firmware to use the regenerated files.")
 
 

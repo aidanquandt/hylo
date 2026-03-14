@@ -8,8 +8,10 @@ import os
 import re
 import sys
 
-PROTO_PATH = os.path.join(os.path.dirname(__file__), "uart_protocol.proto")
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "generated")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, ".."))
+PROTO_PATH = os.path.join(SCRIPT_DIR, "uart_protocol.proto")
+OUTPUT_DIR = os.path.join(REPO_ROOT, "generated", "protocol")
 
 
 def parse_message_names(proto_path):
@@ -121,7 +123,7 @@ def emit_protocol_tx_c(messages, out_path):
         "#include <stddef.h>",
         "",
         "/* Single encode buffer; size must fit largest message (see UART_PROTOCOL_PB_H_MAX_SIZE). */",
-        "#define PROTOCOL_TX_BUF_SIZE 80",
+        "#define PROTOCOL_TX_BUF_SIZE 110",
         "static uint8_t s_tx_buf[PROTOCOL_TX_BUF_SIZE];",
         "",
     ]

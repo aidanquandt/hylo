@@ -12,8 +12,8 @@ if(NOT EXISTS "${NANOPB_SOURCE_DIR}/pb.h")
     )
 endif()
 
-# ---- Generated C from protocol/generated/ (source tree) ----
-set(PROTOCOL_GENERATED_SRC "${CMAKE_CURRENT_SOURCE_DIR}/generated")
+# ---- Generated C from generated/protocol/ (source tree) ----
+set(PROTOCOL_GENERATED_SRC "${CMAKE_SOURCE_DIR}/generated/protocol")
 # uart_framing.h (for protocol_tx.c) lives in src/uart_protocol
 set(UART_PROTOCOL_SRC "${CMAKE_SOURCE_DIR}/src/uart_protocol")
 

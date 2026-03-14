@@ -3,8 +3,10 @@
  *---------------------------------------------------------------------------*/
 #include "watchdog.h"
 #include "FreeRTOS.h"
-#include "error_handler.h"
 #include "feature_config.h"
+#include "protocol_tx.h"
+#include "system_halt.h"
+#include "uart_protocol.pb.h"
 #include "module.h"
 #include "watchdog_driver.h"
 #include "task.h"
@@ -85,11 +87,11 @@ STATIC void watchdog_task(void* argument)
         }
         else
         {
-            // Task failure - DON'T refresh, log failure, system will reset in ~8s
-            error_handler_log(
-                ERROR_SEVERITY_FATAL, "watchdog",
-                "Task failure! Heartbeats: 0x%02X (expected 0x%02X) - system will reset",
-                (unsigned int)current_heartbeats, (unsigned int)HEARTBEAT_ALL_BITS);
+            // Task failure - send event, DON'T refresh; system will reset in ~8s via IWDG
+            WatchdogTaskFailureEvent ev = WatchdogTaskFailureEvent_init_zero;
+            ev.current_heartbeats  = current_heartbeats;
+            ev.expected_heartbeats = HEARTBEAT_ALL_BITS;
+            protocol_tx_WatchdogTaskFailureEvent(&ev);
             // Stay in loop without refreshing until IWDG resets system
         }
     }
@@ -107,7 +109,7 @@ STATIC void watchdog_create_task(void)
                                     PRIORITY_WATCHDOG_TASK, NULL);
     if (result != pdPASS)
     {
-        error_handler_fatal("watchdog", "Failed to create watchdog task");
+        system_halt("watchdog", "Failed to create watchdog task");
     }
 }
 

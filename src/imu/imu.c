@@ -9,14 +9,16 @@
 #include "FreeRTOS.h"
 #include "common.h"
 #include "counter.h"
-#include "error_handler.h"
 #include "imu_driver.h"
+#include "protocol_tx.h"
+#include "uart_protocol.pb.h"
 #include "module.h"
 #include "gpio_driver.h"
 #include "timer_driver.h"
 #include "sensor_fusion.h"
 #include "state_machine.h"
 #include "task.h"
+#include <string.h>
 
 
 /*---------------------------------------------------------------------------
@@ -253,14 +255,18 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
     ctx->dev    = imu_driver_init((imu_device_e)idx);
     if (ctx->dev == NULL)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "imu", "IMU %u: init returned NULL", idx);
+        ImuInitReturnedNullEvent ev = ImuInitReturnedNullEvent_init_zero;
+        ev.imu_index = idx;
+        protocol_tx_ImuInitReturnedNullEvent(&ev);
         ctx->fault_code = FAULT_PROBE_FAILED;
         return;
     }
 
     if (imu_driver_probe_and_init(ctx->dev) != IMU_DRIVER_SUCCESS)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "imu", "IMU %u: probe/init failed", idx);
+        ImuProbeInitFailedEvent ev = ImuProbeInitFailedEvent_init_zero;
+        ev.imu_index = idx;
+        protocol_tx_ImuProbeInitFailedEvent(&ev);
         ctx->dev = NULL;
         ctx->fault_code = FAULT_PROBE_FAILED;
         return;
@@ -269,8 +275,10 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
     uint8_t chip_id = imu_driver_read_chip_id(ctx->dev);
     if (chip_id != IMU_EXPECTED_CHIP_ID_1 && chip_id != IMU_EXPECTED_CHIP_ID_2)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "imu", "IMU %u: invalid chip ID 0x%02X", idx,
-                          chip_id);
+        ImuInvalidChipIdEvent ev = ImuInvalidChipIdEvent_init_zero;
+        ev.imu_index = idx;
+        ev.chip_id   = chip_id;
+        protocol_tx_ImuInvalidChipIdEvent(&ev);
         ctx->dev = NULL;
         ctx->fault_code = FAULT_PROBE_FAILED;
         return;
@@ -279,7 +287,9 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
 
     if (imu_driver_configure_accel(ctx->dev, IMU_ACCEL_RANGE_2G, IMU_ODR_200HZ) != IMU_DRIVER_SUCCESS)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "imu", "IMU %u: accel config failed", idx);
+        ImuAccelConfigFailedEvent ev = ImuAccelConfigFailedEvent_init_zero;
+        ev.imu_index = idx;
+        protocol_tx_ImuAccelConfigFailedEvent(&ev);
         ctx->dev = NULL;
         ctx->fault_code = FAULT_PROBE_FAILED;
         return;
@@ -287,7 +297,9 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
 
     if (imu_driver_configure_gyro(ctx->dev, IMU_GYRO_RANGE_2000DPS, IMU_ODR_200HZ) != IMU_DRIVER_SUCCESS)
     {
-        error_handler_log(ERROR_SEVERITY_WARNING, "imu", "IMU %u: gyro config failed", idx);
+        ImuGyroConfigFailedEvent ev = ImuGyroConfigFailedEvent_init_zero;
+        ev.imu_index = idx;
+        protocol_tx_ImuGyroConfigFailedEvent(&ev);
         ctx->dev = NULL;
         ctx->fault_code = FAULT_PROBE_FAILED;
         return;
@@ -328,8 +340,12 @@ STATIC void imu_state_faulted_on_entry(uint16_t prevState)
             break;
     }
 
-    error_handler_log(ERROR_SEVERITY_ERROR, "imu", "IMU %u: %s (code=%u)", idx, fault_str,
-                      (uint8_t)ctx->fault_code);
+    ImuFaultEvent ev = ImuFaultEvent_init_zero;
+    ev.imu_index   = idx;
+    ev.fault_code = (uint8_t)ctx->fault_code;
+    strncpy(ev.description, fault_str, sizeof(ev.description) - 1);
+    ev.description[sizeof(ev.description) - 1] = '\0';
+    protocol_tx_ImuFaultEvent(&ev);
 }
 
 STATIC imu_state_e imu_get_overall_state(void)
@@ -437,8 +453,10 @@ STATIC void imu_process_1kHz(void)
             sensor_fusion_status_e sf_status = sensor_fusion_push_event(&event);
             if (sf_status != SENSOR_FUSION_SUCCESS)
             {
-                error_handler_log(ERROR_SEVERITY_WARNING, "imu",
-                                  "Failed to push IMU event to sensor fusion: %d", sf_status);
+                ImuFailedToPushEventToSensorFusionEvent ev = ImuFailedToPushEventToSensorFusionEvent_init_zero;
+                ev.imu_index  = 0; /* aggregate */
+                ev.sf_status = (uint32_t)sf_status;
+                protocol_tx_ImuFailedToPushEventToSensorFusionEvent(&ev);
             }
             aggregate_sample_count++;
         }

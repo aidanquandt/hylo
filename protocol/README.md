@@ -30,8 +30,11 @@ To **test that codegen actually works** (not just that the build uses existing f
 python protocol/verify_codegen.py
 ```
 
-- **run_nanopb_gen.py** — regenerates `protocol/generated/uart_protocol.pb.c` and `.pb.h`.
-- **codegen_protocol.py** — regenerates `protocol_ids.h`, `protocol_dispatch.*`, `protocol_tx.*`, and `protocol_ids.py`.
+The verifier also runs `protoc --python_out` to generate `nanopb_pb2.py` and `uart_protocol_pb2.py` in `generated/protocol/` (required by the host tool). The **nanopb submodule must be present** (`git submodule update --init third_party/nanopb`) for that step to succeed.
+
+- **run_nanopb_gen.py** — regenerates `generated/protocol/uart_protocol.pb.c` and `.pb.h`.
+- **codegen_protocol.py** — regenerates `protocol_ids.h`, `protocol_dispatch.*`, `protocol_tx.*`, and `protocol_ids.py` in `generated/protocol/`.
+- **verify_codegen.py** — runs the above plus `protoc --python_out` for `nanopb_pb2.py` and `uart_protocol_pb2.py`.
 
 Both scripts use system Python. No `.venv` or `pip` needed if you install dependencies with your system package manager.
 
