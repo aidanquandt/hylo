@@ -124,7 +124,7 @@ static void sdcard_write_csv_header(void)
         "type,timestamp_ms,"
         "dist_m,anchor_addr,anchor_x,anchor_y,anchor_z,quality,rssi_dbm,"
         "accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,temp_c,"
-        "pos_x,pos_y,pos_z,vel_x,vel_y,vel_z,confidence,pos_valid\n";
+        "pos_x,pos_y,pos_z,vel_x,vel_y,vel_z,confidence,pos_valid,imu_enable\n";
 
     UINT written;
     f_write(&SDFile, header, sizeof(header) - 1, &written);
@@ -141,7 +141,7 @@ static void sdcard_write_event(const sdcard_driver_event_t* event)
             const sdcard_driver_ranging_event_t* r = &event->data.ranging;
             // Columns 1-9 have data. Need 15 trailing commas to reach 24 columns total.
             len = snprintf(row, sizeof(row), 
-                "RANGING,%lu,%.4f,%u,%.3f,%.3f,%.3f,%.3f,%.1f,,,,,,,,,,,,,,,\n",
+                "RANGING,%lu,%.4f,%u,%.3f,%.3f,%.3f,%.3f,%.1f,,,,,,,,,,,,,,,,\n",
                 (unsigned long)event->timestamp_ms, r->distance_m, (unsigned)r->anchor_addr,
                 r->anchor_x, r->anchor_y, r->anchor_z, r->quality, r->rssi_dbm);
             break;
@@ -150,7 +150,7 @@ static void sdcard_write_event(const sdcard_driver_event_t* event)
             const sdcard_driver_imu_event_t* i = &event->data.imu;
             // Columns 1-2 (Data), 3-9 (Skip 7), 10-16 (Data), 17-24 (Skip 8).
             len = snprintf(row, sizeof(row), 
-                "IMU,%lu,,,,,,,,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.2f,,,,,,,,\n",
+                "IMU,%lu,,,,,,,,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.2f,,,,,,,,,\n",
                 (unsigned long)event->timestamp_ms, i->accel_x, i->accel_y, i->accel_z,
                 i->gyro_x, i->gyro_y, i->gyro_z, i->temp_c);
             break;
@@ -159,8 +159,8 @@ static void sdcard_write_event(const sdcard_driver_event_t* event)
             const sdcard_driver_position_event_t* p = &event->data.position;
             // Columns 1-2 (Data), 3-16 (Skip 14), 17-24 (Data).
             len = snprintf(row, sizeof(row), 
-                "POSITION,%lu,,,,,,,,,,,,,,,,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%d\n",
-                (unsigned long)event->timestamp_ms, p->x, p->y, p->z, p->vx, p->vy, p->vz, p->confidence, (int)p->valid);
+                "POSITION,%lu,,,,,,,,,,,,,,,,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%d,%d\n",
+                (unsigned long)event->timestamp_ms, p->x, p->y, p->z, p->vx, p->vy, p->vz, p->confidence, (int)p->valid, p->imu_enable);
             break;
         }
         default: return;

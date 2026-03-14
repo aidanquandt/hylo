@@ -49,6 +49,7 @@ typedef struct
     float vz;
     float confidence;
     bool valid;
+    int imu_enable;
 } sdcard_driver_position_event_t;
 
 typedef struct

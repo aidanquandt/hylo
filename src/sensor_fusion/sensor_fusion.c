@@ -287,6 +287,7 @@ STATIC void sensor_fusion_update_position_estimate(void)
                                        ? (float)update_count / (float)CONFIDENCE_RAMP_UPDATES
                                        : 1.0f;
     
+    position_estimate.imu_enable = imu_enabled;
 
     #if (HWREV == 1)
         // Send position estimate to WiFi telemetry
@@ -364,7 +365,6 @@ STATIC void send_position_telemetry(const sensor_fusion_position_t* position)
     }
 }
 
-#if (HWREV == 1)
 /**
  * @brief Log ranging event to SD card (non-blocking)
  */
@@ -435,6 +435,7 @@ STATIC void sdcard_log_position(const sensor_fusion_position_t* position)
                     .vz = position->vz,
                     .confidence = position->confidence,
                     .valid = position->valid,
+                    .imu_enable = imu_enabled,
                 },
             };
             (void)sdcard_driver_push_event(&entry);
@@ -442,7 +443,7 @@ STATIC void sdcard_log_position(const sensor_fusion_position_t* position)
         }
     }
 }
-#endif
+
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations

@@ -96,6 +96,7 @@ typedef struct
     float confidence;      // Estimate confidence [0.0 - 1.0]
     uint32_t timestamp_ms; // When estimate was computed
     bool valid;            // Whether estimate is valid
+    int imu_enable;       // Whether IMU data is being used in the fusion (for logging/debugging)
 } sensor_fusion_position_t;
 
 /*---------------------------------------------------------------------------

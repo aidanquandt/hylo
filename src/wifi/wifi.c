@@ -850,7 +850,7 @@ STATIC void wifi_transmit_telemetry_queue(void)
                 
             case TELEMETRY_EVENT_POSITION:
                 len = snprintf(tx_buf, sizeof(tx_buf),
-                    "POS,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.2f,%d\r\n",
+                    "POS,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.2f,%d,%d\r\n",
                     telem.data.position.x,
                     telem.data.position.y,
                     telem.data.position.z,
@@ -858,7 +858,8 @@ STATIC void wifi_transmit_telemetry_queue(void)
                     telem.data.position.vy,
                     telem.data.position.vz,
                     telem.data.position.confidence,
-                    telem.data.position.valid ? 1 : 0);
+                    telem.data.position.valid ? 1 : 0,
+                    telem.data.position.imu_enable);
                 break;
                 
             default:
