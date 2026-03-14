@@ -20,8 +20,9 @@ add_driver_module(timer_driver)
 add_driver_module(os_driver)
 add_driver_module(watchdog_driver)
 add_driver_module(system_driver config)
-add_driver_module(i2c_driver config)
-add_driver_module(eeprom_driver config)
+add_driver_module(i2c_driver)
+add_driver_module(eeprom_driver i2c_driver)
+add_driver_module(sdcard_driver uart_driver)
 
 # IMU driver: wraps bmi323 + spi/gpio/timer/os drivers
 add_library(imu_driver STATIC imu_driver/imu_driver.c)

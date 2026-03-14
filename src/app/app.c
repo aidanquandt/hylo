@@ -18,6 +18,7 @@
 #include "uart_manager.h"
 #include "uwb.h"
 #include "wifi.h"
+#include "sdcard_driver.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -302,6 +303,7 @@ void app_init(void)
     app_initialize_modules();
     app_create_module_tasks();
     app_post_module_initialization();
+    sdcard_driver_init();
     vTaskDelete(NULL); // Delete init task - scheduler continues with created tasks
 }
 

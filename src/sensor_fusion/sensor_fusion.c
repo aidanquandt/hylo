@@ -15,7 +15,7 @@
 #include "uart_manager.h"
 #include "wifi.h"
 #if (HWREV == 1)
-#include "sdcard.h"
+#include "sdcard_driver.h"
 #endif
 #include <math.h>
 
@@ -309,11 +309,10 @@ STATIC void sensor_fusion_update_position_estimate(void)
     position_estimate.confidence = (update_count < CONFIDENCE_RAMP_UPDATES)
                                        ? (float)update_count / (float)CONFIDENCE_RAMP_UPDATES
                                        : 1.0f;
-    
-    // Send position estimate to WiFi telemetry
-    send_position_telemetry(&position_estimate);
 
 #if (HWREV == 1)
+    // Send position estimate to WiFi telemetry
+    send_position_telemetry(&position_estimate);
     // Log position estimate to SD card
     sdcard_log_position(&position_estimate);
 #endif
@@ -393,12 +392,20 @@ STATIC void send_position_telemetry(const sensor_fusion_position_t* position)
  */
 STATIC void sdcard_log_ranging(const sensor_ranging_data_t* ranging, uint32_t timestamp_ms)
 {
-    sdcard_log_event_t entry = {
-        .type         = SDCARD_EVENT_RANGING,
+    sdcard_driver_event_t entry = {
+        .type         = SDCARD_DRIVER_EVENT_RANGING,
         .timestamp_ms = timestamp_ms,
-        .data.ranging = *ranging,
+        .data.ranging = {
+            .distance_m = ranging->distance_m,
+            .anchor_addr = ranging->anchor_addr,
+            .anchor_x = ranging->anchor_position.x,
+            .anchor_y = ranging->anchor_position.y,
+            .anchor_z = ranging->anchor_position.z,
+            .quality = ranging->quality,
+            .rssi_dbm = ranging->rssi_dbm,
+        },
     };
-    sdcard_push_event(&entry);
+    (void)sdcard_driver_push_event(&entry);
 }
 
 /**
@@ -409,12 +416,20 @@ STATIC void sdcard_log_imu(const sensor_event_t* event)
     static uint8_t imu_sd_counter = 0;
     if (counter_uint8_t(&imu_sd_counter, 20))
     {
-        sdcard_log_event_t entry = {
-            .type         = SDCARD_EVENT_IMU,
+        sdcard_driver_event_t entry = {
+            .type         = SDCARD_DRIVER_EVENT_IMU,
             .timestamp_ms = event->timestamp_ms,
-            .data.imu     = event->data.imu,
+            .data.imu = {
+                .accel_x = event->data.imu.accel_x,
+                .accel_y = event->data.imu.accel_y,
+                .accel_z = event->data.imu.accel_z,
+                .gyro_x = event->data.imu.gyro_x,
+                .gyro_y = event->data.imu.gyro_y,
+                .gyro_z = event->data.imu.gyro_z,
+                .temp_c = event->data.imu.temp_c,
+            },
         };
-        sdcard_push_event(&entry);
+        (void)sdcard_driver_push_event(&entry);
     }
 }
 
@@ -424,16 +439,25 @@ STATIC void sdcard_log_imu(const sensor_event_t* event)
 STATIC void sdcard_log_position(const sensor_fusion_position_t* position)
 {
     static uint32_t last_sd_position_send = 0;
-    uint32_t now = platform_get_time_ms();
+    uint32_t now = timer_driver_get_time_ms();
 
     if (position->valid && (now - last_sd_position_send) >= 100U)
     {
-        sdcard_log_event_t entry = {
-            .type             = SDCARD_EVENT_POSITION,
+        sdcard_driver_event_t entry = {
+            .type             = SDCARD_DRIVER_EVENT_POSITION,
             .timestamp_ms     = position->timestamp_ms,
-            .data.position    = *position,
+            .data.position = {
+                .x = position->x,
+                .y = position->y,
+                .z = position->z,
+                .vx = position->vx,
+                .vy = position->vy,
+                .vz = position->vz,
+                .confidence = position->confidence,
+                .valid = position->valid,
+            },
         };
-        sdcard_push_event(&entry);
+        (void)sdcard_driver_push_event(&entry);
         last_sd_position_send = now;
     }
 }

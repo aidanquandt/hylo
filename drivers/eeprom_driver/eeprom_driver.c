@@ -1,6 +1,6 @@
 #include "eeprom_driver.h"
 #include "FreeRTOS.h"
-#include "platform_i2c.h"
+#include "i2c_driver.h"
 #include "task.h"
 
 /*---------------------------------------------------------------------------

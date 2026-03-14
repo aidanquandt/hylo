@@ -76,8 +76,6 @@ void Error_Handler(void);
 #define BMI_CS4_GPIO_Port GPIOD
 #define SW_button_Pin GPIO_PIN_11
 #define SW_button_GPIO_Port GPIOC
-#define SDMMC2_CD_Pin GPIO_PIN_13
-#define SDMMC2_CD_GPIO_Port GPIOG
 
 /* USER CODE BEGIN Private defines */
 
