@@ -6,7 +6,7 @@
 #include "common.h"
 #include "feature_config.h"
 #include "protocol_tx.h"
-#include "uart_protocol.pb.h"
+#include "protocol.pb.h"
 #include "module.h"
 #include "task.h"
 #include "twr_state_machine.h" // For twr_process

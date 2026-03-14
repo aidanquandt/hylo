@@ -48,7 +48,7 @@ endif()
 add_compile_definitions(HWREV=${HW_REV})
 
 add_subdirectory(lib)                       # utility libraries (counter, etc.)
-add_subdirectory(protocol)                  # UART protocol (.proto, nanopb, codegen)
+add_subdirectory(protocol)                  # Protocol (.proto, nanopb, codegen)
 add_subdirectory(third_party/dwt_uwb_driver) # vendor UWB -> 'dwt_uwb_driver' (before drivers)
 add_subdirectory(third_party/bmi323)        # vendor IMU sensor API -> 'bmi323_api'
 add_subdirectory(drivers)   # driver layer (sole interface to HAL/third_party)

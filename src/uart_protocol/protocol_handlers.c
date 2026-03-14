@@ -5,7 +5,7 @@
  */
 #include "protocol_dispatch.h"
 #include "protocol_tx.h"
-#include "uart_protocol.pb.h"
+#include "protocol.pb.h"
 #include "common.h"
 #include "datalogger.h"
 #include "imu.h"

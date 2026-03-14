@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hylo host</title>
+  <style>
+    :root {
+      --bg: #1a1b26;
+      --surface: #24283b;
+      --surface2: #2d3047;
+      --text: #c0caf5;
+      --accent: #7aa2f7;
+      --success: #9ece6a;
+      --error: #f7768e;
+      --muted: #565f89;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      font-size: 0.9rem;
+    }
+    h1 { font-size: 1.1rem; margin: 0 0 0.4rem 0; color: var(--accent); }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .toolbar label { margin: 0; font-size: 0.85rem; }
+    .toolbar select, .toolbar input[type="text"] {
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 0.85rem;
+    }
+    .toolbar select { min-width: 10rem; }
+    .toolbar input[type="text"] { min-width: 12rem; }
+    .command-list { max-width: 56rem; }
+    .command {
+      background: var(--surface);
+      border-radius: 4px;
+      padding: 0.35rem 0.6rem;
+      margin-bottom: 0.25rem;
+    }
+    .command.hidden { display: none; }
+    .command-header {
+      display: flex;
+      align-items: baseline;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .command-name { font-weight: 600; font-size: 0.9rem; color: var(--text); }
+    .command-desc { font-size: 0.75rem; color: var(--muted); }
+    .command-form {
+      margin-top: 0.35rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .arg-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .arg-group label { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+    .arg-group input, .arg-group select {
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 0.8rem;
+      min-width: 4rem;
+    }
+    .command-form button {
+      padding: 0.2rem 0.5rem;
+      border-radius: 3px;
+      border: none;
+      background: var(--accent);
+      color: var(--bg);
+      font: inherit;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .command-form button:hover:not(:disabled) { filter: brightness(1.1); }
+    .command-form button:disabled { opacity: 0.7; cursor: not-allowed; }
+    .command-response-row {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin-top: 0.25rem;
+    }
+    .command-response {
+      flex: 1;
+      font-size: 0.75rem;
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      min-height: 1.2rem;
+    }
+    .command-response.success { color: var(--success); background: rgba(158, 206, 106, 0.1); }
+    .command-response.error { color: var(--error); background: rgba(247, 118, 142, 0.1); }
+    .command-response.pending { color: var(--muted); }
+    .copy-response {
+      display: none;
+      padding: 0.15rem 0.35rem;
+      font-size: 0.7rem;
+      border-radius: 3px;
+      border: 1px solid var(--muted);
+      background: var(--surface2);
+      color: var(--text);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .command-response-row.has-success .copy-response { display: inline-block; }
+    .copy-response:hover { background: var(--surface2); filter: brightness(1.1); }
+    .toolbar .btn-refresh {
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .toolbar .btn-refresh:hover { filter: brightness(1.1); }
+    .load-err { color: var(--error); padding: 0.5rem 0; font-size: 0.85rem; }
+    .no-results { color: var(--muted); padding: 0.25rem 0; font-size: 0.85rem; }
+    .module-section { margin-bottom: 0.75rem; }
+    .module-section.hidden { display: none; }
+    .module-header {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 0.25rem;
+      padding: 0.2rem 0;
+      cursor: pointer;
+      user-select: none;
+    }
+    .module-header:hover { opacity: 0.9; }
+    .module-header::before { content: "▾ "; }
+    .module-section.collapsed .module-header::before { content: "▸ "; }
+    .module-section.collapsed .module-commands { display: none; }
+    /* Two-panel layout: commands left, event log right */
+    .app-body { display: flex; flex-direction: column; min-height: 100vh; padding: 0.5rem 1rem; }
+    .app-main { display: flex; flex: 1; min-height: 0; gap: 0; }
+    .panel-commands { flex: 0 1 50%; min-width: 20rem; overflow: auto; }
+    .panel-events {
+      flex: 1 1 50%; min-width: 18rem;
+      display: flex; flex-direction: column;
+      border-left: 1px solid var(--surface2);
+      background: var(--bg);
+    }
+    .event-log-header {
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.4rem 0.6rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--surface2);
+      font-size: 0.85rem; font-weight: 600; color: var(--accent);
+    }
+    .event-log-header .btn-clear {
+      padding: 0.2rem 0.5rem;
+      font-size: 0.75rem;
+      border-radius: 3px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: var(--surface2);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .event-log-header .btn-clear:hover { filter: brightness(1.1); }
+    .event-log-content {
+      flex: 1; overflow: auto;
+      font-size: 0.78rem; padding: 0.5rem;
+      font-family: inherit;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .event-log-line {
+      padding: 0.15rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      color: var(--muted);
+    }
+    .event-log-line .event-prefix { color: var(--accent); }
+    .event-log-empty { color: var(--muted); font-style: italic; padding: 0.5rem 0; }
+  </style>
+</head>
+<body>
+  <div class="app-body">
+    <h1>Hylo host</h1>
+    <div class="toolbar">
+      <label for="port">Port</label>
+      <select id="port">
+        <option value="">Loading…</option>
+      </select>
+      <button type="button" id="refreshPorts" class="btn-refresh" title="Refresh port list">⟳</button>
+      <label for="search">Search</label>
+      <input type="text" id="search" placeholder="Filter commands…" />
+    </div>
+    <div class="app-main">
+      <div class="panel-commands">
+        <div id="commandList" class="command-list"></div>
+        <div id="noResults" class="no-results" style="display: none;">No commands match.</div>
+        <div id="loadErr" class="load-err" style="display: none;"></div>
+      </div>
+      <div class="panel-events">
+        <div class="event-log-header">
+          <span>Event log</span>
+          <button type="button" id="clearEvents" class="btn-clear" title="Clear event log">Clear</button>
+        </div>
+        <div id="eventLogContent" class="event-log-content">
+          <div id="eventLogEmpty" class="event-log-empty">No events yet. Send a command to see interleaved events (e.g. log events) here.</div>
+          <div id="eventLogLines"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const portEl = document.getElementById("port");
+    const searchEl = document.getElementById("search");
+    const commandListEl = document.getElementById("commandList");
+    const noResultsEl = document.getElementById("noResults");
+    const loadErrEl = document.getElementById("loadErr");
+    const eventLogLinesEl = document.getElementById("eventLogLines");
+    const eventLogEmptyEl = document.getElementById("eventLogEmpty");
+    const eventLogContentEl = document.getElementById("eventLogContent");
+
+    let allCommands = [];
+    let moduleOrder = [];
+    let eventLogEntries = [];
+
+    async function loadPorts() {
+      const currentPort = portEl.value;
+      try {
+        const r = await fetch("/api/ports");
+        if (!r.ok) throw new Error(await r.text());
+        const { ports } = await r.json();
+        portEl.innerHTML = '<option value="">Select port</option>' +
+          ports.map(p => `<option value="${p.device}">${p.device} — ${p.description || ""}</option>`).join("");
+        if (currentPort && portEl.querySelector(`option[value="${currentPort}"]`)) {
+          portEl.value = currentPort;
+        }
+      } catch (e) {
+        portEl.innerHTML = '<option value="">No ports</option>';
+      }
+    }
+
+    function appendEvents(events) {
+      if (!events || events.length === 0) return;
+      eventLogEntries = eventLogEntries.concat(events);
+      eventLogEmptyEl.style.display = "none";
+      events.forEach(text => {
+        const line = document.createElement("div");
+        line.className = "event-log-line";
+        const safe = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        line.innerHTML = safe.replace(/^(\[rx\]\s*)/, "<span class=\"event-prefix\">$1</span>");
+        eventLogLinesEl.appendChild(line);
+      });
+      eventLogContentEl.scrollTop = eventLogContentEl.scrollHeight;
+    }
+
+    function renderEventLog() {
+      eventLogLinesEl.innerHTML = "";
+      if (eventLogEntries.length === 0) {
+        eventLogEmptyEl.style.display = "block";
+        return;
+      }
+      eventLogEmptyEl.style.display = "none";
+      eventLogEntries.forEach(text => {
+        const line = document.createElement("div");
+        line.className = "event-log-line";
+        const safe = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        line.innerHTML = safe.replace(/^(\[rx\]\s*)/, "<span class=\"event-prefix\">$1</span>");
+        eventLogLinesEl.appendChild(line);
+      });
+      eventLogContentEl.scrollTop = eventLogContentEl.scrollHeight;
+    }
+
+    async function loadEvents() {
+      try {
+        const r = await fetch("/api/events");
+        if (!r.ok) return;
+        const data = await r.json();
+        eventLogEntries = data.events || [];
+        renderEventLog();
+      } catch (e) { /* ignore */ }
+    }
+
+    async function sendCommand(port, command, args, responseEl, responseRow, sendBtn) {
+      sendBtn.disabled = true;
+      sendBtn.textContent = "Sending…";
+      responseEl.textContent = "Sending…";
+      responseEl.className = "command-response pending";
+      responseRow.classList.remove("has-success");
+      try {
+        const r = await fetch("/api/command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ port, command, args })
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          responseEl.textContent = data.detail || r.statusText;
+          responseEl.className = "command-response error";
+          return;
+        }
+        const responseText = data.response ?? (data.success ? "OK" : "Error");
+        responseEl.textContent = responseText;
+        responseEl.className = "command-response " + (data.success ? "success" : "error");
+        if (data.success && responseText) responseRow.classList.add("has-success");
+        if (data.events && data.events.length) appendEvents(data.events);
+      } catch (e) {
+        responseEl.textContent = e.message;
+        responseEl.className = "command-response error";
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = "Send";
+      }
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement("div");
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    function renderCommand(cmd) {
+      const argsHtml = cmd.args.length === 0
+        ? ""
+        : cmd.args.map(a => {
+            if (a.type === "choice") {
+              return `<div class="arg-group"><label>${escapeHtml(a.name)}</label><select data-arg="${escapeHtml(a.name)}">${a.choices.map(c => `<option value="${c}">${escapeHtml(c)}</option>`).join("")}</select></div>`;
+            }
+            return `<div class="arg-group"><label>${escapeHtml(a.name)}</label><input type="text" data-arg="${escapeHtml(a.name)}" placeholder="${escapeHtml(a.type)}"/></div>`;
+          }).join("");
+      const module = escapeHtml(cmd.module || "Other");
+      return `
+        <div class="command" data-command="${escapeHtml(cmd.command)}" data-module="${module}" data-search="${escapeHtml((cmd.command + " " + cmd.description).toLowerCase())}">
+          <div class="command-header">
+            <span class="command-name">${escapeHtml(cmd.command)}</span>
+            <span class="command-desc">${escapeHtml(cmd.description)}</span>
+          </div>
+          <div class="command-form">
+            ${argsHtml}
+            <button type="button" data-send="${escapeHtml(cmd.command)}">Send</button>
+          </div>
+          <div class="command-response-row">
+            <div class="command-response"></div>
+            <button type="button" class="copy-response" title="Copy response">Copy</button>
+          </div>
+        </div>`;
+    }
+
+    function applyFilter() {
+      const q = (searchEl.value || "").trim().toLowerCase();
+      let visible = 0;
+      commandListEl.querySelectorAll(".command").forEach(el => {
+        const match = !q || (el.getAttribute("data-search") || "").includes(q);
+        el.classList.toggle("hidden", !match);
+        if (match) visible++;
+      });
+      commandListEl.querySelectorAll(".module-section").forEach(section => {
+        const moduleCommands = section.querySelectorAll(".command");
+        const anyVisible = Array.from(moduleCommands).some(el => !el.classList.contains("hidden"));
+        section.classList.toggle("hidden", !anyVisible);
+      });
+      noResultsEl.style.display = visible === 0 && allCommands.length > 0 ? "block" : "none";
+    }
+
+    function renderCommands(commands, order) {
+      allCommands = commands || [];
+      moduleOrder = order || [];
+      if (allCommands.length === 0) {
+        loadErrEl.style.display = "block";
+        loadErrEl.textContent = "No commands (run from repo root; ensure host.serial.protocol_tool is available).";
+        commandListEl.innerHTML = "";
+        noResultsEl.style.display = "none";
+        return;
+      }
+      loadErrEl.style.display = "none";
+      const byModule = {};
+      allCommands.forEach(c => {
+        const m = c.module || "Other";
+        if (!byModule[m]) byModule[m] = [];
+        byModule[m].push(c);
+      });
+      const sectionOrder = moduleOrder.length ? moduleOrder : [...new Set(allCommands.map(c => c.module || "Other"))];
+      const sectionsHtml = sectionOrder.map(moduleLabel => {
+        const list = byModule[moduleLabel];
+        if (!list || list.length === 0) return "";
+        const safeLabel = escapeHtml(moduleLabel);
+        const cards = list.map(c => renderCommand(c)).join("");
+        return `<div class="module-section collapsed" data-module="${safeLabel}"><div class="module-header">${safeLabel}</div><div class="module-commands">${cards}</div></div>`;
+      }).join("");
+      const otherLabels = Object.keys(byModule).filter(m => !sectionOrder.includes(m));
+      const restHtml = otherLabels.map(moduleLabel => {
+        const list = byModule[moduleLabel];
+        const safeLabel = escapeHtml(moduleLabel);
+        const cards = list.map(c => renderCommand(c)).join("");
+        return `<div class="module-section collapsed" data-module="${safeLabel}"><div class="module-header">${safeLabel}</div><div class="module-commands">${cards}</div></div>`;
+      }).join("");
+      commandListEl.innerHTML = sectionsHtml + restHtml;
+
+      commandListEl.querySelectorAll(".module-header").forEach(h => {
+        h.addEventListener("click", () => h.closest(".module-section").classList.toggle("collapsed"));
+      });
+
+      commandListEl.querySelectorAll("[data-send]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          if (!portEl.value) {
+            const resp = btn.closest(".command").querySelector(".command-response");
+            resp.textContent = "Select a port first.";
+            resp.className = "command-response error";
+            return;
+          }
+          const command = btn.getAttribute("data-send");
+          const form = btn.closest(".command-form");
+          const args = [];
+          form.querySelectorAll("[data-arg]").forEach(inp => args.push(inp.value.trim()));
+          const commandCard = btn.closest(".command");
+          const responseEl = commandCard.querySelector(".command-response");
+          const responseRow = commandCard.querySelector(".command-response-row");
+          sendCommand(portEl.value, command, args, responseEl, responseRow, btn);
+        });
+      });
+
+      commandListEl.querySelectorAll(".copy-response").forEach(copyBtn => {
+        copyBtn.addEventListener("click", async () => {
+          const responseEl = copyBtn.closest(".command-response-row").querySelector(".command-response");
+          const text = responseEl.textContent.trim();
+          if (!text) return;
+          try {
+            await navigator.clipboard.writeText(text);
+            const orig = copyBtn.textContent;
+            copyBtn.textContent = "Copied!";
+            setTimeout(() => { copyBtn.textContent = orig; }, 1200);
+          } catch (e) {
+            copyBtn.textContent = "Failed";
+            setTimeout(() => { copyBtn.textContent = "Copy"; }, 1200);
+          }
+        });
+      });
+
+      applyFilter();
+    }
+
+    searchEl.addEventListener("input", applyFilter);
+    document.getElementById("refreshPorts").addEventListener("click", loadPorts);
+    document.getElementById("clearEvents").addEventListener("click", async () => {
+      try {
+        await fetch("/api/events/clear", { method: "POST" });
+        eventLogEntries = [];
+        renderEventLog();
+      } catch (e) { /* ignore */ }
+    });
+
+    async function loadCommands() {
+      try {
+        const r = await fetch("/api/commands");
+        if (!r.ok) throw new Error(await r.text());
+        const data = await r.json();
+        renderCommands(data.commands || [], data.module_order || []);
+      } catch (e) {
+        loadErrEl.style.display = "block";
+        loadErrEl.textContent = "Failed to load commands: " + e.message;
+      }
+    }
+
+    loadPorts();
+    loadCommands();
+    loadEvents();
+  </script>
+</body>
+</html>

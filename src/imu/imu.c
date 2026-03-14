@@ -11,7 +11,7 @@
 #include "counter.h"
 #include "imu_driver.h"
 #include "protocol_tx.h"
-#include "uart_protocol.pb.h"
+#include "protocol.pb.h"
 #include "module.h"
 #include "gpio_driver.h"
 #include "timer_driver.h"

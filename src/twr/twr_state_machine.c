@@ -3,7 +3,7 @@
  *---------------------------------------------------------------------------*/
 #include "twr_state_machine.h"
 #include "protocol_tx.h"
-#include "uart_protocol.pb.h"
+#include "protocol.pb.h"
 #include "uwb_protocol_messages.h"
 #include "common.h"
 

@@ -1,4 +1,4 @@
-/* Auto-generated from uart_protocol.proto by protocol/codegen_protocol.py */
+/* Auto-generated from protocol.proto by tools/protocol_codegen/codegen_protocol.py */
 #ifndef PROTOCOL_IDS_H
 #define PROTOCOL_IDS_H
 #include <stdint.h>

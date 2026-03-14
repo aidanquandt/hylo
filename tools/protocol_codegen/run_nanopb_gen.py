@@ -5,7 +5,7 @@ import os
 import sys
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-repo_root = os.path.normpath(os.path.join(script_dir, ".."))
+repo_root = os.path.normpath(os.path.join(script_dir, "..", ".."))
 
 # Prefer vendored nanopb (third_party/nanopb); else NANOPB_SRC env or legacy build path
 nanopb_vendored = os.path.join(repo_root, "third_party", "nanopb")
@@ -33,8 +33,8 @@ if not os.path.isdir(generator_dir):
 sys.path.insert(0, generator_dir)
 os.chdir(repo_root)
 
-# Run generator: -D generated/protocol -I protocol -I generator/proto protocol/uart_protocol.proto
-out_dir = os.path.join(repo_root, "generated", "protocol")
+# Run generator: -D generated/protocol/c -I protocol -I generator/proto protocol/protocol.proto
+out_dir = os.path.join(repo_root, "generated", "protocol", "c")
 os.makedirs(out_dir, exist_ok=True)
 
 # Invoke as module to use generator's main
@@ -44,13 +44,17 @@ gen = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gen)
 
 # main_cli expects sys.argv; we set it and call main_cli
+# Generate host_options first (protocol.proto imports it); nanopb finds
+# google/protobuf/descriptor.proto via proto_dir (nanopb generator/proto).
+protocol_dir = os.path.join(repo_root, "protocol")
 old_argv = sys.argv
 sys.argv = [
     "nanopb_generator",
     "-D", out_dir,
-    "-I", os.path.join(repo_root, "protocol"),
+    "-I", protocol_dir,
     "-I", proto_dir,
-    os.path.join(repo_root, "protocol", "uart_protocol.proto"),
+    os.path.join(protocol_dir, "host_options.proto"),
+    os.path.join(protocol_dir, "protocol.proto"),
 ]
 try:
     gen.main_cli()

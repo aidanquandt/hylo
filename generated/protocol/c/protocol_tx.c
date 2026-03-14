@@ -1,12 +1,12 @@
-/* Auto-generated from uart_protocol.proto by protocol/codegen_protocol.py */
+/* Auto-generated from protocol.proto by tools/protocol_codegen/codegen_protocol.py */
 #include "protocol_tx.h"
-#include "uart_protocol.pb.h"
+#include "protocol.pb.h"
 #include "uart_framing.h"
 #include "protocol_ids.h"
 #include <pb_encode.h>
 #include <stddef.h>
 
-/* Single encode buffer; size must fit largest message (see UART_PROTOCOL_PB_H_MAX_SIZE). */
+/* Single encode buffer; size must fit largest message (see PROTOCOL_PB_H_MAX_SIZE). */
 #define PROTOCOL_TX_BUF_SIZE 110
 static uint8_t s_tx_buf[PROTOCOL_TX_BUF_SIZE];
 

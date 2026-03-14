@@ -7,7 +7,7 @@
 #include "os_driver.h"
 #include "protocol_tx.h"
 #include "task.h"
-#include "uart_protocol.pb.h"
+#include "protocol.pb.h"
 #include <string.h>
 
 void system_halt(const char* module, const char* message)
