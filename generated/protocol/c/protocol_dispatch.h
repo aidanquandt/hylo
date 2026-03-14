@@ -1,10 +1,10 @@
-/* Auto-generated from uart_protocol.proto by protocol/codegen_protocol.py */
+/* Auto-generated from protocol.proto by tools/protocol_codegen/codegen_protocol.py */
 #ifndef PROTOCOL_DISPATCH_H
 #define PROTOCOL_DISPATCH_H
 #include <stddef.h>
 #include <stdint.h>
 #include "protocol_ids.h"
-#include "uart_protocol.pb.h"
+#include "protocol.pb.h"
 
 void protocol_dispatch(uint16_t msg_id, const uint8_t *payload, size_t len);
 

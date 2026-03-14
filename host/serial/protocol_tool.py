@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """
-UART protocol host tool: send framed Request messages and listen for Response/log events.
+Protocol host tool: send framed Request messages and listen for Response/log events.
+Transport-agnostic protocol (e.g. over UART, USB, etc.).
 
-Uses generated uart_protocol_pb2.py for encoding requests and decoding responses.
-Run protocol/verify_codegen.py (and ensure nanopb_pb2.py is in generated/protocol) before use.
+Uses generated protocol_pb2.py for encoding requests and decoding responses.
+Run tools/protocol_codegen/verify_codegen.py (and ensure nanopb_pb2.py is in generated/protocol/python) before use.
 
 Usage:
-  python uart_protocol_tool.py --port COM10 interactive   # listen + type commands anytime
-  python uart_protocol_tool.py --port COM10 send ping
-  python uart_protocol_tool.py --port COM10 listen
-  python uart_protocol_tool.py --port COM10 send setaddress <address> <pan_id>
-  python uart_protocol_tool.py --port COM10 commands   # list all commands
+  python protocol_tool.py --port COM10 interactive   # listen + type commands anytime
+  python protocol_tool.py --port COM10 send ping
+  python protocol_tool.py --port COM10 listen
+  python protocol_tool.py --port COM10 send setaddress <address> <pan_id>
+  python protocol_tool.py --port COM10 commands   # list all commands
 
-See: python uart_protocol_tool.py send --help
+See: python protocol_tool.py send --help
 """
 from __future__ import print_function
 
@@ -23,20 +24,21 @@ import sys
 import threading
 import time
 
-# Add generated/protocol to path for protocol_ids and uart_protocol_pb2
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-sys.path.insert(0, os.path.join(ROOT, "generated", "protocol"))
+# Add generated/protocol/python to path for protocol_ids and protocol_pb2
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, os.path.join(ROOT, "generated", "protocol", "python"))
 
 import protocol_ids  # noqa: E402
 
 try:
-    import uart_protocol_pb2 as pb2  # noqa: E402
+    import protocol_pb2 as pb2  # noqa: E402
+    from google.protobuf import descriptor as _descriptor  # noqa: E402
 except ImportError as e:
     print(
-        "uart_protocol_pb2 not available (missing or missing nanopb_pb2). "
-        "Run: python protocol/verify_codegen.py\n"
-        "If verify_codegen passes, generate nanopb_pb2.py into generated/protocol, e.g.:\n"
-        "  protoc --python_out=generated/protocol -I third_party/nanopb/generator/proto "
+        "protocol_pb2 not available (missing or missing nanopb_pb2). "
+        "Run: python tools/protocol_codegen/verify_codegen.py\n"
+        "If verify_codegen passes, generate nanopb_pb2.py into generated/protocol/python, e.g.:\n"
+        "  protoc --python_out=generated/protocol/python -I third_party/nanopb/generator/proto "
         "third_party/nanopb/generator/proto/nanopb.proto",
         file=sys.stderr,
     )
@@ -150,118 +152,111 @@ def get_message_class(name):
     return cls
 
 
-# ---------------------------------------------------------------------------
-# CLI command definitions: (cli_name, request_type, response_type, arg_spec, description)
-# response_type is the expected response message name, or "AckResponse" for fire-and-forget.
-# arg_spec: list of (name, type_or_choices) e.g. ("address", int), ("pan_id", int), ("node_type", ["tag","anchor","hybrid"])
-# ---------------------------------------------------------------------------
-COMMANDS = [
-    # System
-    ("get-uuid", "SystemGetUuidRequest", "SystemGetUuidResponse", [], "Get device UUID words"),
-    ("get-info", "SystemGetInfoRequest", "SystemGetInfoResponse", [], "Get device info string"),
-    # Beacon
-    ("ping", "PingRequest", "PingResponse", [], "Ping (sequence)"),
-    ("beacon-ping", "BeaconPingRequest", "BeaconPingResponse", [], "Send UWB DATA beacon ping"),
-    # UWB node config
-    ("getconfig", "GetConfigRequest", "GetConfigResponse", [], "Get PAN ID and short address"),
-    ("setaddress", "SetAddressRequest", "SetAddressResponse", [("address", int), ("pan_id", int)], "Set address and PAN ID"),
-    ("uwb-node-get-type", "UwbNodeGetTypeRequest", "UwbNodeGetTypeResponse", [], "Get UWB node type"),
-    ("uwb-node-set-type", "UwbNodeSetTypeRequest", "AckResponse", [("node_type", list(NODE_TYPE_NAMES.keys()))], "Set UWB node type (tag|anchor|hybrid)"),
-    ("uwb-node-get-position", "UwbNodeGetPositionRequest", "UwbNodeGetPositionResponse", [], "Get UWB node position"),
-    ("uwb-node-set-position", "UwbNodeSetPositionRequest", "AckResponse", [("x", float), ("y", float), ("z", float)], "Set UWB node position"),
-    ("uwb-node-get-status", "UwbNodeGetStatusRequest", "UwbNodeGetStatusResponse", [], "Get UWB node status"),
-    # UWB
-    ("uwb-get-status", "UwbGetStatusRequest", "UwbGetStatusResponse", [], "Get UWB radio status"),
-    ("uwb-get-stats", "UwbGetStatsRequest", "UwbGetStatsResponse", [], "Get UWB TX/RX stats"),
-    ("uwb-start", "UwbStartRequest", "AckResponse", [], "Start UWB"),
-    ("uwb-stop", "UwbStopRequest", "AckResponse", [], "Stop UWB"),
-    ("uwb-reset-stats", "UwbResetStatsRequest", "AckResponse", [], "Reset UWB stats"),
-    # Error
-    ("error-clear", "ErrorClearRequest", "AckResponse", [], "Clear errors"),
-    # IMU
-    ("imu-get-status", "ImuGetStatusRequest", "ImuGetStatusResponse", [], "Get IMU status"),
-    ("imu-get-data", "ImuGetDataRequest", "ImuGetDataResponse", [], "Get IMU data sample"),
-    ("imu-stream-start", "ImuStreamStartRequest", "AckResponse", [("mode", int)], "Start IMU stream (mode 0=array 1=avg)"),
-    ("imu-stream-stop", "ImuStreamStopRequest", "AckResponse", [], "Stop IMU stream"),
-    # Datalogger
-    ("datalogger-get-tasks", "DataloggerGetTasksRequest", "DataloggerGetTasksResponse", [], "Get datalogger task names"),
-    ("datalogger-get-stats", "DataloggerGetStatsRequest", "DataloggerGetStatsResponse", [], "Get datalogger stats"),
-    # TWR
-    ("twr-get-status", "TwrGetStatusRequest", "TwrGetStatusResponse", [], "Get TWR status"),
-    ("twr-get-result", "TwrGetResultRequest", "TwrGetResultResponse", [], "Get last TWR result"),
-    ("twr-range", "TwrRangeRequest", "AckResponse", [("target_addr", int)], "Request range to target address"),
-    # TWR manager
-    ("twr-mgr-start", "TwrMgrStartRequest", "AckResponse", [], "Start TWR manager"),
-    ("twr-mgr-stop", "TwrMgrStopRequest", "AckResponse", [], "Stop TWR manager"),
-    ("twr-mgr-get-status", "TwrMgrGetStatusRequest", "TwrMgrGetStatusResponse", [], "Get TWR manager status"),
-    ("twr-mgr-add-target", "TwrMgrAddTargetRequest", "AckResponse", [("address", int)], "Add TWR target"),
-    ("twr-mgr-remove-target", "TwrMgrRemoveTargetRequest", "AckResponse", [("address", int)], "Remove TWR target"),
-    ("twr-mgr-set-targets", "TwrMgrSetTargetsRequest", "AckResponse", [("addresses", str)], "Set TWR targets (comma-separated addresses)"),
-    ("twr-mgr-clear-targets", "TwrMgrClearTargetsRequest", "AckResponse", [], "Clear TWR targets"),
-    ("twr-mgr-set-ranging-rate", "TwrMgrSetRangingRateRequest", "AckResponse", [("rate_hz", int)], "Set TWR ranging rate (Hz)"),
-    ("twr-mgr-get-ranging-rate", "TwrMgrGetRangingRateRequest", "TwrMgrGetRangingRateResponse", [], "Get TWR ranging rate"),
-    # Stopwatch
-    ("stopwatch-get", "StopwatchGetRequest", "StopwatchGetResponse", [], "Get stopwatch value"),
-    ("stopwatch-start", "StopwatchStartRequest", "AckResponse", [], "Start stopwatch"),
-    ("stopwatch-stop", "StopwatchStopRequest", "AckResponse", [], "Stop stopwatch"),
-    # OTA config
-    ("ota-send-address", "OtaConfigSendAddressRequest", "AckResponse", [("target_addr", int), ("new_address", int), ("pan_id", int)], "OTA set target address"),
-    ("ota-send-position", "OtaConfigSendPositionRequest", "AckResponse", [("target_addr", int), ("x", float), ("y", float), ("z", float)], "OTA set target position"),
-    ("ota-send-type", "OtaConfigSendTypeRequest", "AckResponse", [("target_addr", int), ("node_type", list(NODE_TYPE_NAMES.keys()))], "OTA set target type"),
-    ("ota-send-gpio", "OtaConfigSendGpioRequest", "AckResponse", [("target_addr", int), ("pin", int), ("state", int)], "OTA set GPIO"),
-    ("ota-set-token", "OtaConfigSetTokenRequest", "AckResponse", [("token", int)], "Set OTA auth token"),
-    ("ota-get-token", "OtaConfigGetTokenRequest", "OtaConfigGetTokenResponse", [], "Get OTA auth token"),
-    ("ota-get-stats", "OtaConfigGetStatsRequest", "OtaConfigGetStatsResponse", [], "Get OTA config stats"),
-    # Sensor fusion
-    ("sf-get-debug", "SensorFusionGetDebugRequest", "AckResponse", [], "Get sensor fusion debug (fire-and-forget ack)"),
-    ("sf-set-debug", "SensorFusionSetDebugRequest", "AckResponse", [("debug_flags", int)], "Set sensor fusion debug flags"),
-    ("sf-get-status", "SensorFusionGetStatusRequest", "SensorFusionGetStatusResponse", [], "Get sensor fusion status"),
-    ("sf-set-active", "SensorFusionSetActiveRequest", "AckResponse", [("active", int)], "Set sensor fusion active (0/1)"),
-    ("sf-get-imu-enabled", "SensorFusionGetImuEnabledRequest", "SensorFusionGetImuEnabledResponse", [], "Get IMU enabled in sensor fusion"),
-    ("sf-set-imu-enabled", "SensorFusionSetImuEnabledRequest", "AckResponse", [("imu_enabled", int)], "Set IMU enabled (0/1)"),
-    ("sf-set-noise", "SensorFusionSetNoiseRequest", "AckResponse", [("pos", float), ("vel", float), ("att", float)], "Set sensor fusion noise"),
-    ("sf-get-noise", "SensorFusionGetNoiseRequest", "SensorFusionGetNoiseResponse", [], "Get sensor fusion noise"),
-    ("sf-get-config", "SensorFusionGetConfigRequest", "AckResponse", [], "Get sensor fusion config (ack only)"),
-    ("sf-set-config", "SensorFusionSetConfigRequest", "AckResponse", [("config_hex", str)], "Set sensor fusion config (hex string)"),
-]
+def _get_response_type_for_request(request_message_name):
+    """Infer expected response: XxxResponse if exists, else AckResponse."""
+    if not request_message_name.endswith("Request"):
+        return "AckResponse"
+    base = request_message_name[:-7]  # strip "Request"
+    response_name = base + "Response"
+    if pb2.DESCRIPTOR.message_types_by_name.get(response_name) is not None:
+        return response_name
+    if response_name in protocol_ids.MSG_NAMES:
+        return response_name
+    return "AckResponse"
 
 
-def build_request(cli_name, args_list):
-    """Build a proto Request message from CLI command name and list of string args."""
-    for cmd in COMMANDS:
-        if cmd[0] != cli_name:
+def _field_descriptor_to_arg_spec(fd):
+    """Convert a FieldDescriptor to UI arg spec: {name, type, choices?}."""
+    out = {"name": fd.name, "type": "str"}
+    if fd.type == _descriptor.FieldDescriptor.TYPE_ENUM:
+        out["type"] = "choice"
+        if fd.enum_type.full_name.endswith("NodeType"):
+            out["choices"] = list(NODE_TYPE_NAMES.keys())
+        else:
+            out["choices"] = [v.name.split("_")[-1].lower() for v in fd.enum_type.values]
+        return out
+    if fd.type in (_descriptor.FieldDescriptor.TYPE_INT32, _descriptor.FieldDescriptor.TYPE_INT64,
+                   _descriptor.FieldDescriptor.TYPE_UINT32, _descriptor.FieldDescriptor.TYPE_UINT64,
+                   _descriptor.FieldDescriptor.TYPE_FIXED32, _descriptor.FieldDescriptor.TYPE_FIXED64,
+                   _descriptor.FieldDescriptor.TYPE_SFIXED32, _descriptor.FieldDescriptor.TYPE_SFIXED64):
+        out["type"] = "int"
+        return out
+    if fd.type in (_descriptor.FieldDescriptor.TYPE_FLOAT, _descriptor.FieldDescriptor.TYPE_DOUBLE):
+        out["type"] = "float"
+        return out
+    if fd.type == _descriptor.FieldDescriptor.TYPE_BOOL:
+        out["type"] = "bool"
+        return out
+    if fd.type == _descriptor.FieldDescriptor.TYPE_BYTES:
+        out["type"] = "str"  # hex input for bytes
+        return out
+    if fd.label == _descriptor.FieldDescriptor.LABEL_REPEATED and fd.name == "addresses":
+        out["type"] = "str"  # comma-separated
+        return out
+    out["type"] = "str"
+    return out
+
+
+def get_commands():
+    """Build command list from proto descriptor: all *Request messages with inferred response and args."""
+    msg_names = pb2.DESCRIPTOR.message_types_by_name
+    commands = []
+    for name in sorted(msg_names.keys()):
+        if not name.endswith("Request"):
             continue
-        _, req_type, _resp_type, arg_spec, _ = cmd
-        req_cls = get_message_class(req_type)
-        if req_cls is None:
-            raise ValueError("Unknown request type %s" % req_type)
-        req = req_cls()
-        for i, (arg_name, type_or_choices) in enumerate(arg_spec):
-            if i >= len(args_list):
-                raise ValueError("Missing argument: %s" % arg_name)
-            raw = args_list[i]
-            if isinstance(type_or_choices, list):
-                # enum-like: choices
-                raw_lower = raw.lower()
-                if raw_lower not in type_or_choices:
-                    raise ValueError("%s must be one of: %s" % (arg_name, ", ".join(type_or_choices)))
-                if arg_name == "node_type":
-                    req.node_type = NODE_TYPE_NAMES[raw_lower]
-                else:
-                    setattr(req, arg_name, raw)
-            elif type_or_choices == int:
-                setattr(req, arg_name, int(raw, 0))
-            elif type_or_choices == float:
-                setattr(req, arg_name, float(raw))
-            elif type_or_choices == str and arg_name == "addresses":
-                # Comma-separated list of integers
-                req.addresses.extend([int(x, 0) for x in raw.split(",") if x.strip()])
-            elif type_or_choices == str and arg_name == "config_hex":
-                req.config = bytes.fromhex(raw.replace(" ", ""))
+        desc = msg_names[name]
+        response_type = _get_response_type_for_request(name)
+        args = []
+        for fd in desc.fields:
+            args.append(_field_descriptor_to_arg_spec(fd))
+        commands.append({
+            "command": name,
+            "response_type": response_type,
+            "args": args,
+        })
+    return commands
+
+
+def build_request(message_name, args_list):
+    """Build a proto Request message from message type name and list of string args (in field order)."""
+    req_cls = get_message_class(message_name)
+    if req_cls is None:
+        raise ValueError("Unknown request type %s" % message_name)
+    req = req_cls()
+    desc = pb2.DESCRIPTOR.message_types_by_name.get(message_name)
+    if desc is None:
+        raise ValueError("No descriptor for %s" % message_name)
+    for i, fd in enumerate(desc.fields):
+        if i >= len(args_list):
+            raise ValueError("Missing argument: %s" % fd.name)
+        raw = args_list[i]
+        if fd.label == _descriptor.FieldDescriptor.LABEL_REPEATED and fd.name == "addresses":
+            req.addresses.extend([int(x, 0) for x in raw.split(",") if x.strip()])
+            continue
+        if fd.type == _descriptor.FieldDescriptor.TYPE_BYTES or fd.name == "config":
+            req.config = bytes.fromhex(raw.replace(" ", ""))
+            continue
+        if fd.type == _descriptor.FieldDescriptor.TYPE_ENUM:
+            raw_lower = raw.lower()
+            if fd.enum_type.full_name.endswith("NodeType") and raw_lower in NODE_TYPE_NAMES:
+                setattr(req, fd.name, NODE_TYPE_NAMES[raw_lower])
             else:
-                setattr(req, arg_name, raw)
-        return req
-    raise ValueError("Unknown command: %s" % cli_name)
+                setattr(req, fd.name, int(raw, 0))
+            continue
+        if fd.type in (_descriptor.FieldDescriptor.TYPE_INT32, _descriptor.FieldDescriptor.TYPE_INT64,
+                      _descriptor.FieldDescriptor.TYPE_UINT32, _descriptor.FieldDescriptor.TYPE_UINT64,
+                      _descriptor.FieldDescriptor.TYPE_FIXED32, _descriptor.FieldDescriptor.TYPE_FIXED64,
+                      _descriptor.FieldDescriptor.TYPE_SFIXED32, _descriptor.FieldDescriptor.TYPE_SFIXED64):
+            setattr(req, fd.name, int(raw, 0))
+            continue
+        if fd.type in (_descriptor.FieldDescriptor.TYPE_FLOAT, _descriptor.FieldDescriptor.TYPE_DOUBLE):
+            setattr(req, fd.name, float(raw))
+            continue
+        if fd.type == _descriptor.FieldDescriptor.TYPE_BOOL:
+            setattr(req, fd.name, raw.lower() in ("1", "true", "yes"))
+            continue
+        setattr(req, fd.name, raw)
+    return req
 
 
 def get_msg_id_for_type(type_name):
@@ -273,7 +268,7 @@ def get_msg_id_for_type(type_name):
 
 
 def format_response(msg_id, payload):
-    """Decode payload with pb2 and return a human-readable string."""
+    """Decode payload with pb2 and return a human-readable string. Uses LOG_EVENT_FORMAT_TABLE for event types."""
     if msg_id >= len(protocol_ids.MSG_NAMES):
         return "Unknown msg_id=%d (%d bytes)" % (msg_id, len(payload))
     name = protocol_ids.MSG_NAMES[msg_id]
@@ -285,6 +280,8 @@ def format_response(msg_id, payload):
         msg.ParseFromString(payload)
     except Exception:
         return "%s (parse error, %d bytes)" % (name, len(payload))
+    if name in LOG_EVENT_FORMAT_TABLE:
+        return format_log_event(name, msg)
     return format_message(name, msg)
 
 
@@ -342,20 +339,14 @@ def format_log_event(name, msg):
     return format_message(name, msg)
 
 
-def send_command(ser, cli_name, args_list, timeout_s=5.0):
-    """Send a request and wait for the expected response. Returns True on success."""
-    req = build_request(cli_name, args_list)
-    req_type = None
-    for cmd in COMMANDS:
-        if cmd[0] == cli_name:
-            req_type = cmd[1]
-            resp_type = cmd[2]
-            break
-    if req_type is None:
-        raise ValueError("Unknown command: %s" % cli_name)
-    msg_id_req = get_msg_id_for_type(req_type)
+def send_command(ser, message_name, args_list, timeout_s=5.0, event_list=None):
+    """Send a request and wait for the expected response. Returns True on success.
+    If event_list is provided, any interleaved messages (e.g. log events) are appended as formatted strings instead of printed to stderr."""
+    req = build_request(message_name, args_list)
+    resp_type = _get_response_type_for_request(message_name)
+    msg_id_req = get_msg_id_for_type(message_name)
     if msg_id_req is None:
-        raise ValueError("No msg_id for %s" % req_type)
+        raise ValueError("No msg_id for %s" % message_name)
     payload = req.SerializeToString()
     if len(payload) > PROTOCOL_MAX_PAYLOAD:
         raise ValueError("Payload too large: %d > %d" % (len(payload), PROTOCOL_MAX_PAYLOAD))
@@ -390,7 +381,11 @@ def send_command(ser, cli_name, args_list, timeout_s=5.0):
                     print(format_message(resp_name, resp))
                     return True
                 # Log unexpected response (e.g. log event interleaved)
-                print("[rx] %s" % format_response(msg_id, payload), file=sys.stderr)
+                line = "[rx] %s" % format_response(msg_id, payload)
+                if event_list is not None:
+                    event_list.append(line)
+                else:
+                    print(line, file=sys.stderr)
         time.sleep(0.01)
     print("Timeout waiting for %s" % resp_name, file=sys.stderr)
     return False
@@ -436,21 +431,13 @@ def _format_queued_message(msg_id, payload, use_format_table=True):
         return "[rx] %s (%d bytes)" % (name, len(payload))
 
 
-def send_command_interactive(ser, cli_name, args_list, serial_queue, timeout_s=5.0):
+def send_command_interactive(ser, message_name, args_list, serial_queue, timeout_s=5.0):
     """Send a request and wait for the expected response by reading from serial_queue. Prints any other messages (e.g. log events) as they arrive. Returns True on success."""
-    req = build_request(cli_name, args_list)
-    req_type = resp_type = None
-    for cmd in COMMANDS:
-        if cmd[0] == cli_name:
-            req_type = cmd[1]
-            resp_type = cmd[2]
-            break
-    if req_type is None:
-        print("Unknown command: %s" % cli_name, file=sys.stderr)
-        return False
-    msg_id_req = get_msg_id_for_type(req_type)
+    req = build_request(message_name, args_list)
+    resp_type = _get_response_type_for_request(message_name)
+    msg_id_req = get_msg_id_for_type(message_name)
     if msg_id_req is None:
-        print("No msg_id for %s" % req_type, file=sys.stderr)
+        print("No msg_id for %s" % message_name, file=sys.stderr)
         return False
     payload = req.SerializeToString()
     if len(payload) > PROTOCOL_MAX_PAYLOAD:
@@ -507,8 +494,9 @@ def interactive(ser, use_format_table=True):
     input_thread = threading.Thread(target=input_thread_fn, daemon=True)
     input_thread.start()
 
-    print("Interactive mode. Type a command (e.g. ping, getconfig) or: help | commands | quit")
-    cmd_names = [c[0] for c in COMMANDS]
+    print("Interactive mode. Type a command (e.g. PingRequest, SetAddressRequest) or: help | commands | quit")
+    commands = get_commands()
+    cmd_names = [c["command"] for c in commands]
     try:
         while True:
             # Drain serial queue and print (non-blocking)
@@ -536,24 +524,20 @@ def interactive(ser, use_format_table=True):
                 print_commands()
                 continue
             parts = line.split()
-            cmd = parts[0]
+            message_name = parts[0]
             args_list = parts[1:] if len(parts) > 1 else []
-            if cmd not in cmd_names:
-                print("Unknown command: %s (type 'commands' for list)" % cmd, file=sys.stderr)
+            if message_name not in cmd_names:
+                print("Unknown command: %s (type 'commands' for list)" % message_name, file=sys.stderr)
                 continue
-            cmd_spec = None
-            for c in COMMANDS:
-                if c[0] == cmd:
-                    cmd_spec = c
-                    break
+            cmd_spec = next((c for c in commands if c["command"] == message_name), None)
             if cmd_spec is None:
                 continue
-            _cli_name, _req, _resp, arg_spec, _ = cmd_spec
-            if len(args_list) < len(arg_spec):
-                print("Command %s requires %d argument(s): %s" % (cmd, len(arg_spec), [a[0] for a in arg_spec]), file=sys.stderr)
+            arg_count = len(cmd_spec["args"])
+            if len(args_list) < arg_count:
+                print("Command %s requires %d argument(s): %s" % (message_name, arg_count, [a["name"] for a in cmd_spec["args"]]), file=sys.stderr)
                 continue
             try:
-                send_command_interactive(ser, cmd, args_list, serial_queue, timeout_s=5.0)
+                send_command_interactive(ser, message_name, args_list, serial_queue, timeout_s=5.0)
             except ValueError as e:
                 print(str(e), file=sys.stderr)
     finally:
@@ -598,28 +582,29 @@ def listen(ser, use_format_table=True):
 
 
 def print_commands():
-    """Print documented command set (help)."""
-    print("Commands (use: send <command> [args...]):")
+    """Print command set from descriptor (help)."""
+    print("Commands (use: send <MessageName> [args...]):")
     print()
-    for cli_name, _req, _resp, arg_spec, description in COMMANDS:
-        args_str = " ".join("<%s>" % a[0] for a in arg_spec)
+    for cmd in get_commands():
+        name = cmd["command"]
+        args_str = " ".join("<%s>" % a["name"] for a in cmd["args"])
         if args_str:
-            print("  %s %s  - %s" % (cli_name, args_str, description))
+            print("  %s %s" % (name, args_str))
         else:
-            print("  %s  - %s" % (cli_name, description))
+            print("  %s" % name)
     print()
     print("Examples:")
-    print("  send ping")
-    print("  send getconfig")
-    print("  send setaddress 0x1234 0x5678")
-    print("  send uwb-node-set-type tag")
-    print("  send twr-mgr-set-targets 1,2,3")
-    print("  send ota-send-address 0 0x200 0x1234")
+    print("  send PingRequest")
+    print("  send GetConfigRequest")
+    print("  send SetAddressRequest 0x1234 0x5678")
+    print("  send UwbNodeSetTypeRequest tag")
+    print("  send TwrMgrSetTargetsRequest 1,2,3")
+    print("  send OtaConfigSendAddressRequest 0 0x200 0x1234")
 
 
 def main():
     ap = argparse.ArgumentParser(
-        description="UART protocol tool: send Request messages, listen for Response/log events (COBS+CRC16)."
+        description="Protocol tool: send Request messages, listen for Response/log events (COBS+CRC16)."
     )
     ap.add_argument("--port", required=True, help="Serial port (e.g. COM10, /dev/ttyUSB0)")
     ap.add_argument("--baud", type=int, default=115200, help="Baud rate")
@@ -628,11 +613,12 @@ def main():
     sub.add_parser("listen", help="Listen and print received frames (responses and log events)")
     sub.add_parser("commands", help="List all send commands and their arguments")
     send_parser = sub.add_parser("send", help="Send a message (request); wait for response")
+    command_choices = [c["command"] for c in get_commands()]
     send_parser.add_argument(
         "msg",
-        choices=[c[0] for c in COMMANDS],
-        metavar="command",
-        help="Command name (e.g. ping, getconfig, setaddress)",
+        choices=command_choices,
+        metavar="MessageName",
+        help="Request message name (e.g. PingRequest, SetAddressRequest)",
     )
     send_parser.add_argument("args", nargs="*", help="Arguments for the command (see: commands)")
     args = ap.parse_args()
@@ -648,18 +634,14 @@ def main():
         elif args.cmd == "listen":
             listen(ser)
         elif args.cmd == "send":
-            cmd_spec = None
-            for c in COMMANDS:
-                if c[0] == args.msg:
-                    cmd_spec = c
-                    break
+            cmd_spec = next((c for c in get_commands() if c["command"] == args.msg), None)
             if cmd_spec is None:
                 print("Unknown command: %s" % args.msg, file=sys.stderr)
                 sys.exit(1)
-            _cli_name, _req, _resp, arg_spec, _ = cmd_spec
-            if len(args.args) < len(arg_spec):
-                print("Command %s requires %d argument(s): %s" % (args.msg, len(arg_spec), [a[0] for a in arg_spec]), file=sys.stderr)
-                print("Run: uart_protocol_tool.py --port <PORT> commands", file=sys.stderr)
+            arg_count = len(cmd_spec["args"])
+            if len(args.args) < arg_count:
+                print("Command %s requires %d argument(s): %s" % (args.msg, arg_count, [a["name"] for a in cmd_spec["args"]]), file=sys.stderr)
+                print("Run: protocol_tool.py --port <PORT> commands", file=sys.stderr)
                 sys.exit(1)
             try:
                 ok = send_command(ser, args.msg, args.args)

@@ -12,7 +12,7 @@
 #include "common.h"
 #include "feature_config.h"
 #include "protocol_tx.h"
-#include "uart_protocol.pb.h"
+#include "protocol.pb.h"
 #include "timer_driver.h"
 #include "stopwatch.h"
 #include "task.h"

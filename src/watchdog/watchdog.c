@@ -6,7 +6,7 @@
 #include "feature_config.h"
 #include "protocol_tx.h"
 #include "system_halt.h"
-#include "uart_protocol.pb.h"
+#include "protocol.pb.h"
 #include "module.h"
 #include "watchdog_driver.h"
 #include "task.h"

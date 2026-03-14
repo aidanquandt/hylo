@@ -9,7 +9,7 @@
 #include "FreeRTOS.h"
 #include "protocol_tx.h"
 #include "stopwatch.h"
-#include "uart_protocol.pb.h"
+#include "protocol.pb.h"
 #include "task.h"
 #include "uwb.h"
 #include "uwb_node.h"

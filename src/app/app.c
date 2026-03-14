@@ -9,7 +9,7 @@
 #include "feature_config.h"
 #include "protocol_tx.h"
 #include "system_halt.h"
-#include "uart_protocol.pb.h"
+#include "protocol.pb.h"
 #include "module.h"
 #include "gpio_driver.h"
 #include "os_driver.h"

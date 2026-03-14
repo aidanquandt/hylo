@@ -1,8 +1,8 @@
-/* Auto-generated from uart_protocol.proto by protocol/codegen_protocol.py */
+/* Auto-generated from protocol.proto by tools/protocol_codegen/codegen_protocol.py */
 #ifndef PROTOCOL_TX_H
 #define PROTOCOL_TX_H
 #include "protocol_ids.h"
-#include "uart_protocol.pb.h"
+#include "protocol.pb.h"
 
 void protocol_tx_AckResponse(const AckResponse *msg);
 void protocol_tx_SystemGetUuidRequest(const SystemGetUuidRequest *msg);

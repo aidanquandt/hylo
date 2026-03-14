@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Codegen: read uart_protocol.proto and emit protocol_ids.h, protocol_dispatch.c/h,
+Codegen: read protocol.proto and emit protocol_ids.h, protocol_dispatch.c/h,
 protocol_tx.c/h (C), and protocol_ids.py (Python). Message IDs follow .proto definition order.
 """
 from __future__ import print_function
@@ -9,9 +9,13 @@ import re
 import sys
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, ".."))
-PROTO_PATH = os.path.join(SCRIPT_DIR, "uart_protocol.proto")
-OUTPUT_DIR = os.path.join(REPO_ROOT, "generated", "protocol")
+REPO_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, "..", ".."))
+PROTO_PATH = os.path.join(REPO_ROOT, "protocol", "protocol.proto")
+OUTPUT_DIR_C = os.path.join(REPO_ROOT, "generated", "protocol", "c")
+OUTPUT_DIR_PY = os.path.join(REPO_ROOT, "generated", "protocol", "python")
+
+CODEGEN_ATTRIBUTION = "/* Auto-generated from protocol.proto by tools/protocol_codegen/codegen_protocol.py */"
+CODEGEN_ATTRIBUTION_PY = "# Auto-generated from protocol.proto by tools/protocol_codegen/codegen_protocol.py"
 
 
 def parse_message_names(proto_path):
@@ -25,7 +29,7 @@ def parse_message_names(proto_path):
 
 def emit_protocol_ids_h(messages, out_path):
     lines = [
-        "/* Auto-generated from uart_protocol.proto by protocol/codegen_protocol.py */",
+        CODEGEN_ATTRIBUTION,
         "#ifndef PROTOCOL_IDS_H",
         "#define PROTOCOL_IDS_H",
         "#include <stdint.h>",
@@ -44,13 +48,13 @@ def emit_protocol_ids_h(messages, out_path):
 
 def emit_protocol_dispatch_h(messages, out_path):
     lines = [
-        "/* Auto-generated from uart_protocol.proto by protocol/codegen_protocol.py */",
+        CODEGEN_ATTRIBUTION,
         "#ifndef PROTOCOL_DISPATCH_H",
         "#define PROTOCOL_DISPATCH_H",
         "#include <stddef.h>",
         "#include <stdint.h>",
         "#include \"protocol_ids.h\"",
-        "#include \"uart_protocol.pb.h\"",
+        "#include \"protocol.pb.h\"",
         "",
         "void protocol_dispatch(uint16_t msg_id, const uint8_t *payload, size_t len);",
         "",
@@ -65,9 +69,9 @@ def emit_protocol_dispatch_h(messages, out_path):
 
 def emit_protocol_dispatch_c(messages, out_path):
     lines = [
-        "/* Auto-generated from uart_protocol.proto by protocol/codegen_protocol.py */",
+        CODEGEN_ATTRIBUTION,
         "#include \"protocol_dispatch.h\"",
-        "#include \"uart_protocol.pb.h\"",
+        "#include \"protocol.pb.h\"",
         "#include \"protocol_ids.h\"",
         "#include <pb_decode.h>",
         "#include <stddef.h>",
@@ -97,11 +101,11 @@ def emit_protocol_dispatch_c(messages, out_path):
 
 def emit_protocol_tx_h(messages, out_path):
     lines = [
-        "/* Auto-generated from uart_protocol.proto by protocol/codegen_protocol.py */",
+        CODEGEN_ATTRIBUTION,
         "#ifndef PROTOCOL_TX_H",
         "#define PROTOCOL_TX_H",
         "#include \"protocol_ids.h\"",
-        "#include \"uart_protocol.pb.h\"",
+        "#include \"protocol.pb.h\"",
         "",
     ]
     for name in messages:
@@ -114,15 +118,15 @@ def emit_protocol_tx_h(messages, out_path):
 
 def emit_protocol_tx_c(messages, out_path):
     lines = [
-        "/* Auto-generated from uart_protocol.proto by protocol/codegen_protocol.py */",
+        CODEGEN_ATTRIBUTION,
         "#include \"protocol_tx.h\"",
-        "#include \"uart_protocol.pb.h\"",
+        "#include \"protocol.pb.h\"",
         "#include \"uart_framing.h\"",
         "#include \"protocol_ids.h\"",
         "#include <pb_encode.h>",
         "#include <stddef.h>",
         "",
-        "/* Single encode buffer; size must fit largest message (see UART_PROTOCOL_PB_H_MAX_SIZE). */",
+        "/* Single encode buffer; size must fit largest message (see PROTOCOL_PB_H_MAX_SIZE). */",
         "#define PROTOCOL_TX_BUF_SIZE 110",
         "static uint8_t s_tx_buf[PROTOCOL_TX_BUF_SIZE];",
         "",
@@ -142,7 +146,7 @@ def emit_protocol_tx_c(messages, out_path):
 
 def emit_protocol_ids_py(messages, out_path):
     lines = [
-        "# Auto-generated from uart_protocol.proto by protocol/codegen_protocol.py",
+        CODEGEN_ATTRIBUTION_PY,
         "",
     ]
     for i, name in enumerate(messages):
@@ -162,18 +166,19 @@ def main():
     if not os.path.isfile(PROTO_PATH):
         sys.stderr.write("Proto file not found: %s\n" % PROTO_PATH)
         sys.exit(1)
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_DIR_C, exist_ok=True)
+    os.makedirs(OUTPUT_DIR_PY, exist_ok=True)
     messages = parse_message_names(PROTO_PATH)
     if not messages:
         sys.stderr.write("No messages found in %s\n" % PROTO_PATH)
         sys.exit(1)
-    emit_protocol_ids_h(messages, os.path.join(OUTPUT_DIR, "protocol_ids.h"))
-    emit_protocol_dispatch_h(messages, os.path.join(OUTPUT_DIR, "protocol_dispatch.h"))
-    emit_protocol_dispatch_c(messages, os.path.join(OUTPUT_DIR, "protocol_dispatch.c"))
-    emit_protocol_tx_h(messages, os.path.join(OUTPUT_DIR, "protocol_tx.h"))
-    emit_protocol_tx_c(messages, os.path.join(OUTPUT_DIR, "protocol_tx.c"))
-    emit_protocol_ids_py(messages, os.path.join(OUTPUT_DIR, "protocol_ids.py"))
-    print("Generated protocol_ids.h, protocol_dispatch.h/c, protocol_tx.h/c, protocol_ids.py in", OUTPUT_DIR)
+    emit_protocol_ids_h(messages, os.path.join(OUTPUT_DIR_C, "protocol_ids.h"))
+    emit_protocol_dispatch_h(messages, os.path.join(OUTPUT_DIR_C, "protocol_dispatch.h"))
+    emit_protocol_dispatch_c(messages, os.path.join(OUTPUT_DIR_C, "protocol_dispatch.c"))
+    emit_protocol_tx_h(messages, os.path.join(OUTPUT_DIR_C, "protocol_tx.h"))
+    emit_protocol_tx_c(messages, os.path.join(OUTPUT_DIR_C, "protocol_tx.c"))
+    emit_protocol_ids_py(messages, os.path.join(OUTPUT_DIR_PY, "protocol_ids.py"))
+    print("Generated C in", OUTPUT_DIR_C, "and Python in", OUTPUT_DIR_PY)
 
 
 if __name__ == "__main__":

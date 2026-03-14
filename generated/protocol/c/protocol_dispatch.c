@@ -1,6 +1,6 @@
-/* Auto-generated from uart_protocol.proto by protocol/codegen_protocol.py */
+/* Auto-generated from protocol.proto by tools/protocol_codegen/codegen_protocol.py */
 #include "protocol_dispatch.h"
-#include "uart_protocol.pb.h"
+#include "protocol.pb.h"
 #include "protocol_ids.h"
 #include <pb_decode.h>
 #include <stddef.h>

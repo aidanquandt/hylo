@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "nanopb.proto";
+import "host_options.proto";
 
 // =============================================================================
 // Enums
@@ -25,14 +26,18 @@ message AckResponse {
 // System
 // =============================================================================
 
-message SystemGetUuidRequest {}
+message SystemGetUuidRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_SYSTEM;
+}
 message SystemGetUuidResponse {
   uint32 uuid_word0 = 1;
   uint32 uuid_word1 = 2;
   uint32 uuid_word2 = 3;
 }
 
-message SystemGetInfoRequest {}
+message SystemGetInfoRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_SYSTEM;
+}
 message SystemGetInfoResponse {
   string info = 1 [(nanopb).max_length = 64];
 }
@@ -41,7 +46,9 @@ message SystemGetInfoResponse {
 // Beacon (Ping)
 // =============================================================================
 
-message PingRequest {}
+message PingRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_BEACON;
+}
 message PingResponse {
   uint32 seq = 1;
 }
@@ -51,6 +58,7 @@ message PingResponse {
 // =============================================================================
 
 message SetAddressRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_UWB_NODE_CONFIG;
   uint32 address = 1;
   uint32 pan_id = 2;
 }
@@ -58,7 +66,9 @@ message SetAddressResponse {
   bool success = 1;
 }
 
-message GetConfigRequest {}
+message GetConfigRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_UWB_NODE_CONFIG;
+}
 message GetConfigResponse {
   uint32 pan_id = 1;
   uint32 short_addr = 2;
@@ -68,14 +78,18 @@ message GetConfigResponse {
 // IMU
 // =============================================================================
 
-message ImuGetStatusRequest {}
+message ImuGetStatusRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_IMU;
+}
 message ImuGetStatusResponse {
   bool active = 1;
   uint32 fault_code = 2;
   uint32 state = 3;
 }
 
-message ImuGetDataRequest {}
+message ImuGetDataRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_IMU;
+}
 message ImuGetDataResponse {
   float accel_x = 1;
   float accel_y = 2;
@@ -87,9 +101,12 @@ message ImuGetDataResponse {
 }
 
 message ImuStreamStartRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_IMU;
   uint32 mode = 1;  // 0 = array, 1 = avg
 }
-message ImuStreamStopRequest {}
+message ImuStreamStopRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_IMU;
+}
 message ImuStreamPayload {
   float accel_x = 1;
   float accel_y = 2;
@@ -106,19 +123,25 @@ message ImuStreamPayload {
 // =============================================================================
 
 message UwbNodeSetTypeRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_UWB_NODE;
   NodeType node_type = 1;
 }
-message UwbNodeGetTypeRequest {}
+message UwbNodeGetTypeRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_UWB_NODE;
+}
 message UwbNodeGetTypeResponse {
   NodeType node_type = 1;
 }
 
 message UwbNodeSetPositionRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_UWB_NODE;
   float x = 1;
   float y = 2;
   float z = 3;
 }
-message UwbNodeGetPositionRequest {}
+message UwbNodeGetPositionRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_UWB_NODE;
+}
 message UwbNodeGetPositionResponse {
   float x = 1;
   float y = 2;
@@ -126,7 +149,9 @@ message UwbNodeGetPositionResponse {
   bool position_known = 4;
 }
 
-message UwbNodeGetStatusRequest {}
+message UwbNodeGetStatusRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_UWB_NODE;
+}
 message UwbNodeGetStatusResponse {
   NodeType node_type = 1;
   float pos_x = 2;
@@ -141,39 +166,55 @@ message UwbNodeGetStatusResponse {
 // UWB (radio status, stats, start/stop)
 // =============================================================================
 
-message UwbGetStatusRequest {}
+message UwbGetStatusRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_UWB;
+}
 message UwbGetStatusResponse {
   bool initialized = 1;
   uint32 fault_code = 2;
 }
 
-message UwbGetStatsRequest {}
+message UwbGetStatsRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_UWB;
+}
 message UwbGetStatsResponse {
   uint32 tx_ok = 1;
   uint32 tx_fail = 2;
   uint32 rx_ok = 3;
 }
 
-message UwbStartRequest {}
-message UwbStopRequest {}
-message UwbResetStatsRequest {}
+message UwbStartRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_UWB;
+}
+message UwbStopRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_UWB;
+}
+message UwbResetStatsRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_UWB;
+}
 
 // =============================================================================
 // Error (clear only; no history)
 // =============================================================================
 
-message ErrorClearRequest {}
+message ErrorClearRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_ERROR;
+}
 
 // =============================================================================
 // Datalogger
 // =============================================================================
 
-message DataloggerGetTasksRequest {}
+message DataloggerGetTasksRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_DATALOGGER;
+}
 message DataloggerGetTasksResponse {
   repeated string task_names = 1 [(nanopb).max_count = 16, (nanopb).max_length = 32];
 }
 
-message DataloggerGetStatsRequest {}
+message DataloggerGetStatsRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_DATALOGGER;
+}
 message DataloggerGetStatsResponse {
   uint32 task_count = 1;
   uint32 free_heap = 2;
@@ -183,7 +224,9 @@ message DataloggerGetStatsResponse {
 // TWR
 // =============================================================================
 
-message TwrGetStatusRequest {}
+message TwrGetStatusRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_TWR;
+}
 message TwrGetStatusResponse {
   uint32 state = 1;
   uint32 role = 2;
@@ -191,7 +234,9 @@ message TwrGetStatusResponse {
   bool responder_running = 4;
 }
 
-message TwrGetResultRequest {}
+message TwrGetResultRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_TWR;
+}
 message TwrGetResultResponse {
   float distance_m = 1;
   uint32 responder_addr = 2;
@@ -199,6 +244,7 @@ message TwrGetResultResponse {
 }
 
 message TwrRangeRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_TWR;
   uint32 target_addr = 1;
 }
 
@@ -206,9 +252,15 @@ message TwrRangeRequest {
 // TWR manager
 // =============================================================================
 
-message TwrMgrStartRequest {}
-message TwrMgrStopRequest {}
-message TwrMgrGetStatusRequest {}
+message TwrMgrStartRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_TWR_MGR;
+}
+message TwrMgrStopRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_TWR_MGR;
+}
+message TwrMgrGetStatusRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_TWR_MGR;
+}
 message TwrMgrGetStatusResponse {
   uint32 state = 1;
   uint32 target_count = 2;
@@ -216,19 +268,27 @@ message TwrMgrGetStatusResponse {
 }
 
 message TwrMgrAddTargetRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_TWR_MGR;
   uint32 address = 1;
 }
 message TwrMgrRemoveTargetRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_TWR_MGR;
   uint32 address = 1;
 }
 message TwrMgrSetTargetsRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_TWR_MGR;
   repeated uint32 addresses = 1 [(nanopb).max_count = 16];
 }
-message TwrMgrClearTargetsRequest {}
+message TwrMgrClearTargetsRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_TWR_MGR;
+}
 message TwrMgrSetRangingRateRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_TWR_MGR;
   uint32 rate_hz = 1;
 }
-message TwrMgrGetRangingRateRequest {}
+message TwrMgrGetRangingRateRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_TWR_MGR;
+}
 message TwrMgrGetRangingRateResponse {
   uint32 rate_hz = 1;
 }
@@ -237,46 +297,61 @@ message TwrMgrGetRangingRateResponse {
 // Stopwatch
 // =============================================================================
 
-message StopwatchGetRequest {}
+message StopwatchGetRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_STOPWATCH;
+}
 message StopwatchGetResponse {
   uint32 elapsed_ms = 1;
   bool running = 2;
 }
-message StopwatchStartRequest {}
-message StopwatchStopRequest {}
+message StopwatchStartRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_STOPWATCH;
+}
+message StopwatchStopRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_STOPWATCH;
+}
 
 // =============================================================================
 // OTA config
 // =============================================================================
 
 message OtaConfigSendAddressRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_OTA_CONFIG;
   uint32 target_addr = 1;
   uint32 new_address = 2;
   uint32 pan_id = 3;
 }
 message OtaConfigSendPositionRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_OTA_CONFIG;
   uint32 target_addr = 1;
   float x = 2;
   float y = 3;
   float z = 4;
 }
 message OtaConfigSendTypeRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_OTA_CONFIG;
   uint32 target_addr = 1;
   NodeType node_type = 2;
 }
 message OtaConfigSendGpioRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_OTA_CONFIG;
   uint32 target_addr = 1;
   uint32 pin = 2;
   uint32 state = 3;
 }
 message OtaConfigSetTokenRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_OTA_CONFIG;
   uint32 token = 1;
 }
-message OtaConfigGetTokenRequest {}
+message OtaConfigGetTokenRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_OTA_CONFIG;
+}
 message OtaConfigGetTokenResponse {
   uint32 token = 1;
 }
-message OtaConfigGetStatsRequest {}
+message OtaConfigGetStatsRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_OTA_CONFIG;
+}
 message OtaConfigGetStatsResponse {
   uint32 requests_sent = 1;
   uint32 responses_received = 2;
@@ -286,11 +361,16 @@ message OtaConfigGetStatsResponse {
 // Sensor fusion
 // =============================================================================
 
-message SensorFusionGetDebugRequest {}
+message SensorFusionGetDebugRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_SENSOR_FUSION;
+}
 message SensorFusionSetDebugRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_SENSOR_FUSION;
   uint32 debug_flags = 1;
 }
-message SensorFusionGetStatusRequest {}
+message SensorFusionGetStatusRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_SENSOR_FUSION;
+}
 message SensorFusionGetStatusResponse {
   bool active = 1;
   float pos_x = 2;
@@ -299,28 +379,38 @@ message SensorFusionGetStatusResponse {
   float confidence = 5;
 }
 message SensorFusionSetActiveRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_SENSOR_FUSION;
   bool active = 1;
 }
-message SensorFusionGetImuEnabledRequest {}
+message SensorFusionGetImuEnabledRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_SENSOR_FUSION;
+}
 message SensorFusionGetImuEnabledResponse {
   bool imu_enabled = 1;
 }
 message SensorFusionSetImuEnabledRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_SENSOR_FUSION;
   bool imu_enabled = 1;
 }
 message SensorFusionSetNoiseRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_SENSOR_FUSION;
   float pos = 1;
   float vel = 2;
   float att = 3;
 }
-message SensorFusionGetNoiseRequest {}
+message SensorFusionGetNoiseRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_SENSOR_FUSION;
+}
 message SensorFusionGetNoiseResponse {
   float pos = 1;
   float vel = 2;
   float att = 3;
 }
-message SensorFusionGetConfigRequest {}
+message SensorFusionGetConfigRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_SENSOR_FUSION;
+}
 message SensorFusionSetConfigRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_SENSOR_FUSION;
   bytes config = 1 [(nanopb).max_length = 32];
 }
 
@@ -328,7 +418,9 @@ message SensorFusionSetConfigRequest {
 // Beacon (DATA beacon ping for UWB)
 // =============================================================================
 
-message BeaconPingRequest {}
+message BeaconPingRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_BEACON;
+}
 message BeaconPingResponse {
   bool success = 1;
 }

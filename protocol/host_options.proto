@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package host;
+
+import "google/protobuf/descriptor.proto";
+
+// Canonical list of UI modules; value order = display order in the web app.
+enum HostUiModule {
+  HOST_UI_MODULE_UNSPECIFIED = 0;
+  HOST_UI_MODULE_COMMON = 1;
+  HOST_UI_MODULE_SYSTEM = 2;
+  HOST_UI_MODULE_BEACON = 3;
+  HOST_UI_MODULE_UWB_NODE_CONFIG = 4;
+  HOST_UI_MODULE_IMU = 5;
+  HOST_UI_MODULE_UWB_NODE = 6;
+  HOST_UI_MODULE_UWB = 7;
+  HOST_UI_MODULE_ERROR = 8;
+  HOST_UI_MODULE_DATALOGGER = 9;
+  HOST_UI_MODULE_TWR = 10;
+  HOST_UI_MODULE_TWR_MGR = 11;
+  HOST_UI_MODULE_STOPWATCH = 12;
+  HOST_UI_MODULE_OTA_CONFIG = 13;
+  HOST_UI_MODULE_SENSOR_FUSION = 14;
+}
+
+extend google.protobuf.MessageOptions {
+  optional HostUiModule host_ui_module = 50000;
+}

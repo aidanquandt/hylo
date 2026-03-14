@@ -9,7 +9,7 @@
 #include "common.h"
 #include "feature_config.h"
 #include "protocol_tx.h"
-#include "uart_protocol.pb.h"
+#include "protocol.pb.h"
 #include "module.h"
 #include "sensor_fusion.h"
 #include "state_machine.h"
