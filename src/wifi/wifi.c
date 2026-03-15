@@ -996,4 +996,3 @@ bool wifi_telemetry_is_ready(void)
 }
 
 
-
