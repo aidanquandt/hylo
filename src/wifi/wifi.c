@@ -220,6 +220,7 @@ STATIC uint16_t wifi_transition_logic(uint16_t currentState, uint32_t stateTimer
 
     /* Track state for first-entry / change detection when FEATURE_WIFI_PRINT_STATE is used */
     if (FEATURE_WIFI_PRINT_STATE && (currentState != last_printed_state)) {
+        
         last_printed_state = currentState;
     }
 
