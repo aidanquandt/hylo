@@ -40,6 +40,14 @@ _serial_lock = threading.Lock()
 _sse_queues: list[queue.Queue] = []
 _sse_queues_lock = threading.Lock()
 
+# --- Indoor visualization state ---
+_viz_lock = threading.Lock()
+_viz_position = {"x": 0.0, "y": 0.0, "z": 0.0, "timestamp_ms": 0}
+_viz_ranges: dict = {}  # addr (int) -> {"distance_m": float, "addr": int}
+_viz_anchors: dict = {}  # addr (str) -> {"x": float, "y": float, "z": float, "label": str}
+_VIZ_TRAIL_MAX = 200
+_viz_trail: list = []  # recent positions for trail rendering
+
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -82,6 +90,42 @@ class MonitorStartRequest(BaseModel):
     port: str
 
 
+def _try_extract_viz_data(msg_id, payload) -> dict | None:
+    """If this message is a TwrMgrRangeEvent, extract position/ranging data for visualization and return a viz event dict."""
+    global _viz_position, _viz_trail
+    if _protocol_tool is None:
+        return None
+    try:
+        from generated.protocol.python import protocol_ids
+        name = protocol_ids.MSG_NAMES[msg_id] if msg_id < len(protocol_ids.MSG_NAMES) else None
+        if name != "TwrMgrRangeEvent":
+            return None
+        cls = _protocol_tool.get_message_class(name)
+        if cls is None:
+            return None
+        msg = cls()
+        msg.ParseFromString(payload)
+        addr = getattr(msg, "addr", 0)
+        distance_m = getattr(msg, "distance_m", 0.0)
+        x = getattr(msg, "x", 0.0)
+        y = getattr(msg, "y", 0.0)
+        z = getattr(msg, "z", 0.0)
+        pos_unknown = getattr(msg, "position_unknown", True)
+        with _viz_lock:
+            _viz_ranges[addr] = {"distance_m": float(distance_m), "addr": addr}
+            if not pos_unknown:
+                _viz_position = {"x": float(x), "y": float(y), "z": float(z), "timestamp_ms": int(time.time() * 1000)}
+                _viz_trail = (_viz_trail + [{"x": float(x), "y": float(y)}])[-_VIZ_TRAIL_MAX:]
+        return {
+            "type": "viz",
+            "x": float(x), "y": float(y), "z": float(z),
+            "position_unknown": bool(pos_unknown),
+            "addr": addr, "distance_m": float(distance_m),
+        }
+    except Exception:
+        return None
+
+
 def _monitor_reader_loop(ser, stop_event: threading.Event) -> None:
     """Background thread: read COBS frames from serial, append to _event_log; if frame matches _pending_expected_id, put in _response_queue."""
     global _event_log
@@ -100,10 +144,11 @@ def _monitor_reader_loop(ser, stop_event: threading.Event) -> None:
                     line = "[rx] %s" % _protocol_tool.format_response(msg_id, payload)
                     with _event_log_lock:
                         _event_log = (_event_log + [line])[-EVENT_LOG_MAX:]
+                    viz_event = _try_extract_viz_data(msg_id, payload)
                     with _sse_queues_lock:
                         for q in _sse_queues:
                             try:
-                                q.put(line, block=False)
+                                q.put({"line": line, "viz": viz_event}, block=False)
                             except queue.Full:
                                 pass
                     with _serial_lock:
@@ -249,18 +294,24 @@ def api_get_events() -> dict:
 
 
 def _event_stream_generator():
-    """Yield SSE events for each new log line. Reader thread pushes to our queue (thread-safe stdlib queue)."""
+    """Yield SSE events for each new log line and viz position updates."""
     event_queue: queue.Queue = queue.Queue()
     with _sse_queues_lock:
         _sse_queues.append(event_queue)
     try:
         while True:
             try:
-                line = event_queue.get(timeout=30)
+                item = event_queue.get(timeout=30)
             except queue.Empty:
                 yield ": keepalive\n\n"
                 continue
-            yield f"data: {json.dumps({'line': line})}\n\n"
+            if isinstance(item, dict):
+                yield f"data: {json.dumps({'line': item.get('line', '')})}\n\n"
+                viz = item.get("viz")
+                if viz:
+                    yield f"event: viz\ndata: {json.dumps(viz)}\n\n"
+            else:
+                yield f"data: {json.dumps({'line': item})}\n\n"
     finally:
         with _sse_queues_lock:
             if event_queue in _sse_queues:
@@ -355,6 +406,42 @@ def run_command(req: CommandRequest) -> dict:
         raise HTTPException(status_code=503, detail="pyserial not installed")
     success, response, new_events = _run_send_command(req.port, req.command, req.args)
     return {"success": success, "response": response, "events": new_events}
+
+
+@app.get("/api/viz/state")
+def api_viz_state() -> dict:
+    """Return current visualization state: tag position, ranges, anchors, and trail."""
+    with _viz_lock:
+        return {
+            "position": dict(_viz_position),
+            "ranges": {str(k): v for k, v in _viz_ranges.items()},
+            "anchors": dict(_viz_anchors),
+            "trail": list(_viz_trail),
+        }
+
+
+class AnchorConfig(BaseModel):
+    anchors: dict  # addr (str) -> {"x": float, "y": float, "z": float, "label": str}
+
+
+@app.post("/api/viz/anchors")
+def api_viz_set_anchors(req: AnchorConfig) -> dict:
+    """Set anchor positions for visualization overlay."""
+    global _viz_anchors
+    with _viz_lock:
+        _viz_anchors = {str(k): v for k, v in req.anchors.items()}
+    return {"ok": True, "count": len(_viz_anchors)}
+
+
+@app.post("/api/viz/clear")
+def api_viz_clear() -> dict:
+    """Clear visualization trail and ranges."""
+    global _viz_trail, _viz_ranges, _viz_position
+    with _viz_lock:
+        _viz_trail = []
+        _viz_ranges = {}
+        _viz_position = {"x": 0.0, "y": 0.0, "z": 0.0, "timestamp_ms": 0}
+    return {"ok": True}
 
 
 @app.get("/")

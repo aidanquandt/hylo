@@ -188,6 +188,7 @@
       min-height: 0;
       overflow-y: auto;
       overflow-x: hidden;
+      transition: flex-basis 0.2s ease;
     }
     .panel-events {
       flex: 1 1 50%;
@@ -198,7 +199,11 @@
       overflow: hidden;
       border-left: 1px solid var(--surface2);
       background: var(--bg);
+      transition: flex-basis 0.2s ease;
     }
+    /* When viz tab is active, give most space to the right panel */
+    .app-main.viz-active .panel-commands { flex: 0 0 22rem; min-width: 16rem; }
+    .app-main.viz-active .panel-events { flex: 1 1 auto; }
     .event-log-header {
       flex-shrink: 0;
       display: flex; align-items: center; justify-content: space-between;
@@ -246,6 +251,81 @@
     }
     .event-log-line .event-prefix { color: var(--accent); }
     .event-log-empty { color: var(--muted); font-style: italic; padding: 0.5rem 0; }
+
+    /* --- Tab bar for right panel --- */
+    .tab-bar {
+      display: flex;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-bottom: 1px solid var(--surface2);
+    }
+    .tab-bar button {
+      padding: 0.4rem 1rem;
+      font: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--muted);
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+    }
+    .tab-bar button:hover { color: var(--text); }
+    .tab-bar button.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-content { display: none; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; }
+    .tab-content.active { display: flex; }
+
+    /* --- Visualization panel --- */
+    .viz-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
+    .viz-canvas-wrap { flex: 1; min-height: 0; position: relative; background: #0d1117; }
+    .viz-canvas-wrap canvas { display: block; width: 100%; height: 100%; }
+    .viz-toolbar {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.3rem 0.5rem;
+      background: var(--surface);
+      border-top: 1px solid var(--surface2);
+      font-size: 0.78rem;
+      flex-wrap: wrap;
+    }
+    .viz-toolbar button {
+      padding: 0.15rem 0.4rem;
+      border-radius: 3px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: var(--surface2);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.75rem;
+    }
+    .viz-toolbar button:hover { filter: brightness(1.1); }
+    .viz-toolbar .viz-status { color: var(--muted); margin-left: auto; }
+    .anchor-config {
+      flex-shrink: 0;
+      max-height: 9rem;
+      overflow-y: auto;
+      padding: 0.3rem 0.5rem;
+      background: var(--surface);
+      border-top: 1px solid var(--surface2);
+      font-size: 0.75rem;
+    }
+    .anchor-config table { width: 100%; border-collapse: collapse; }
+    .anchor-config th { text-align: left; color: var(--muted); padding: 0.15rem 0.3rem; font-weight: 500; }
+    .anchor-config td { padding: 0.1rem 0.3rem; }
+    .anchor-config input {
+      width: 4.5rem; padding: 0.1rem 0.25rem; border-radius: 3px;
+      border: 1px solid rgba(255,255,255,0.1); background: var(--bg); color: var(--text); font-size: 0.75rem;
+    }
+    .anchor-config .btn-add, .anchor-config .btn-del, .anchor-config .btn-apply {
+      padding: 0.1rem 0.3rem; border-radius: 3px; border: none;
+      cursor: pointer; font-size: 0.7rem;
+    }
+    .anchor-config .btn-add { background: var(--accent); color: var(--bg); }
+    .anchor-config .btn-del { background: var(--error); color: #fff; }
+    .anchor-config .btn-apply { background: var(--success); color: var(--bg); }
+    .anchor-config .btn-apply:disabled { opacity: 0.5; cursor: not-allowed; }
+    .anchor-config .btn-apply.sent { background: var(--muted); }
   </style>
 </head>
 <body>
@@ -269,16 +349,50 @@
         <div id="loadErr" class="load-err" style="display: none;"></div>
       </div>
       <div class="panel-events">
-        <div class="event-log-header">
-          <span>Event log</span>
-          <span>
-            <button type="button" id="jumpToBottom" class="btn-jump" title="Scroll to latest">Jump to bottom</button>
-            <button type="button" id="clearEvents" class="btn-clear" title="Clear event log">Clear</button>
-          </span>
+        <div class="tab-bar">
+          <button class="active" data-tab="events">Event Log</button>
+          <button data-tab="viz">Visualization</button>
         </div>
-        <div id="eventLogContent" class="event-log-content">
-          <div id="eventLogEmpty" class="event-log-empty">Select a port to connect and see device events (e.g. TWR range, logs) here.</div>
-          <div id="eventLogLines"></div>
+        <!-- Event Log tab -->
+        <div class="tab-content active" id="tabEvents">
+          <div class="event-log-header">
+            <span>Event log</span>
+            <span>
+              <button type="button" id="jumpToBottom" class="btn-jump" title="Scroll to latest">Jump to bottom</button>
+              <button type="button" id="clearEvents" class="btn-clear" title="Clear event log">Clear</button>
+            </span>
+          </div>
+          <div id="eventLogContent" class="event-log-content">
+            <div id="eventLogEmpty" class="event-log-empty">Select a port to connect and see device events (e.g. TWR range, logs) here.</div>
+            <div id="eventLogLines"></div>
+          </div>
+        </div>
+        <!-- Visualization tab -->
+        <div class="tab-content" id="tabViz">
+          <div class="viz-panel">
+            <div class="viz-canvas-wrap">
+              <canvas id="vizCanvas"></canvas>
+            </div>
+            <div class="viz-toolbar">
+              <button type="button" id="vizClear" title="Clear trail & ranges">Clear</button>
+              <label>Bounds X:</label>
+              <input type="text" id="vizMinX" value="-0.5" style="width:3rem" />
+              <span>to</span>
+              <input type="text" id="vizMaxX" value="6" style="width:3rem" />
+              <label>Y:</label>
+              <input type="text" id="vizMinY" value="-0.5" style="width:3rem" />
+              <span>to</span>
+              <input type="text" id="vizMaxY" value="4.5" style="width:3rem" />
+              <span class="viz-status" id="vizStatus">No data</span>
+            </div>
+            <div class="anchor-config" id="anchorConfig">
+              <table>
+                <thead><tr><th>Addr</th><th>Label</th><th>X</th><th>Y</th><th>Z</th><th></th><th></th></tr></thead>
+                <tbody id="anchorRows"></tbody>
+              </table>
+              <button type="button" class="btn-add" id="addAnchor" style="margin-top:0.2rem">+ Add anchor</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -643,6 +757,362 @@
     loadEvents();
     updateMonitorStatus();
     portEl.addEventListener("change", connectPort);
+
+    // ===================== Tab switching =====================
+    const appMainEl = document.querySelector(".app-main");
+    document.querySelectorAll(".tab-bar button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab-bar button").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".tab-content").forEach(t => t.classList.remove("active"));
+        btn.classList.add("active");
+        const isViz = btn.dataset.tab === "viz";
+        document.getElementById(isViz ? "tabViz" : "tabEvents").classList.add("active");
+        appMainEl.classList.toggle("viz-active", isViz);
+        if (isViz) setTimeout(vizResize, 50);
+      });
+    });
+
+    // ===================== Indoor Visualization =====================
+    const vizCanvas = document.getElementById("vizCanvas");
+    const ctx = vizCanvas.getContext("2d");
+    const vizStatusEl = document.getElementById("vizStatus");
+
+    // Visualization state
+    const vizState = {
+      position: { x: 0, y: 0, z: 0 },
+      positionKnown: false,
+      ranges: {},   // addr -> { distance_m }
+      trail: [],    // [{x,y}]
+      anchors: {},  // addr -> {x,y,z,label}
+    };
+    const ANCHOR_COLORS = [
+      "#ff4444", "#44ff44", "#4488ff", "#ffff44",
+      "#ff44ff", "#44ffff", "#ff8844", "#aa44ff"
+    ];
+
+    function vizBounds() {
+      return {
+        minX: parseFloat(document.getElementById("vizMinX").value) || -0.5,
+        maxX: parseFloat(document.getElementById("vizMaxX").value) || 6,
+        minY: parseFloat(document.getElementById("vizMinY").value) || -0.5,
+        maxY: parseFloat(document.getElementById("vizMaxY").value) || 4.5,
+      };
+    }
+
+    function vizResize() {
+      const wrap = vizCanvas.parentElement;
+      const rect = wrap.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      vizCanvas.width = rect.width * dpr;
+      vizCanvas.height = rect.height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      vizDraw();
+    }
+    window.addEventListener("resize", () => {
+      if (document.getElementById("tabViz").classList.contains("active")) vizResize();
+    });
+
+    function mapX(x, b, w, pad) { return pad + (x - b.minX) / (b.maxX - b.minX) * (w - 2 * pad); }
+    function mapY(y, b, h, pad) { return h - pad - (y - b.minY) / (b.maxY - b.minY) * (h - 2 * pad); }
+
+    function vizDraw() {
+      const dpr = window.devicePixelRatio || 1;
+      const w = vizCanvas.width / dpr;
+      const h = vizCanvas.height / dpr;
+      if (w < 10 || h < 10) return;
+      const b = vizBounds();
+      const pad = 40;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "#0d1117";
+      ctx.fillRect(0, 0, w, h);
+
+      // Grid
+      ctx.strokeStyle = "#1e2430";
+      ctx.lineWidth = 1;
+      for (let x = Math.ceil(b.minX); x <= b.maxX; x += 0.5) {
+        const sx = mapX(x, b, w, pad);
+        ctx.beginPath(); ctx.moveTo(sx, pad); ctx.lineTo(sx, h - pad); ctx.stroke();
+      }
+      for (let y = Math.ceil(b.minY); y <= b.maxY; y += 0.5) {
+        const sy = mapY(y, b, h, pad);
+        ctx.beginPath(); ctx.moveTo(pad, sy); ctx.lineTo(w - pad, sy); ctx.stroke();
+      }
+
+      // Axis lines at 0
+      ctx.strokeStyle = "#3a4255";
+      ctx.lineWidth = 1.5;
+      const ox = mapX(0, b, w, pad), oy = mapY(0, b, h, pad);
+      if (b.minX <= 0 && 0 <= b.maxX) { ctx.beginPath(); ctx.moveTo(ox, pad); ctx.lineTo(ox, h - pad); ctx.stroke(); }
+      if (b.minY <= 0 && 0 <= b.maxY) { ctx.beginPath(); ctx.moveTo(pad, oy); ctx.lineTo(w - pad, oy); ctx.stroke(); }
+
+      // Axis labels
+      ctx.fillStyle = "#565f89";
+      ctx.font = "11px monospace";
+      ctx.textAlign = "center";
+      for (let x = Math.ceil(b.minX); x <= b.maxX; x += 1) {
+        ctx.fillText(x.toFixed(0), mapX(x, b, w, pad), h - pad + 16);
+      }
+      ctx.textAlign = "right";
+      for (let y = Math.ceil(b.minY); y <= b.maxY; y += 1) {
+        ctx.fillText(y.toFixed(0), pad - 8, mapY(y, b, h, pad) + 4);
+      }
+      ctx.textAlign = "center";
+      ctx.fillText("X (m)", w / 2, h - 6);
+      ctx.save();
+      ctx.translate(12, h / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText("Y (m)", 0, 0);
+      ctx.restore();
+
+      // Ranging rings + anchors
+      const anchorKeys = Object.keys(vizState.anchors);
+      anchorKeys.forEach((addr, i) => {
+        const a = vizState.anchors[addr];
+        const sx = mapX(a.x, b, w, pad);
+        const sy = mapY(a.y, b, h, pad);
+        const col = ANCHOR_COLORS[i % ANCHOR_COLORS.length];
+        // Ranging ring
+        const range = vizState.ranges[addr];
+        if (range && range.distance_m > 0) {
+          const pixPerMeter = (w - 2 * pad) / (b.maxX - b.minX);
+          const r = range.distance_m * pixPerMeter;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 1;
+          ctx.globalAlpha = 0.25;
+          ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
+          ctx.globalAlpha = 0.06;
+          ctx.fillStyle = col;
+          ctx.fill();
+          ctx.globalAlpha = 1.0;
+        }
+        // Anchor dot
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(sx, sy, 6, 0, Math.PI * 2); ctx.fill();
+        // Label
+        ctx.fillStyle = "#c0caf5";
+        ctx.font = "bold 11px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(a.label || ("A" + addr), sx, sy - 12);
+        if (range && range.distance_m > 0) {
+          ctx.font = "10px monospace";
+          ctx.fillText(range.distance_m.toFixed(2) + "m", sx, sy + 20);
+        }
+      });
+
+      // Trail
+      if (vizState.trail.length > 1) {
+        ctx.strokeStyle = "rgba(122,162,247,0.35)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        vizState.trail.forEach((p, i) => {
+          const sx = mapX(p.x, b, w, pad), sy = mapY(p.y, b, h, pad);
+          if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+        });
+        ctx.stroke();
+      }
+
+      // Tag position
+      if (vizState.positionKnown) {
+        const tx = mapX(vizState.position.x, b, w, pad);
+        const ty = mapY(vizState.position.y, b, h, pad);
+        // Crosshair
+        ctx.strokeStyle = "#9ece6a";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(tx - 10, ty); ctx.lineTo(tx + 10, ty); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(tx, ty - 10); ctx.lineTo(tx, ty + 10); ctx.stroke();
+        // Dot
+        ctx.fillStyle = "#9ece6a";
+        ctx.beginPath(); ctx.arc(tx, ty, 5, 0, Math.PI * 2); ctx.fill();
+        // Coords
+        ctx.fillStyle = "#9ece6a";
+        ctx.font = "11px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(`(${vizState.position.x.toFixed(2)}, ${vizState.position.y.toFixed(2)})`, tx, ty + 22);
+      }
+
+      // Legend
+      ctx.textAlign = "left";
+      let ly = 16;
+      ctx.font = "bold 11px monospace";
+      ctx.fillStyle = "#c0caf5";
+      ctx.fillText("Legend:", pad + 4, ly); ly += 18;
+      anchorKeys.forEach((addr, i) => {
+        const a = vizState.anchors[addr];
+        const col = ANCHOR_COLORS[i % ANCHOR_COLORS.length];
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(pad + 10, ly - 4, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#c0caf5";
+        ctx.font = "10px monospace";
+        ctx.fillText(a.label || ("Anchor " + addr), pad + 20, ly);
+        ly += 16;
+      });
+      if (vizState.positionKnown) {
+        ctx.fillStyle = "#9ece6a";
+        ctx.beginPath(); ctx.arc(pad + 10, ly - 4, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#c0caf5";
+        ctx.font = "10px monospace";
+        ctx.fillText("Tag Position", pad + 20, ly);
+      }
+    }
+
+    // ===================== SSE viz event handler =====================
+    function handleVizEvent(data) {
+      if (!data.position_unknown) {
+        vizState.position = { x: data.x, y: data.y, z: data.z };
+        vizState.positionKnown = true;
+        vizState.trail.push({ x: data.x, y: data.y });
+        if (vizState.trail.length > 200) vizState.trail.shift();
+      }
+      vizState.ranges[String(data.addr)] = { distance_m: data.distance_m };
+      vizStatusEl.textContent = `Tag: (${data.x.toFixed(2)}, ${data.y.toFixed(2)}) | Addr: 0x${data.addr.toString(16).toUpperCase()}`;
+      if (document.getElementById("tabViz").classList.contains("active")) {
+        requestAnimationFrame(vizDraw);
+      }
+    }
+
+    // Patch the existing SSE connection to also listen for viz events
+    const origConnectEventStream = connectEventStream;
+    connectEventStream = function() {
+      origConnectEventStream();
+      if (eventStreamSource) {
+        eventStreamSource.addEventListener("viz", (e) => {
+          try { handleVizEvent(JSON.parse(e.data)); } catch (err) { /* ignore */ }
+        });
+      }
+    };
+
+    // ===================== Anchor configuration =====================
+    const anchorRowsEl = document.getElementById("anchorRows");
+    const defaultAnchors = {
+      "0": { x: 4.915, y: 3.758, z: 0, label: "B0" },
+      "1": { x: 0.877, y: 0.020, z: 0, label: "B1" },
+      "2": { x: 0.828, y: 4.018, z: 0, label: "B2" },
+      "3": { x: 4.904, y: 0.460, z: 0, label: "B3" },
+    };
+
+    function loadAnchors() {
+      try {
+        const saved = localStorage.getItem("hylo_viz_anchors");
+        if (saved) return JSON.parse(saved);
+      } catch (e) { /* ignore */ }
+      return defaultAnchors;
+    }
+
+    function saveAnchors() {
+      const anchors = {};
+      anchorRowsEl.querySelectorAll("tr").forEach(tr => {
+        const addr = tr.querySelector("[data-field=addr]").value.trim();
+        if (!addr) return;
+        anchors[addr] = {
+          x: parseFloat(tr.querySelector("[data-field=x]").value) || 0,
+          y: parseFloat(tr.querySelector("[data-field=y]").value) || 0,
+          z: parseFloat(tr.querySelector("[data-field=z]").value) || 0,
+          label: tr.querySelector("[data-field=label]").value.trim() || ("A" + addr),
+        };
+      });
+      localStorage.setItem("hylo_viz_anchors", JSON.stringify(anchors));
+      vizState.anchors = anchors;
+      fetch("/api/viz/anchors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ anchors })
+      }).catch(() => {});
+      vizDraw();
+    }
+
+    function renderAnchorRow(addr, a) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><input data-field="addr" value="${escapeHtml(addr)}" style="width:3.5rem" /></td>
+        <td><input data-field="label" value="${escapeHtml(a.label || "")}" style="width:3.5rem" /></td>
+        <td><input data-field="x" type="number" step="0.01" value="${a.x}" /></td>
+        <td><input data-field="y" type="number" step="0.01" value="${a.y}" /></td>
+        <td><input data-field="z" type="number" step="0.01" value="${a.z}" /></td>
+        <td><button class="btn-apply" title="Send OtaConfigSendPositionRequest to device">Apply</button></td>
+        <td><button class="btn-del" title="Remove">✕</button></td>`;
+      tr.querySelector(".btn-del").addEventListener("click", () => { tr.remove(); saveAnchors(); });
+      tr.querySelector(".btn-apply").addEventListener("click", () => applyAnchorPosition(tr));
+      tr.querySelectorAll("input").forEach(inp => inp.addEventListener("change", saveAnchors));
+      anchorRowsEl.appendChild(tr);
+    }
+
+    async function applyAnchorPosition(tr) {
+      const port = portEl.value;
+      if (!port) { alert("Select a port first."); return; }
+      const addr = tr.querySelector("[data-field=addr]").value.trim();
+      const x = tr.querySelector("[data-field=x]").value.trim();
+      const y = tr.querySelector("[data-field=y]").value.trim();
+      const z = tr.querySelector("[data-field=z]").value.trim();
+      if (!addr) { alert("Anchor address is required."); return; }
+      const btn = tr.querySelector(".btn-apply");
+      btn.disabled = true;
+      btn.textContent = "Sending…";
+      try {
+        const r = await fetch("/api/command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ port, command: "OtaConfigSendPositionRequest", args: [addr, x, y, z] })
+        });
+        const data = await r.json().catch(() => ({}));
+        if (data.success) {
+          btn.textContent = "✓ Sent";
+          btn.classList.add("sent");
+          if (data.events && data.events.length) appendEvents(data.events);
+        } else {
+          btn.textContent = "✕ Failed";
+          btn.style.background = "var(--error)";
+          btn.style.color = "#fff";
+          console.warn("OtaConfigSendPosition failed:", data.response);
+        }
+      } catch (e) {
+        btn.textContent = "✕ Error";
+        btn.style.background = "var(--error)";
+        btn.style.color = "#fff";
+      }
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = "Apply";
+        btn.className = "btn-apply";
+        btn.style.background = "";
+        btn.style.color = "";
+      }, 2000);
+    }
+
+    function initAnchors() {
+      const anchors = loadAnchors();
+      vizState.anchors = anchors;
+      Object.entries(anchors).forEach(([addr, a]) => renderAnchorRow(addr, a));
+      fetch("/api/viz/anchors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ anchors })
+      }).catch(() => {});
+    }
+
+    document.getElementById("addAnchor").addEventListener("click", () => {
+      const nextAddr = String(Object.keys(vizState.anchors).length);
+      renderAnchorRow(nextAddr, { x: 0, y: 0, z: 0, label: "B" + nextAddr });
+      saveAnchors();
+    });
+
+    document.getElementById("vizClear").addEventListener("click", async () => {
+      vizState.trail = [];
+      vizState.ranges = {};
+      vizState.positionKnown = false;
+      vizStatusEl.textContent = "No data";
+      try { await fetch("/api/viz/clear", { method: "POST" }); } catch (e) { /* ignore */ }
+      vizDraw();
+    });
+
+    // Redraw on bounds change
+    ["vizMinX", "vizMaxX", "vizMinY", "vizMaxY"].forEach(id => {
+      document.getElementById(id).addEventListener("change", vizDraw);
+    });
+
+    initAnchors();
+    // Initial draw after a small delay so canvas has dimensions
+    setTimeout(vizResize, 100);
   </script>
 </body>
 </html>
