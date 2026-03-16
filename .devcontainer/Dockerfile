@@ -30,6 +30,9 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages \
 # Add the vscode user to groups that own serial/usb devices
 RUN usermod -aG dialout,plugdev vscode
     
-# Set up ST-Link permissions
+# Set up ST-Link permissions (V1, V2, V3; 0483:3748, 374e, 374f, 3754)
 RUN mkdir -p /etc/udev/rules.d && \
-    echo 'SUBSYSTEMS=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", MODE="0666"' > /etc/udev/rules.d/99-stlink.rules
+    (echo 'SUBSYSTEMS=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="3748", MODE="0666"'; \
+     echo 'SUBSYSTEMS=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", MODE="0666"'; \
+     echo 'SUBSYSTEMS=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374f", MODE="0666"'; \
+     echo 'SUBSYSTEMS=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="3754", MODE="0666"') > /etc/udev/rules.d/99-stlink.rules
