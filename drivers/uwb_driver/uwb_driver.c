@@ -51,11 +51,16 @@ STATIC void uwb_driver_tx_task(void* argument);
 #define MAC_CRC_LENGTH (2U)                  // IEEE 802.15.4 CRC length in bytes
 #define WAKEUP_PULSE_DURATION_US (600U)      // CS low pulse duration to wake DW3000 from sleep
 #define WAKEUP_STABILIZATION_DELAY_MS (1U)   // Delay after wakeup for clock stabilization
-#define DW3000_ANTENNA_DELAY (16385U)        // Antenna delay for TX/RX (calibrated value)
 #define DW3000_PREAMBLE_CODE (9U)            // Preamble code for channel 5  
 #define DW3000_SFD_TIMEOUT (129U)            // SFD timeout: preamble length +  SFD length
 #define DW3000_TX_PDELAY (0x34U)             // TX preamble delay (Qorvo default)
 #define DW3000_TX_POWER (0xFDFDFDFDUL)       // TX power (max on all PRFs)
+
+#if (HWREV == 0)
+#define DW3000_ANTENNA_DELAY (16360U)        // Antenna delay for TX/RX (calibrated value)
+#elif (HWREV == 1)
+#define DW3000_ANTENNA_DELAY (16385U)        // Antenna delay for TX/RX (calibrated value)
+#endif
 
 #define UWB_DRIVER_RX_QUEUE_LENGTH (20U)
 #define UWB_DRIVER_TX_QUEUE_LENGTH (16U)
