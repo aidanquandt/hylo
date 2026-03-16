@@ -1,0 +1,33 @@
+{
+    "name": "Hylo Dev Environment",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "runArgs": [
+        "--privileged",
+        "-v", "/dev/bus/usb:/dev/bus/usb"
+    ],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "llvm-vs-code-extensions.vscode-clangd",
+                "marus25.cortex-debug",
+                "ms-vscode.cmake-tools",
+                "mcu-debug.peripheral-viewer"
+            ],
+            "settings": {
+                "C_Cpp.intelliSenseEngine": "disabled",
+                "clangd.arguments": [
+                    "--compile-commands-dir=build",
+                    "--query-driver=/usr/bin/arm-none-eabi-*",
+                    "--header-insertion=never"
+                ]
+            }
+        }
+    },
+    "remoteUser": "vscode",
+    "mounts": [
+        "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
+        "source=/mnt/c/Users/aidan/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached"
+    ]
+}
