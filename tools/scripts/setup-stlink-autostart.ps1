@@ -43,7 +43,7 @@ if (-not (Test-Path $attachScript)) {
 $attachScriptFull = (Resolve-Path $attachScript).Path
 
 $taskName = "Hylo-STLink-AttachWSL"
-$taskDesc = "Attach ST-Link to WSL2 at login so make flash works in the Hylo devcontainer."
+$taskDesc = "Attach ST-Link + USB-serial to WSL2 for Hylo devcontainer (make flash, host-webapp)."
 # Add 15s delay so WSL is ready; attach-stlink.ps1 -Autostart sleeps first
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$attachScriptFull`" -Autostart"
@@ -56,6 +56,29 @@ Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction Silent
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
     -Description $taskDesc -RunLevel Highest | Out-Null
 
-Write-Host "Task '$taskName' created. ST-Link will auto-attach to WSL when you log in." -ForegroundColor Green
-Write-Host "If ST-Link was already attached: usbipd detach --busid <busid>, then .\attach-stlink.ps1" -ForegroundColor Gray
-Write-Host "To remove: Task Scheduler -> Task Scheduler Library -> $taskName -> Delete" -ForegroundColor Gray
+Write-Host "Task '$taskName' created. Devices auto-attach at login." -ForegroundColor Green
+
+# Copy script to local folder (UNC paths like \\wsl$\... often fail when run as admin)
+$localScriptDir = Join-Path $env:LOCALAPPDATA "Hylo"
+New-Item -ItemType Directory -Force -Path $localScriptDir | Out-Null
+$localScriptPath = Join-Path $localScriptDir "attach-stlink.ps1"
+Copy-Item -Path $attachScript -Destination $localScriptPath -Force
+Write-Host "Copied attach script to $localScriptPath" -ForegroundColor Gray
+
+# Create Desktop shortcut (points to local copy so it works when elevated)
+$shortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) "Attach Hylo USB.lnk"
+$WshShell = New-Object -ComObject WScript.Shell
+$Shortcut = $WshShell.CreateShortcut($shortcutPath)
+$Shortcut.TargetPath = "powershell.exe"
+$Shortcut.Arguments = "-ExecutionPolicy Bypass -NoExit -File `"$localScriptPath`""
+$Shortcut.WorkingDirectory = $localScriptDir
+$Shortcut.Description = "Attach ST-Link + USB-serial to WSL for Hylo devcontainer"
+$Shortcut.Save()
+# Set "Run as administrator" (byte 0x15 |= 0x20)
+$bytes = [System.IO.File]::ReadAllBytes($shortcutPath)
+$bytes[0x15] = $bytes[0x15] -bor 0x20
+[System.IO.File]::WriteAllBytes($shortcutPath, $bytes)
+Write-Host "Desktop shortcut 'Attach Hylo USB' created. Double-click when you plug in devices." -ForegroundColor Green
+
+Write-Host "From the devcontainer: make attach  (launches the shortcut, UAC prompt)" -ForegroundColor Cyan
+Write-Host "To remove: Task Scheduler -> $taskName; delete shortcut from Desktop" -ForegroundColor Gray

@@ -2,7 +2,7 @@
 
 When you run `make flash REV=0` or `make flash REV=1` inside the devcontainer and see **OpenOCD "Error: open failed"**, the ST-Link is not visible to the container because WSL2 does not pass USB through by default.
 
-The scripts in `.devcontainer/scripts/` are **PowerShell (.ps1)** because they run on Windows and call `usbipd`, a Windows tool. The project’s `tools/scripts/*.sh` scripts run inside the container.
+Scripts live in `tools/scripts/`: **PowerShell (.ps1)** for Windows (attach-stlink, setup-stlink-autostart) and **bash (.sh)** for the container (flash, attach-usb). The project’s `tools/scripts/*.sh` scripts run inside the container.
 
 ## Quick setup (one-time per computer)
 
@@ -19,21 +19,22 @@ These scripts run on **Windows** (not in the container). usbipd is a Windows too
 
 1. Open **PowerShell as Administrator** (right‑click → Run as administrator).
 2. Go to the repo’s scripts folder. Examples:
-   - Repo in WSL: `cd \\wsl$\Ubuntu\home\<you>\<path>\hylo\.devcontainer\scripts`
-   - Repo on C: drive: `cd C:\Users\<you>\<path>\hylo\.devcontainer\scripts`
+   - Repo in WSL: `cd \\wsl$\Ubuntu\home\<you>\<path>\hylo\tools\scripts`
+   - Repo on C: drive: `cd C:\Users\<you>\<path>\hylo\tools\scripts`
 3. Run once per computer:
    ```powershell
-   .\setup-stlink-autostart.ps1
+   & ".\setup-stlink-autostart.ps1"
    ```
+   (Use `&` when running from a UNC path like `\\wsl$\...`)
 
-This adds udev rules in WSL (ST-Link, CH340, FTDI, CP210x) and creates a Windows Task that attaches these devices to WSL when you log in. The container also mounts `/dev` so serial ports (e.g. for the webapp) are visible.
+This adds udev rules in WSL (ST-Link, CH340, FTDI, CP210x), creates a Windows Task (attach at login), and a **Desktop shortcut "Attach Hylo USB"**. The shortcut copies the script to `%LOCALAPPDATA%\Hylo\` so it works when run as administrator (UNC paths like `\\wsl$\...` often fail when elevated). Double-click the shortcut (UAC prompt) — the window stays open so you can see output. From the container, run `make attach` to try launching it.
 
 ### 3. Manual attach (if needed)
 
 If you skipped step 2, or the ST-Link was unplugged after boot, run from **Windows PowerShell as Administrator** (same `cd` as step 2):
 
 ```powershell
-.\attach-stlink.ps1
+& ".\attach-stlink.ps1"
 ```
 
 The script finds the ST-Link, binds it if needed, and attaches to WSL.
@@ -60,12 +61,13 @@ You should see an STMicroelectronics device (0483:3748, 374e, 374f, or 3754).
 
 ## Troubleshooting
 
-- **"No ST-Link found"**: Plug in the ST-Link and run `attach-stlink.ps1` again.
+- **"No ST-Link found"**: Plug in the ST-Link and run `& ".\attach-stlink.ps1"` again.
 - **"usbipd attach failed"**: Check that port **3240** is not blocked by Windows Firewall.
-- **`LIBUSB_ERROR_ACCESS` / "open failed"**: The ST-Link is visible but OpenOCD lacks permission. Re-run `.\setup-stlink-autostart.ps1` (it adds udev rules in WSL). Then detach and re-attach: `usbipd detach --busid 2-7` then `.\attach-stlink.ps1`.
+- **`LIBUSB_ERROR_ACCESS` / "open failed"**: The ST-Link is visible but OpenOCD lacks permission. Re-run `& ".\setup-stlink-autostart.ps1"` (it adds udev rules in WSL). Then detach and re-attach: `usbipd detach --busid 2-7` then `& ".\attach-stlink.ps1"`.
+- **Shortcut closes immediately**: Run setup again — it copies the script to `%LOCALAPPDATA%\Hylo\` so it works when elevated. The shortcut should then stay open and show output.
 - **Task not running**: Open Task Scheduler → Task Scheduler Library → `Hylo-STLink-AttachWSL`. To remove the task, delete it from Task Scheduler.
-- **Different computer**: Clone the repo and run `setup-stlink-autostart.ps1` once.
-- **Webapp shows no ports**: Rebuild the devcontainer (e.g. "Dev Containers: Rebuild Container") so the `/dev` mount takes effect. Then run `.\attach-stlink.ps1` to attach ST-Link + USB-serial devices.
+- **Different computer**: Clone the repo and run `& ".\setup-stlink-autostart.ps1"` once.
+- **Webapp shows no ports**: Rebuild the devcontainer (e.g. "Dev Containers: Rebuild Container") so the `/dev` mount takes effect. Then run `& ".\attach-stlink.ps1"` to attach ST-Link + USB-serial devices.
 
 ---
 

@@ -7,7 +7,7 @@ PRESET_DEBUG := arm-gcc-debug
 .PHONY: all build clean rebuild help check-deps flash distclean debug
 .PHONY: clean-debug
 .PHONY: host host-help host-monitor host-enable-streaming host-visualization host-interactive host-webapp
-.PHONY: protocol-codegen ensure-protocol-codegen
+.PHONY: protocol-codegen ensure-protocol-codegen attach
 
 # Regenerate protocol if generated files are missing or .proto files are newer
 ensure-protocol-codegen:
@@ -52,6 +52,7 @@ help:
 	@echo "  make rebuild    Clean debug then build"
 	@echo "  make distclean  Remove build/ entirely"
 	@echo "  make flash REV=0 or make flash REV=1  Flash via OpenOCD (ST-Link); builds first if no build"
+	@echo "  make attach       Attach USB devices to WSL (launches Desktop shortcut; run if flash fails)"
 	@echo "  make check-deps Verify cmake, ninja, arm-none-eabi-gcc"
 	@echo ""
 	@echo "Host tools (Python; in host/; scripts use COM10 by default):"
@@ -88,6 +89,9 @@ host-webapp:
 
 check-deps:
 	@bash tools/scripts/check_deps.sh
+
+attach:
+	@bash tools/scripts/attach-usb.sh
 
 flash:
 	@if [ -z "$(REV)" ]; then echo "Error: REV must be specified (0 or 1). Use: make flash REV=0 or make flash REV=1"; exit 1; fi

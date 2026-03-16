@@ -19,6 +19,7 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 if (-not $isAdmin) {
     Write-Host "This script must run as Administrator (usbipd needs elevation)." -ForegroundColor Yellow
     Write-Host "Right-click PowerShell -> Run as Administrator, then run this script again." -ForegroundColor Yellow
+    if (-not $Autostart) { Read-Host "Press Enter to close" }
     exit 1
 }
 
@@ -28,12 +29,14 @@ if (-not $usbipd) {
     Write-Host "usbipd not found. Install usbipd-win from:" -ForegroundColor Red
     Write-Host "  https://github.com/dorssel/usbipd-win/releases" -ForegroundColor Red
     Write-Host "  or: winget install usbipd" -ForegroundColor Red
+    if (-not $Autostart) { Read-Host "Press Enter to close" }
     exit 1
 }
 
 $list = usbipd list 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "usbipd list failed: $list" -ForegroundColor Red
+    if (-not $Autostart) { Read-Host "Press Enter to close" }
     exit 1
 }
 
@@ -64,6 +67,7 @@ if ($toAttach.Count -eq 0) {
         Write-Host "No ST-Link or USB-serial device found. Plug in your device and try again." -ForegroundColor Yellow
         Write-Host "Looking for: ST-Link, CH340, FTDI, CP210x" -ForegroundColor Gray
     }
+    if (-not $Autostart) { Read-Host "Press Enter to close" }
     exit 0
 }
 
@@ -79,9 +83,11 @@ foreach ($busId in $toAttach) {
             Write-Host "  ($busId) already attached, skipping" -ForegroundColor Gray
         } else {
             Write-Host "usbipd attach failed for $busId. Check firewall (port 3240) and that WSL is running." -ForegroundColor Red
+            if (-not $Autostart) { Read-Host "Press Enter to close" }
             exit 1
         }
     }
 }
 
 Write-Host "Devices attached. You can run 'make flash' and 'make host-webapp' in the devcontainer." -ForegroundColor Green
+if (-not $Autostart) { Read-Host "Press Enter to close" }
