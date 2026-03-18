@@ -85,7 +85,7 @@ host-visualization:
 
 host-webapp:
 	(python -c "import time, webbrowser; time.sleep(2); webbrowser.open('http://127.0.0.1:8000')") &
-	uvicorn host.webapp.backend.main:app --reload
+	python3 -m uvicorn host.webapp.backend.main:app --reload
 
 check-deps:
 	@bash tools/scripts/check_deps.sh
