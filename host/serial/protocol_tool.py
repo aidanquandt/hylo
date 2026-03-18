@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
 Protocol host tool: send framed Request messages and listen for Response/log events.
-Transport-agnostic protocol (e.g. over UART, USB, etc.).
+Transport-agnostic protocol (e.g. over UART, USB, TCP).
 
 Uses generated protocol_pb2.py for encoding requests and decoding responses.
 Run tools/protocol_codegen/verify_codegen.py (and ensure nanopb_pb2.py is in generated/protocol/python) before use.
 
 Usage:
-  python protocol_tool.py --port COM10 interactive   # listen + type commands anytime
+  python protocol_tool.py --port COM10 interactive   # serial: listen + type commands
+  python protocol_tool.py --tcp-listen 0.0.0.0:5000 interactive   # TCP: wait for device, then protocol
   python protocol_tool.py --port COM10 send ping
   python protocol_tool.py --port COM10 listen
   python protocol_tool.py --port COM10 send setaddress <address> <pan_id>
@@ -47,14 +48,79 @@ except ImportError as e:
 try:
     import serial
 except ImportError:
-    print(
-        "pyserial not found. Install with your package manager (e.g. msys2: "
-        "pacman -S mingw-w64-ucrt-x86_64-python-pyserial) or pip install pyserial",
-        file=sys.stderr,
-    )
-    sys.exit(1)
+    serial = None
+
+import socket
 
 PROTOCOL_VERSION = 1
+
+
+class TcpTransport(object):
+    """TCP transport: serial-like interface for protocol over TCP (device connects to host)."""
+
+    def __init__(self, conn):
+        self._conn = conn
+        self._conn.settimeout(0.1)
+        self._buf = bytearray()
+
+    @property
+    def in_waiting(self):
+        try:
+            chunk = self._conn.recv(4096)
+            if chunk:
+                self._buf.extend(chunk)
+        except socket.timeout:
+            pass
+        except (ConnectionResetError, BrokenPipeError, OSError):
+            pass
+        return len(self._buf)
+
+    def read(self, size):
+        while len(self._buf) < size:
+            try:
+                chunk = self._conn.recv(4096)
+                if not chunk:
+                    break
+                self._buf.extend(chunk)
+            except socket.timeout:
+                break
+            except (ConnectionResetError, BrokenPipeError, OSError):
+                break
+        n = min(size, len(self._buf))
+        out = bytes(self._buf[:n])
+        del self._buf[:n]
+        return out
+
+    def write(self, data):
+        self._conn.sendall(data)
+
+    def close(self):
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
+
+def open_transport(port=None, tcp_listen=None, baud=115200):
+    """Open serial or TCP transport. Returns object with write(), in_waiting, read(), close()."""
+    if tcp_listen is not None:
+        host, port_str = tcp_listen.rsplit(":", 1)
+        port_num = int(port_str)
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind((host, port_num))
+        srv.listen(1)
+        print("Listening on %s:%d for device connection..." % (host, port_num), file=sys.stderr)
+        conn, addr = srv.accept()
+        print("Device connected from %s:%d" % addr, file=sys.stderr)
+        srv.close()
+        return TcpTransport(conn)
+    if port is not None:
+        if serial is None:
+            print("pyserial not found. pip install pyserial", file=sys.stderr)
+            sys.exit(1)
+        return serial.Serial(port, baud, timeout=0.01)
+    raise ValueError("Must specify --port or --tcp-listen")
 PROTOCOL_HEADER_LEN = 7
 PROTOCOL_MAX_PAYLOAD = 110
 
@@ -241,7 +307,15 @@ def build_request(message_name, args_list):
             if fd.enum_type.full_name.endswith("NodeType") and raw_lower in NODE_TYPE_NAMES:
                 setattr(req, fd.name, NODE_TYPE_NAMES[raw_lower])
             else:
-                setattr(req, fd.name, int(raw, 0))
+                try:
+                    setattr(req, fd.name, int(raw, 0))
+                except ValueError:
+                    for v in fd.enum_type.values:
+                        if v.name.split("_")[-1].lower() == raw_lower:
+                            setattr(req, fd.name, v.number)
+                            break
+                    else:
+                        raise ValueError("Invalid enum value %r for %s" % (raw, fd.name))
             continue
         if fd.type in (_descriptor.FieldDescriptor.TYPE_INT32, _descriptor.FieldDescriptor.TYPE_INT64,
                       _descriptor.FieldDescriptor.TYPE_UINT32, _descriptor.FieldDescriptor.TYPE_UINT64,
@@ -618,8 +692,9 @@ def main():
     ap = argparse.ArgumentParser(
         description="Protocol tool: send Request messages, listen for Response/log events (COBS+CRC16)."
     )
-    ap.add_argument("--port", required=True, help="Serial port (e.g. COM10, /dev/ttyUSB0)")
-    ap.add_argument("--baud", type=int, default=115200, help="Baud rate")
+    ap.add_argument("--port", help="Serial port (e.g. COM10, /dev/ttyUSB0)")
+    ap.add_argument("--tcp-listen", metavar="HOST:PORT", help="TCP: listen for device (e.g. 0.0.0.0:5000)")
+    ap.add_argument("--baud", type=int, default=115200, help="Baud rate (serial only)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("interactive", help="Listen for messages and type commands in the same terminal (recommended)")
     sub.add_parser("listen", help="Listen and print received frames (responses and log events)")
@@ -639,7 +714,12 @@ def main():
         print_commands()
         return
 
-    ser = serial.Serial(args.port, args.baud, timeout=0.01)
+    if not args.port and not args.tcp_listen:
+        ap.error("Must specify --port or --tcp-listen")
+    if args.port and args.tcp_listen:
+        ap.error("Specify only one of --port or --tcp-listen")
+
+    ser = open_transport(port=args.port, tcp_listen=args.tcp_listen, baud=args.baud)
     try:
         if args.cmd == "interactive":
             interactive(ser)

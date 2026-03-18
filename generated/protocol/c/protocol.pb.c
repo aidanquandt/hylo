@@ -21,6 +21,15 @@ PB_BIND(SystemGetInfoRequest, SystemGetInfoRequest, AUTO)
 PB_BIND(SystemGetInfoResponse, SystemGetInfoResponse, AUTO)
 
 
+PB_BIND(SetTransportModeRequest, SetTransportModeRequest, AUTO)
+
+
+PB_BIND(GetTransportModeRequest, GetTransportModeRequest, AUTO)
+
+
+PB_BIND(GetTransportModeResponse, GetTransportModeResponse, AUTO)
+
+
 PB_BIND(PingRequest, PingRequest, AUTO)
 
 
@@ -499,6 +508,7 @@ PB_BIND(WatchdogTaskFailureEvent, WatchdogTaskFailureEvent, AUTO)
 
 
 PB_BIND(SystemFatalEvent, SystemFatalEvent, AUTO)
+
 
 
 

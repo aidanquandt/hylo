@@ -8,6 +8,7 @@
  *---------------------------------------------------------------------------*/
 #include "wifi.h"
 #include "wifi_config.h"
+#include "transport.h"
 #include "imu.h"
 #include "module.h"
 #include "uart_driver.h"
@@ -767,23 +768,21 @@ STATIC void wifi_state_active_process(void)
     // -------------------------------------------------
 
     if (strstr(detect_window, "+++")) {
-
         tcp_closed_detected = true;
-
+        if (transport_get_mode() == TRANSPORT_WIFI)
+            transport_set_mode(TRANSPORT_UART);
         detect_used = 0;
         detect_window[0] = 0;
-
         return;
     }
 
     // -------------------------------------------------
-    // Feed bytes to OTA parser
+    // Feed bytes to protocol framing (COBS decoder) and OTA parser
     // -------------------------------------------------
+    transport_feed(rx_buf, rx_len);
     for (size_t i = 0; i < rx_len; i++) {
         ota_parser_process_byte(rx_buf[i]);
     }
-
-
 }
 
 STATIC void wifi_state_faulted_on_entry(uint16_t prevState)
@@ -992,6 +991,15 @@ wifi_telemetry_status_e wifi_push_telemetry(const telemetry_event_t* event)
 bool wifi_telemetry_is_ready(void)
 {
     return (telemetry_queue != NULL && wifi_state_machine.curr_state == STATE_ACTIVE);
+}
+
+void wifi_send_protocol_bytes(const uint8_t *buf, size_t len)
+{
+    if (buf == NULL || len == 0)
+        return;
+    if (wifi_state_machine.curr_state != STATE_ACTIVE)
+        return;
+    uart_driver_transmit(UART_WIFI, buf, len);
 }
 
 

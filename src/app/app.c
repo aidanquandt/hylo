@@ -16,6 +16,7 @@
 #include "system_driver.h"
 #include "sensor_fusion.h"
 #include "task.h"
+#include "transport.h"
 #include "uart_driver.h"
 #include "uart_protocol_task.h"
 #include "uwb.h"
@@ -302,6 +303,7 @@ STATIC void app_post_module_initialization(void)
 void app_init(void)
 {
     uart_driver_init();
+    transport_init();
     uart_protocol_task_start();
     app_initialize_modules();
     app_create_module_tasks();

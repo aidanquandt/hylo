@@ -79,7 +79,8 @@ class CommandRequest(BaseModel):
 
 
 class MonitorStartRequest(BaseModel):
-    port: str
+    port: str | None = None
+    tcp_listen: str | None = None  # e.g. "0.0.0.0:5000" - wait for device to connect
 
 
 def _monitor_reader_loop(ser, stop_event: threading.Event) -> None:
@@ -185,9 +186,11 @@ def _run_send_command(port: str, command: str, args: List[str]) -> tuple[bool, s
                 _pending_expected_id = None
             return False, str(e), []
 
-    # No monitoring: open port, send, read response, close
+    # No monitoring: open port, send, read response, close (TCP requires monitoring first)
+    if ":" in port and not port.startswith("/"):
+        return False, "TCP requires starting monitor first (device connects to host)", []
     try:
-        ser = serial.Serial(port, 115200, timeout=0.01)
+        ser = _protocol_tool.open_transport(port=port, tcp_listen=None, baud=115200)
     except Exception as e:
         return False, f"Serial open failed: {e}", []
     events_this_call: List[str] = []
@@ -294,16 +297,21 @@ def api_monitor_status() -> dict:
 
 @app.post("/api/monitor/start")
 def api_monitor_start(req: MonitorStartRequest) -> dict:
-    """Start background serial monitoring on the given port. All received frames are appended to the event log."""
+    """Start background monitoring. Use port for serial, or tcp_listen (e.g. 0.0.0.0:5000) for TCP."""
     global _monitor_serial, _monitor_port, _monitor_thread, _monitor_stop_event
-    if serial is None:
-        raise HTTPException(status_code=503, detail="pyserial not installed")
     if _protocol_tool is None:
         raise HTTPException(status_code=503, detail="Protocol module not available")
+    if not req.port and not req.tcp_listen:
+        raise HTTPException(status_code=400, detail="Must specify port or tcp_listen")
+    if req.port and req.tcp_listen:
+        raise HTTPException(status_code=400, detail="Specify only one of port or tcp_listen")
+    if req.port and serial is None:
+        raise HTTPException(status_code=503, detail="pyserial not installed for serial")
     with _serial_lock:
         if _monitor_serial is not None:
-            if _monitor_port == req.port:
-                return {"ok": True, "message": "Already monitoring this port"}
+            current = req.port or req.tcp_listen
+            if _monitor_port == current:
+                return {"ok": True, "message": "Already monitoring"}
             _monitor_stop_event.set()
             if _monitor_thread is not None:
                 _monitor_thread.join(timeout=2.0)
@@ -315,15 +323,15 @@ def api_monitor_start(req: MonitorStartRequest) -> dict:
             _monitor_port = None
             _monitor_thread = None
     try:
-        ser = serial.Serial(req.port, 115200, timeout=0.01)
+        ser = _protocol_tool.open_transport(port=req.port, tcp_listen=req.tcp_listen, baud=115200)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Serial open failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     _monitor_stop_event = threading.Event()
     _monitor_serial = ser
-    _monitor_port = req.port
+    _monitor_port = req.port or req.tcp_listen
     _monitor_thread = threading.Thread(target=_monitor_reader_loop, args=(ser, _monitor_stop_event), daemon=True)
     _monitor_thread.start()
-    return {"ok": True, "port": req.port}
+    return {"ok": True, "port": _monitor_port}
 
 
 @app.post("/api/monitor/stop")
@@ -351,8 +359,10 @@ def api_monitor_stop() -> dict:
 @app.post("/api/command")
 def run_command(req: CommandRequest) -> dict:
     """Send one protocol command and return the response and any new events from this call."""
-    if serial is None:
-        raise HTTPException(status_code=503, detail="pyserial not installed")
+    if _protocol_tool is None:
+        raise HTTPException(status_code=503, detail="Protocol module not available")
+    if ":" not in req.port and serial is None:
+        raise HTTPException(status_code=503, detail="pyserial not installed for serial")
     success, response, new_events = _run_send_command(req.port, req.command, req.args)
     return {"success": success, "response": response, "events": new_events}
 

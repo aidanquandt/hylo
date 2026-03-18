@@ -64,3 +64,10 @@ wifi_telemetry_status_e wifi_push_telemetry(const telemetry_event_t* event);
  * @return true if connected and ready, false otherwise
  */
 bool wifi_telemetry_is_ready(void);
+
+/**
+ * @brief Send raw protocol bytes over the TCP connection (transparent mode).
+ * @param buf Bytes to send (COBS-encoded protocol frame)
+ * @param len Length of buf
+ */
+void wifi_send_protocol_bytes(const uint8_t *buf, size_t len);

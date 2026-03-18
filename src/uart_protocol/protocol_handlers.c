@@ -6,6 +6,7 @@
 #include "protocol_dispatch.h"
 #include "protocol_tx.h"
 #include "protocol.pb.h"
+#include "transport.h"
 #include "common.h"
 #include "datalogger.h"
 #include "imu.h"
@@ -90,6 +91,30 @@ void protocol_rx_SystemGetInfoRequest(const SystemGetInfoRequest *msg)
         }
     }
     protocol_tx_SystemGetInfoResponse(&r);
+}
+
+/*---------------------------------------------------------------------------
+ * Transport (UART vs Wi-Fi)
+ *---------------------------------------------------------------------------*/
+void protocol_rx_SetTransportModeRequest(const SetTransportModeRequest *msg)
+{
+    transport_mode_t mode = (msg->mode == SetTransportModeRequest_Mode_TRANSPORT_MODE_WIFI)
+        ? TRANSPORT_WIFI : TRANSPORT_UART;
+    transport_set_mode(mode);
+    AckResponse ack = AckResponse_init_zero;
+    ack.success = true;
+    protocol_tx_AckResponse(&ack);
+}
+
+void protocol_rx_GetTransportModeRequest(const GetTransportModeRequest *msg)
+{
+    (void)msg;
+    GetTransportModeResponse r = GetTransportModeResponse_init_zero;
+    r.mode = (transport_get_mode() == TRANSPORT_WIFI)
+        ? SetTransportModeRequest_Mode_TRANSPORT_MODE_WIFI
+        : SetTransportModeRequest_Mode_TRANSPORT_MODE_UART;
+    r.wifi_ready = transport_wifi_ready();
+    protocol_tx_GetTransportModeResponse(&r);
 }
 
 /*---------------------------------------------------------------------------

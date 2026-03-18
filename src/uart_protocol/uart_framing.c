@@ -6,7 +6,7 @@
 #include "uart_framing.h"
 #include "protocol_dispatch.h"
 #include "protocol_ids.h"
-#include "uart_driver.h"
+#include "transport.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
@@ -114,7 +114,7 @@ void protocol_send_frame(uint16_t msg_id, const uint8_t *payload, size_t len)
     size_t cobs_len = cobs_encode(raw, raw_len, cobs_buf, sizeof(cobs_buf));
     if (cobs_len == 0)
         return;
-    uart_driver_transmit(UART_CONSOLE, cobs_buf, cobs_len);
+    transport_send(cobs_buf, cobs_len);
 }
 
 /* Streaming decoder state */

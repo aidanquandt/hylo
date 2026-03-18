@@ -32,6 +32,7 @@ target_include_directories(components_inc INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/uwb
     ${CMAKE_CURRENT_SOURCE_DIR}/uwb_node
     ${CMAKE_CURRENT_SOURCE_DIR}/uart_protocol
+    ${CMAKE_CURRENT_SOURCE_DIR}/transport
     ${CMAKE_CURRENT_SOURCE_DIR}/system_halt
     ${CMAKE_CURRENT_SOURCE_DIR}/watchdog
     ${CMAKE_CURRENT_SOURCE_DIR}/wifi
@@ -67,6 +68,9 @@ set(UART_PROTOCOL_SOURCES
     uart_protocol/protocol_handlers.c
 )
 add_component_module(uart_protocol "${UART_PROTOCOL_SOURCES}")
+
+# Transport: route protocol over UART or Wi-Fi
+add_component_module(transport transport/transport.c)
 
 set(MODULE_SOURCES
     module/module.c

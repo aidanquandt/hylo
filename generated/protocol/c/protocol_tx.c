@@ -50,6 +50,30 @@ void protocol_tx_SystemGetInfoResponse(const SystemGetInfoResponse *msg)
   protocol_send_frame(MSG_ID_SystemGetInfoResponse, s_tx_buf, stream.bytes_written);
 }
 
+void protocol_tx_SetTransportModeRequest(const SetTransportModeRequest *msg)
+{
+  pb_ostream_t stream = pb_ostream_from_buffer(s_tx_buf, sizeof(s_tx_buf));
+  if (!pb_encode(&stream, SetTransportModeRequest_fields, msg))
+    return;
+  protocol_send_frame(MSG_ID_SetTransportModeRequest, s_tx_buf, stream.bytes_written);
+}
+
+void protocol_tx_GetTransportModeRequest(const GetTransportModeRequest *msg)
+{
+  pb_ostream_t stream = pb_ostream_from_buffer(s_tx_buf, sizeof(s_tx_buf));
+  if (!pb_encode(&stream, GetTransportModeRequest_fields, msg))
+    return;
+  protocol_send_frame(MSG_ID_GetTransportModeRequest, s_tx_buf, stream.bytes_written);
+}
+
+void protocol_tx_GetTransportModeResponse(const GetTransportModeResponse *msg)
+{
+  pb_ostream_t stream = pb_ostream_from_buffer(s_tx_buf, sizeof(s_tx_buf));
+  if (!pb_encode(&stream, GetTransportModeResponse_fields, msg))
+    return;
+  protocol_send_frame(MSG_ID_GetTransportModeResponse, s_tx_buf, stream.bytes_written);
+}
+
 void protocol_tx_PingRequest(const PingRequest *msg)
 {
   pb_ostream_t stream = pb_ostream_from_buffer(s_tx_buf, sizeof(s_tx_buf));

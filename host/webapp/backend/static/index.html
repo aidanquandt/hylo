@@ -307,8 +307,9 @@
         const r = await fetch("/api/ports");
         if (!r.ok) throw new Error(await r.text());
         const { ports } = await r.json();
-        portEl.innerHTML = '<option value="">Select port</option>' +
-          ports.map(p => `<option value="${p.device}">${p.device} — ${p.description || ""}</option>`).join("");
+        const serialOpts = ports.map(p => `<option value="${p.device}">${p.device} — ${p.description || ""}</option>`).join("");
+        const tcpOpt = '<option value="0.0.0.0:5000">TCP (0.0.0.0:5000) — Wi‑Fi</option>';
+        portEl.innerHTML = '<option value="">Select port</option>' + tcpOpt + serialOpts;
         if (currentPort && portEl.querySelector(`option[value="${currentPort}"]`)) {
           portEl.value = currentPort;
         }
@@ -579,10 +580,12 @@
           await fetch("/api/monitor/stop", { method: "POST" });
         } else {
           if (!portEl.value) return;
+          const val = portEl.value;
+          const body = val.includes(":") ? { tcp_listen: val } : { port: val };
           const res = await fetch("/api/monitor/start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ port: portEl.value })
+            body: JSON.stringify(body)
           });
           if (!res.ok) {
             const err = await res.json().catch(() => ({}));
@@ -618,13 +621,14 @@
     }
 
     async function connectPort() {
-      const port = portEl.value;
+      const val = portEl.value;
       try {
-        if (port) {
+        if (val) {
+          const body = val.includes(":") ? { tcp_listen: val } : { port: val };
           const res = await fetch("/api/monitor/start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ port })
+            body: JSON.stringify(body)
           });
           if (!res.ok) {
             const err = await res.json().catch(() => ({}));

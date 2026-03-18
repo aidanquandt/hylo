@@ -10,6 +10,9 @@ __attribute__((weak)) void protocol_rx_SystemGetUuidRequest(const SystemGetUuidR
 __attribute__((weak)) void protocol_rx_SystemGetUuidResponse(const SystemGetUuidResponse *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_SystemGetInfoRequest(const SystemGetInfoRequest *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_SystemGetInfoResponse(const SystemGetInfoResponse *msg) { (void)msg; }
+__attribute__((weak)) void protocol_rx_SetTransportModeRequest(const SetTransportModeRequest *msg) { (void)msg; }
+__attribute__((weak)) void protocol_rx_GetTransportModeRequest(const GetTransportModeRequest *msg) { (void)msg; }
+__attribute__((weak)) void protocol_rx_GetTransportModeResponse(const GetTransportModeResponse *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_PingRequest(const PingRequest *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_PingResponse(const PingResponse *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_SetAddressRequest(const SetAddressRequest *msg) { (void)msg; }
@@ -203,6 +206,24 @@ void protocol_dispatch(uint16_t msg_id, const uint8_t *payload, size_t len)
       SystemGetInfoResponse decoded = SystemGetInfoResponse_init_zero;
       if (pb_decode(&stream, SystemGetInfoResponse_fields, &decoded))
         protocol_rx_SystemGetInfoResponse(&decoded);
+      break;
+    }
+    case MSG_ID_SetTransportModeRequest: {
+      SetTransportModeRequest decoded = SetTransportModeRequest_init_zero;
+      if (pb_decode(&stream, SetTransportModeRequest_fields, &decoded))
+        protocol_rx_SetTransportModeRequest(&decoded);
+      break;
+    }
+    case MSG_ID_GetTransportModeRequest: {
+      GetTransportModeRequest decoded = GetTransportModeRequest_init_zero;
+      if (pb_decode(&stream, GetTransportModeRequest_fields, &decoded))
+        protocol_rx_GetTransportModeRequest(&decoded);
+      break;
+    }
+    case MSG_ID_GetTransportModeResponse: {
+      GetTransportModeResponse decoded = GetTransportModeResponse_init_zero;
+      if (pb_decode(&stream, GetTransportModeResponse_fields, &decoded))
+        protocol_rx_GetTransportModeResponse(&decoded);
       break;
     }
     case MSG_ID_PingRequest: {

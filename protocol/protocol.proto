@@ -43,6 +43,26 @@ message SystemGetInfoResponse {
 }
 
 // =============================================================================
+// Transport (UART vs Wi-Fi)
+// =============================================================================
+
+message SetTransportModeRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_SYSTEM;
+  enum Mode {
+    TRANSPORT_MODE_UART = 0;
+    TRANSPORT_MODE_WIFI = 1;
+  }
+  Mode mode = 1;
+}
+message GetTransportModeRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_SYSTEM;
+}
+message GetTransportModeResponse {
+  SetTransportModeRequest.Mode mode = 1;
+  bool wifi_ready = 2;
+}
+
+// =============================================================================
 // Beacon (Ping)
 // =============================================================================
 

@@ -17,6 +17,11 @@ typedef enum _NodeType {
     NodeType_NODE_TYPE_HYBRID = 2
 } NodeType;
 
+typedef enum _SetTransportModeRequest_Mode {
+    SetTransportModeRequest_Mode_TRANSPORT_MODE_UART = 0,
+    SetTransportModeRequest_Mode_TRANSPORT_MODE_WIFI = 1
+} SetTransportModeRequest_Mode;
+
 /* Struct definitions */
 typedef struct _AckResponse {
     bool success;
@@ -40,6 +45,19 @@ typedef struct _SystemGetInfoRequest {
 typedef struct _SystemGetInfoResponse {
     char info[65];
 } SystemGetInfoResponse;
+
+typedef struct _SetTransportModeRequest {
+    SetTransportModeRequest_Mode mode;
+} SetTransportModeRequest;
+
+typedef struct _GetTransportModeRequest {
+    char dummy_field;
+} GetTransportModeRequest;
+
+typedef struct _GetTransportModeResponse {
+    SetTransportModeRequest_Mode mode;
+    bool wifi_ready;
+} GetTransportModeResponse;
 
 typedef struct _PingRequest {
     char dummy_field;
@@ -812,10 +830,19 @@ extern "C" {
 #define _NodeType_MAX NodeType_NODE_TYPE_HYBRID
 #define _NodeType_ARRAYSIZE ((NodeType)(NodeType_NODE_TYPE_HYBRID+1))
 
+#define _SetTransportModeRequest_Mode_MIN SetTransportModeRequest_Mode_TRANSPORT_MODE_UART
+#define _SetTransportModeRequest_Mode_MAX SetTransportModeRequest_Mode_TRANSPORT_MODE_WIFI
+#define _SetTransportModeRequest_Mode_ARRAYSIZE ((SetTransportModeRequest_Mode)(SetTransportModeRequest_Mode_TRANSPORT_MODE_WIFI+1))
 
 
 
 
+
+
+#define SetTransportModeRequest_mode_ENUMTYPE SetTransportModeRequest_Mode
+
+
+#define GetTransportModeResponse_mode_ENUMTYPE SetTransportModeRequest_Mode
 
 
 
@@ -988,6 +1015,9 @@ extern "C" {
 #define SystemGetUuidResponse_init_default       {0, 0, 0}
 #define SystemGetInfoRequest_init_default        {0}
 #define SystemGetInfoResponse_init_default       {""}
+#define SetTransportModeRequest_init_default     {_SetTransportModeRequest_Mode_MIN}
+#define GetTransportModeRequest_init_default     {0}
+#define GetTransportModeResponse_init_default    {_SetTransportModeRequest_Mode_MIN, 0}
 #define PingRequest_init_default                 {0}
 #define PingResponse_init_default                {0}
 #define SetAddressRequest_init_default           {0, 0}
@@ -1153,6 +1183,9 @@ extern "C" {
 #define SystemGetUuidResponse_init_zero          {0, 0, 0}
 #define SystemGetInfoRequest_init_zero           {0}
 #define SystemGetInfoResponse_init_zero          {""}
+#define SetTransportModeRequest_init_zero        {_SetTransportModeRequest_Mode_MIN}
+#define GetTransportModeRequest_init_zero        {0}
+#define GetTransportModeResponse_init_zero       {_SetTransportModeRequest_Mode_MIN, 0}
 #define PingRequest_init_zero                    {0}
 #define PingResponse_init_zero                   {0}
 #define SetAddressRequest_init_zero              {0, 0}
@@ -1321,6 +1354,9 @@ extern "C" {
 #define SystemGetUuidResponse_uuid_word1_tag     2
 #define SystemGetUuidResponse_uuid_word2_tag     3
 #define SystemGetInfoResponse_info_tag           1
+#define SetTransportModeRequest_mode_tag         1
+#define GetTransportModeResponse_mode_tag        1
+#define GetTransportModeResponse_wifi_ready_tag  2
 #define PingResponse_seq_tag                     1
 #define SetAddressRequest_address_tag            1
 #define SetAddressRequest_pan_id_tag             2
@@ -1559,6 +1595,22 @@ X(a, STATIC,   SINGULAR, UINT32,   uuid_word2,        3)
 X(a, STATIC,   SINGULAR, STRING,   info,              1)
 #define SystemGetInfoResponse_CALLBACK NULL
 #define SystemGetInfoResponse_DEFAULT NULL
+
+#define SetTransportModeRequest_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UENUM,    mode,              1)
+#define SetTransportModeRequest_CALLBACK NULL
+#define SetTransportModeRequest_DEFAULT NULL
+
+#define GetTransportModeRequest_FIELDLIST(X, a) \
+
+#define GetTransportModeRequest_CALLBACK NULL
+#define GetTransportModeRequest_DEFAULT NULL
+
+#define GetTransportModeResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UENUM,    mode,              1) \
+X(a, STATIC,   SINGULAR, BOOL,     wifi_ready,        2)
+#define GetTransportModeResponse_CALLBACK NULL
+#define GetTransportModeResponse_DEFAULT NULL
 
 #define PingRequest_FIELDLIST(X, a) \
 
@@ -2470,6 +2522,9 @@ extern const pb_msgdesc_t SystemGetUuidRequest_msg;
 extern const pb_msgdesc_t SystemGetUuidResponse_msg;
 extern const pb_msgdesc_t SystemGetInfoRequest_msg;
 extern const pb_msgdesc_t SystemGetInfoResponse_msg;
+extern const pb_msgdesc_t SetTransportModeRequest_msg;
+extern const pb_msgdesc_t GetTransportModeRequest_msg;
+extern const pb_msgdesc_t GetTransportModeResponse_msg;
 extern const pb_msgdesc_t PingRequest_msg;
 extern const pb_msgdesc_t PingResponse_msg;
 extern const pb_msgdesc_t SetAddressRequest_msg;
@@ -2637,6 +2692,9 @@ extern const pb_msgdesc_t SystemFatalEvent_msg;
 #define SystemGetUuidResponse_fields &SystemGetUuidResponse_msg
 #define SystemGetInfoRequest_fields &SystemGetInfoRequest_msg
 #define SystemGetInfoResponse_fields &SystemGetInfoResponse_msg
+#define SetTransportModeRequest_fields &SetTransportModeRequest_msg
+#define GetTransportModeRequest_fields &GetTransportModeRequest_msg
+#define GetTransportModeResponse_fields &GetTransportModeResponse_msg
 #define PingRequest_fields &PingRequest_msg
 #define PingResponse_fields &PingResponse_msg
 #define SetAddressRequest_fields &SetAddressRequest_msg
@@ -2815,6 +2873,8 @@ extern const pb_msgdesc_t SystemFatalEvent_msg;
 #define ErrorClearRequest_size                   0
 #define GetConfigRequest_size                    0
 #define GetConfigResponse_size                   12
+#define GetTransportModeRequest_size             0
+#define GetTransportModeResponse_size            4
 #define ImuAccelConfigFailedEvent_size           6
 #define ImuFailedToPushEventToSensorFusionEvent_size 12
 #define ImuFaultEvent_size                       46
@@ -2884,6 +2944,7 @@ extern const pb_msgdesc_t SystemFatalEvent_msg;
 #define SensorFusionSetNoiseRequest_size         15
 #define SetAddressRequest_size                   12
 #define SetAddressResponse_size                  2
+#define SetTransportModeRequest_size             2
 #define StopwatchGetRequest_size                 0
 #define StopwatchGetResponse_size                8
 #define StopwatchStartRequest_size               0

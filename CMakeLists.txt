@@ -72,4 +72,6 @@ target_link_options(${HWCONFIG_TARGET} PRIVATE
     "LINKER:-u,protocol_rx_PingRequest"
     "LINKER:-u,protocol_rx_GetConfigRequest"
     "LINKER:-u,protocol_rx_SetAddressRequest"
+    "LINKER:-u,protocol_rx_SetTransportModeRequest"
+    "LINKER:-u,protocol_rx_GetTransportModeRequest"
 )
