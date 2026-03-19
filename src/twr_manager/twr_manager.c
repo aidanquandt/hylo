@@ -7,7 +7,6 @@
 #include "FreeRTOS.h"
 #include "backoff.h"
 #include "common.h"
-#include "feature_config.h"
 #include "protocol_tx.h"
 #include "protocol.pb.h"
 #include "module.h"
@@ -137,20 +136,6 @@ STATIC void twr_manager_handle_ranging_success(const twr_result_t* result, uint1
     // Update counters
     ctx.success_count++;
 
-#if FEATURE_PRINT_RANGING_SUCCESS_AND_DISTANCE
-    // Log result with position if available
-    TwrMgrRangeEvent ev = TwrMgrRangeEvent_init_zero;
-    ev.distance_m        = result->distance_m;
-    ev.addr              = result->remote_addr;
-    ev.position_unknown  = !result->anchor_position_valid;
-    if (result->anchor_position_valid)
-    {
-        ev.x = result->anchor_position.x;
-        ev.y = result->anchor_position.y;
-        ev.z = result->anchor_position.z;
-    }
-    protocol_tx_TwrMgrRangeEvent(&ev);
-#endif
     // Push to sensor fusion for localization
     twr_manager_push_to_sensor_fusion(result);
 

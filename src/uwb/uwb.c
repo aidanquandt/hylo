@@ -335,6 +335,8 @@ STATIC void uwb_state_initialization_on_entry(uint16_t prevState)
     state.fault_code = FAULT_NONE;
 
     uwb_dev = uwb_driver_init();
+
+    
     if (uwb_dev == NULL)
     {
         state.fault_code = FAULT_INIT_NULL_DEV;

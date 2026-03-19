@@ -37,6 +37,9 @@ STATIC void initiator_process_result_impl(twr_context_t* ctx);
 twr_context_t initiator_twr_ctx; // Made non-static for external access
 STATIC initiator_status_t initiator_status = {0};
 
+/* Guard: prevent processing same FINAL_ACK twice (can happen if UWB delivers duplicate frame) */
+STATIC uint8_t last_processed_sequence = 0xFF;
+
 STATIC const twr_callbacks_t initiator_callbacks = {
     .send_message       = initiator_send_message_impl,
     .handle_message     = initiator_handle_message_impl,
@@ -176,7 +179,13 @@ STATIC void initiator_handle_message_impl(const twr_event_t* event, twr_context_
                      ack->anchor_position.z != 0.0f);
             }
 
-            // Process the result
+            /* Guard: only process once per sequence (prevents duplicate if UWB delivers same frame twice) */
+            if (ctx->sequence == last_processed_sequence)
+            {
+                break;
+            }
+            last_processed_sequence = ctx->sequence;
+
             twr_state_machine_transition_to(ctx, TWR_STATE_PROCESSING);
             break;
         }
@@ -267,6 +276,20 @@ STATIC void initiator_process_result_impl(twr_context_t* ctx)
 
         ctx->last_result = result;
         ctx->successful_transactions++;
+
+#if FEATURE_PRINT_RANGING_SUCCESS_AND_DISTANCE
+        TwrMgrRangeEvent ev = TwrMgrRangeEvent_init_zero;
+        ev.distance_m        = result.distance_m;
+        ev.addr              = result.remote_addr;
+        ev.position_unknown  = !result.anchor_position_valid;
+        if (result.anchor_position_valid)
+        {
+            ev.x = result.anchor_position.x;
+            ev.y = result.anchor_position.y;
+            ev.z = result.anchor_position.z;
+        }
+        protocol_tx_TwrMgrRangeEvent(&ev);
+#endif
     }
     else
     {
@@ -286,6 +309,8 @@ void initiator_init(void)
     twr_state_machine_init(&initiator_twr_ctx, TWR_ROLE_INITIATOR, &initiator_callbacks,
                            &initiator_status);
     memset(&initiator_status, 0, sizeof(initiator_status));
+
+    last_processed_sequence = 0xFF;
 }
 
 bool initiator_start(void)

@@ -167,6 +167,13 @@ bool twr_start_ranging(uint16_t peer_addr)
         return false;
     }
 
+    if (!uwb_is_ready())
+    {
+        InitiatorUwbNotReadyEvent ev = InitiatorUwbNotReadyEvent_init_zero;
+        protocol_tx_InitiatorUwbNotReadyEvent(&ev);
+        return false;
+    }
+
     // Manual starts are always initiator (responder auto-starts)
     return twr_state_machine_start(&initiator_twr_ctx, peer_addr);
 }
