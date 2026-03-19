@@ -57,6 +57,12 @@ See BSP_SD_ErrorCallback() and BSP_SD_AbortCallback() below
 #define SD_TIMEOUT 30 * 1000
 
 #define SD_DEFAULT_BLOCK_SIZE 512
+#define SD_DMA_RAM_D1_START    0x24000000U
+#define SD_DMA_RAM_D1_END      0x24050000U
+#define SD_DMA_RAM_D2_START    0x30000000U
+#define SD_DMA_RAM_D2_END      0x30008000U
+#define SD_DMA_RAM_D3_START    0x38000000U
+#define SD_DMA_RAM_D3_END      0x38004000U
 
 /*
  * Depending on the use case, the SD card initialization could be done at the
@@ -89,11 +95,8 @@ See BSP_SD_ErrorCallback() and BSP_SD_AbortCallback() below
 
 /* Private variables ---------------------------------------------------------*/
 #if defined(ENABLE_SCRATCH_BUFFER)
-#if defined (ENABLE_SD_DMA_CACHE_MAINTENANCE)
-ALIGN_32BYTES(static uint8_t scratch[BLOCKSIZE]); // 32-Byte aligned for cache maintenance
-#else
-__ALIGN_BEGIN static uint8_t scratch[BLOCKSIZE] __ALIGN_END;
-#endif
+__attribute__((section(".dma_buffer"))) __attribute__((aligned(32)))
+static uint8_t scratch[BLOCKSIZE];
 #endif
 /* Disk status */
 static volatile DSTATUS Stat = STA_NOINIT;
@@ -105,6 +108,7 @@ static osMessageQueueId_t SDQueueID = NULL;
 #endif
 /* Private function prototypes -----------------------------------------------*/
 static DSTATUS SD_CheckStatus(BYTE lun);
+static int SD_IsDmaAccessibleBuffer(const BYTE *buff, UINT count);
 DSTATUS SD_initialize (BYTE);
 DSTATUS SD_status (BYTE);
 DRESULT SD_read (BYTE, BYTE*, DWORD, UINT);
@@ -134,6 +138,21 @@ const Diskio_drvTypeDef  SD_Driver =
 /* USER CODE END beforeFunctionSection */
 
 /* Private functions ---------------------------------------------------------*/
+
+static int SD_IsDmaAccessibleBuffer(const BYTE *buff, UINT count)
+{
+  uint32_t start = (uint32_t)buff;
+  uint32_t end = start + (count * BLOCKSIZE) - 1U;
+
+  if (count == 0U)
+  {
+    return 0;
+  }
+
+  return ((start >= SD_DMA_RAM_D1_START) && (end < SD_DMA_RAM_D1_END)) ||
+         ((start >= SD_DMA_RAM_D2_START) && (end < SD_DMA_RAM_D2_END)) ||
+         ((start >= SD_DMA_RAM_D3_START) && (end < SD_DMA_RAM_D3_END));
+}
 
 static int SD_CheckStatusWithTimeout(uint32_t timeout)
 {
@@ -271,7 +290,7 @@ DRESULT SD_read(BYTE lun, BYTE *buff, DWORD sector, UINT count)
   }
 
 #if defined(ENABLE_SCRATCH_BUFFER)
-  if (!((uint32_t)buff & 0x3))
+  if ((((uint32_t)buff & 0x3U) == 0U) && SD_IsDmaAccessibleBuffer(buff, count))
   {
 #endif
     /* Fast path cause destination buffer is correctly aligned */
@@ -434,7 +453,7 @@ DRESULT SD_write(BYTE lun, const BYTE *buff, DWORD sector, UINT count)
   }
 
 #if defined(ENABLE_SCRATCH_BUFFER)
-  if (!((uint32_t)buff & 0x3))
+  if ((((uint32_t)buff & 0x3U) == 0U) && SD_IsDmaAccessibleBuffer(buff, count))
   {
 #endif
 #if (ENABLE_SD_DMA_CACHE_MAINTENANCE == 1)
@@ -504,6 +523,10 @@ DRESULT SD_write(BYTE lun, const BYTE *buff, DWORD sector, UINT count)
         memcpy((void *)scratch, buff, BLOCKSIZE);
         buff += BLOCKSIZE;
 
+      #if (ENABLE_SD_DMA_CACHE_MAINTENANCE == 1)
+        SCB_CleanDCache_by_Addr((uint32_t*)scratch, BLOCKSIZE);
+      #endif
+
         ret = BSP_SD_WriteBlocks_DMA((uint32_t*)scratch, (uint32_t)sector++, 1);
         if (ret == MSD_OK )
         {
@@ -514,14 +537,14 @@ DRESULT SD_write(BYTE lun, const BYTE *buff, DWORD sector, UINT count)
 
           if (event.status == osEventMessage)
           {
-            if (event.value.v == READ_CPLT_MSG)
+            if (event.value.v == WRITE_CPLT_MSG)
             {
               timer = osKernelSysTick();
               /* block until SDIO IP is ready or a timeout occur */
               while(osKernelSysTick() - timer <SD_TIMEOUT)
 #else
                 status = osMessageQueueGet(SDQueueID, (void *)&event, NULL, SD_TIMEOUT);
-              if ((status == osOK) && (event == READ_CPLT_MSG))
+              if ((status == osOK) && (event == WRITE_CPLT_MSG))
               {
                 timer = osKernelGetTickCount();
                 /* block until SDIO IP is ready or a timeout occur */
