@@ -854,7 +854,7 @@ STATIC void wifi_transmit_telemetry_queue(void)
         
         if (len > 0 && len < (int)sizeof(tx_buf))
         {
-            //uart_driver_transmit(UART_WIFI, (uint8_t*)tx_buf, (uint16_t)len);
+            uart_driver_transmit(UART_WIFI, (uint8_t*)tx_buf, (uint16_t)len);
             telemetry_stats.events_transmitted++;
         }
     }
