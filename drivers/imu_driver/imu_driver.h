@@ -23,10 +23,10 @@ typedef struct imu_dev_s imu_dev_t;
 typedef enum
 {
 #if FEATURE_IMUS_POPULATED
-    IMU_DEVICE_0 = 0,
-    IMU_DEVICE_1,
-    IMU_DEVICE_2,
-    IMU_DEVICE_3,
+    // IMU_DEVICE_0 = 0,
+    // IMU_DEVICE_1,
+    // IMU_DEVICE_2,
+    // IMU_DEVICE_3,
 #endif
     IMU_NUM_DEVICES
 } imu_device_e;

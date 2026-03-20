@@ -13,6 +13,11 @@ enum NodeType {
   NODE_TYPE_HYBRID = 2;
 }
 
+enum TransportType {
+  TRANSPORT_TYPE_UART = 0;
+  TRANSPORT_TYPE_WIFI = 1;
+}
+
 // =============================================================================
 // Common
 // =============================================================================
@@ -20,6 +25,20 @@ enum NodeType {
 message AckResponse {
   bool success = 1;
   uint32 error_code = 2;
+}
+
+message TransportSetRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_COMMON;
+  TransportType transport = 1;
+}
+
+message TransportGetRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_COMMON;
+}
+
+message TransportGetResponse {
+  TransportType active_transport = 1;
+  bool wifi_ready = 2;
 }
 
 // =============================================================================

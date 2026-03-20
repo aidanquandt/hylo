@@ -11,7 +11,7 @@
 #include <string.h>
 
 #define RX_CHUNK_SIZE  64
-#define TASK_STACK     384
+#define TASK_STACK     1024
 #define TASK_PRIORITY  (tskIDLE_PRIORITY + 1)
 
 static void uart_protocol_task_fn(void *arg)
@@ -24,7 +24,7 @@ static void uart_protocol_task_fn(void *arg)
     for (;;) {
         size_t received = xStreamBufferReceive(stream, buf, sizeof(buf), pdMS_TO_TICKS(50));
         if (received > 0)
-            uart_framing_feed(buf, received);
+            uart_framing_feed(UART_CONSOLE, buf, received);
     }
 }
 

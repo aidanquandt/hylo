@@ -305,17 +305,8 @@ STATIC void sensor_fusion_update_position_estimate(void)
  */
 STATIC void send_ranging_telemetry(const sensor_ranging_data_t* ranging, uint32_t timestamp_ms)
 {
-    if (!wifi_telemetry_is_ready())
-    {
-        return;
-    }
-    
-    telemetry_event_t telem = {
-        .type = TELEMETRY_EVENT_RANGING,
-        .timestamp_ms = timestamp_ms,
-        .data.ranging = *ranging
-    };
-    wifi_push_telemetry(&telem);
+    (void)ranging;
+    (void)timestamp_ms;
 }
 
 /**
@@ -323,21 +314,7 @@ STATIC void send_ranging_telemetry(const sensor_ranging_data_t* ranging, uint32_
  */
 STATIC void send_imu_telemetry(const sensor_event_t* event)
 {
-    // IMU runs at 200Hz, so only send every 20th sample to avoid flooding
-    static uint8_t imu_decimation_counter = 0;
-
-    if (counter_uint8_t(&imu_decimation_counter, 20)) // log every 20th sample to get ~10Hz (200Hz / 20)
-    {
-        if (wifi_telemetry_is_ready())
-        {
-            telemetry_event_t telem = {
-                .type = TELEMETRY_EVENT_SENSOR_EVENT,
-                .timestamp_ms = event->timestamp_ms,
-                .data.sensor_event = *event
-            };
-            wifi_push_telemetry(&telem);
-        }
-    }
+    (void)event;
 }
 
 /**
@@ -345,23 +322,7 @@ STATIC void send_imu_telemetry(const sensor_event_t* event)
  */
 STATIC void send_position_telemetry(const sensor_fusion_position_t* position)
 {
-    static uint32_t last_position_send = 0;
-    uint32_t now = timer_driver_get_time_ms();
-    
-    // Throttle to max 10 Hz and always send (even if position invalid)
-    if ((now - last_position_send) >= 100)
-    {
-        if (wifi_telemetry_is_ready())
-        {
-            telemetry_event_t telem = {
-                .type = TELEMETRY_EVENT_POSITION,
-                .timestamp_ms = position->timestamp_ms,
-                .data.position = *position
-            };
-            wifi_push_telemetry(&telem);
-            last_position_send = now;
-        }
-    }
+    (void)position;
 }
 
 /**

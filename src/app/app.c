@@ -304,6 +304,7 @@ void app_init(void)
     uart_driver_init();
     uart_protocol_task_start();
     app_initialize_modules();
+    wifi_start_task();
     app_create_module_tasks();
     app_post_module_initialization();
     sdcard_driver_init();

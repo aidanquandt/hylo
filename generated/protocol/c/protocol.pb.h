@@ -17,11 +17,29 @@ typedef enum _NodeType {
     NodeType_NODE_TYPE_HYBRID = 2
 } NodeType;
 
+typedef enum _TransportType {
+    TransportType_TRANSPORT_TYPE_UART = 0,
+    TransportType_TRANSPORT_TYPE_WIFI = 1
+} TransportType;
+
 /* Struct definitions */
 typedef struct _AckResponse {
     bool success;
     uint32_t error_code;
 } AckResponse;
+
+typedef struct _TransportSetRequest {
+    TransportType transport;
+} TransportSetRequest;
+
+typedef struct _TransportGetRequest {
+    char dummy_field;
+} TransportGetRequest;
+
+typedef struct _TransportGetResponse {
+    TransportType active_transport;
+    bool wifi_ready;
+} TransportGetResponse;
 
 typedef struct _SystemGetUuidRequest {
     char dummy_field;
@@ -812,6 +830,15 @@ extern "C" {
 #define _NodeType_MAX NodeType_NODE_TYPE_HYBRID
 #define _NodeType_ARRAYSIZE ((NodeType)(NodeType_NODE_TYPE_HYBRID+1))
 
+#define _TransportType_MIN TransportType_TRANSPORT_TYPE_UART
+#define _TransportType_MAX TransportType_TRANSPORT_TYPE_WIFI
+#define _TransportType_ARRAYSIZE ((TransportType)(TransportType_TRANSPORT_TYPE_WIFI+1))
+
+
+#define TransportSetRequest_transport_ENUMTYPE TransportType
+
+
+#define TransportGetResponse_active_transport_ENUMTYPE TransportType
 
 
 
@@ -984,6 +1011,9 @@ extern "C" {
 
 /* Initializer values for message structs */
 #define AckResponse_init_default                 {0, 0}
+#define TransportSetRequest_init_default         {_TransportType_MIN}
+#define TransportGetRequest_init_default         {0}
+#define TransportGetResponse_init_default        {_TransportType_MIN, 0}
 #define SystemGetUuidRequest_init_default        {0}
 #define SystemGetUuidResponse_init_default       {0, 0, 0}
 #define SystemGetInfoRequest_init_default        {0}
@@ -1149,6 +1179,9 @@ extern "C" {
 #define WatchdogTaskFailureEvent_init_default    {0, 0}
 #define SystemFatalEvent_init_default            {"", ""}
 #define AckResponse_init_zero                    {0, 0}
+#define TransportSetRequest_init_zero            {_TransportType_MIN}
+#define TransportGetRequest_init_zero            {0}
+#define TransportGetResponse_init_zero           {_TransportType_MIN, 0}
 #define SystemGetUuidRequest_init_zero           {0}
 #define SystemGetUuidResponse_init_zero          {0, 0, 0}
 #define SystemGetInfoRequest_init_zero           {0}
@@ -1317,6 +1350,9 @@ extern "C" {
 /* Field tags (for use in manual encoding/decoding) */
 #define AckResponse_success_tag                  1
 #define AckResponse_error_code_tag               2
+#define TransportSetRequest_transport_tag        1
+#define TransportGetResponse_active_transport_tag 1
+#define TransportGetResponse_wifi_ready_tag      2
 #define SystemGetUuidResponse_uuid_word0_tag     1
 #define SystemGetUuidResponse_uuid_word1_tag     2
 #define SystemGetUuidResponse_uuid_word2_tag     3
@@ -1537,6 +1573,22 @@ X(a, STATIC,   SINGULAR, BOOL,     success,           1) \
 X(a, STATIC,   SINGULAR, UINT32,   error_code,        2)
 #define AckResponse_CALLBACK NULL
 #define AckResponse_DEFAULT NULL
+
+#define TransportSetRequest_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UENUM,    transport,         1)
+#define TransportSetRequest_CALLBACK NULL
+#define TransportSetRequest_DEFAULT NULL
+
+#define TransportGetRequest_FIELDLIST(X, a) \
+
+#define TransportGetRequest_CALLBACK NULL
+#define TransportGetRequest_DEFAULT NULL
+
+#define TransportGetResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UENUM,    active_transport,   1) \
+X(a, STATIC,   SINGULAR, BOOL,     wifi_ready,        2)
+#define TransportGetResponse_CALLBACK NULL
+#define TransportGetResponse_DEFAULT NULL
 
 #define SystemGetUuidRequest_FIELDLIST(X, a) \
 
@@ -2466,6 +2518,9 @@ X(a, STATIC,   SINGULAR, STRING,   message,           2)
 #define SystemFatalEvent_DEFAULT NULL
 
 extern const pb_msgdesc_t AckResponse_msg;
+extern const pb_msgdesc_t TransportSetRequest_msg;
+extern const pb_msgdesc_t TransportGetRequest_msg;
+extern const pb_msgdesc_t TransportGetResponse_msg;
 extern const pb_msgdesc_t SystemGetUuidRequest_msg;
 extern const pb_msgdesc_t SystemGetUuidResponse_msg;
 extern const pb_msgdesc_t SystemGetInfoRequest_msg;
@@ -2633,6 +2688,9 @@ extern const pb_msgdesc_t SystemFatalEvent_msg;
 
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
 #define AckResponse_fields &AckResponse_msg
+#define TransportSetRequest_fields &TransportSetRequest_msg
+#define TransportGetRequest_fields &TransportGetRequest_msg
+#define TransportGetResponse_fields &TransportGetResponse_msg
 #define SystemGetUuidRequest_fields &SystemGetUuidRequest_msg
 #define SystemGetUuidResponse_fields &SystemGetUuidResponse_msg
 #define SystemGetInfoRequest_fields &SystemGetInfoRequest_msg
@@ -2893,6 +2951,9 @@ extern const pb_msgdesc_t SystemFatalEvent_msg;
 #define SystemGetInfoResponse_size               66
 #define SystemGetUuidRequest_size                0
 #define SystemGetUuidResponse_size               18
+#define TransportGetRequest_size                 0
+#define TransportGetResponse_size                4
+#define TransportSetRequest_size                 2
 #define TwrFailedToRegisterProtocolHandlerEvent_size 0
 #define TwrGetResultRequest_size                 0
 #define TwrGetResultResponse_size                13
