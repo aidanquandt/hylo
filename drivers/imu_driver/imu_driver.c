@@ -35,10 +35,10 @@ STATIC bool validate_odr(imu_odr_t odr);
 STATIC struct imu_dev_s imu_devices[IMU_MAX_DEVICES];
 
 STATIC const spi_driver_cs_E imu_cs_pins[IMU_MAX_DEVICES] = {
-    SPI_DRIVER_CS_IMU_0,
-    SPI_DRIVER_CS_IMU_1,
-    SPI_DRIVER_CS_IMU_2,
-    SPI_DRIVER_CS_IMU_3,
+    // SPI_DRIVER_CS_IMU_0,
+    // SPI_DRIVER_CS_IMU_1,
+    // SPI_DRIVER_CS_IMU_2,
+    // SPI_DRIVER_CS_IMU_3,
 };
 
 /*---------------------------------------------------------------------------

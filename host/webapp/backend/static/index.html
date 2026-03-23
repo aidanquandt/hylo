@@ -339,6 +339,8 @@
       <button type="button" id="refreshPorts" class="btn-refresh" title="Refresh port list">⟳</button>
       <button type="button" id="monitorBtn" class="btn-monitor" title="Start background monitoring so event log receives all device messages (e.g. TWR range, logs)">Start monitoring</button>
       <span id="monitorStatus" class="monitor-status" style="display: none;"></span>
+      <button type="button" id="useWiFiBtn" class="btn-monitor" title="Switch to WiFi transport (via TCP)">Use WiFi</button>
+      <span id="tcpStatus" class="monitor-status" style="display: none;"></span>
       <label for="search">Search</label>
       <input type="text" id="search" placeholder="Filter commands…" />
     </div>
@@ -409,6 +411,8 @@
     const eventLogContentEl = document.getElementById("eventLogContent");
     const monitorBtn = document.getElementById("monitorBtn");
     const monitorStatusEl = document.getElementById("monitorStatus");
+    const useWiFiBtn = document.getElementById("useWiFiBtn");
+    const tcpStatusEl = document.getElementById("tcpStatus");
 
     let allCommands = [];
     let moduleOrder = [];
@@ -421,7 +425,9 @@
         const r = await fetch("/api/ports");
         if (!r.ok) throw new Error(await r.text());
         const { ports } = await r.json();
+        const tcpStatus = await fetch("/api/tcp/status").then(x => x.ok ? x.json() : { active: false }).catch(() => ({ active: false }));
         portEl.innerHTML = '<option value="">Select port</option>' +
+          (tcpStatus.active ? `<option value="__tcp_server__">TCP Server (${tcpStatus.host}:${tcpStatus.port})</option>` : "") +
           ports.map(p => `<option value="${p.device}">${p.device} — ${p.description || ""}</option>`).join("");
         if (currentPort && portEl.querySelector(`option[value="${currentPort}"]`)) {
           portEl.value = currentPort;
@@ -429,6 +435,21 @@
       } catch (e) {
         portEl.innerHTML = '<option value="">No ports</option>';
       }
+    }
+
+    async function updateTcpStatus() {
+      try {
+        const r = await fetch("/api/tcp/status");
+        if (!r.ok) return;
+        const data = await r.json();
+        if (data.active) {
+          const client = data.client_connected && data.client ? ` [client ${data.client[0]}:${data.client[1]}]` : "";
+          tcpStatusEl.textContent = `WiFi: TCP ${data.host}:${data.port}${client}`;
+          tcpStatusEl.style.display = "inline";
+        } else {
+          tcpStatusEl.style.display = "none";
+        }
+      } catch (e) { /* ignore */ }
     }
 
     function isEventLogAtBottom() {
@@ -510,9 +531,10 @@
         if (!r.ok) return;
         const data = await r.json();
         const active = data.active && data.port;
+        const tcpSelected = portEl.value === "__tcp_server__";
         monitorBtn.textContent = active ? "Stop monitoring" : "Start monitoring";
         monitorBtn.classList.toggle("active", !!active);
-        monitorBtn.disabled = !portEl.value && !active;
+        monitorBtn.disabled = tcpSelected || (!portEl.value && !active);
         if (active) {
           monitorStatusEl.textContent = "Monitoring " + data.port;
           monitorStatusEl.style.display = "inline";
@@ -685,6 +707,7 @@
     searchEl.addEventListener("input", applyFilter);
     document.getElementById("refreshPorts").addEventListener("click", loadPorts);
     monitorBtn.addEventListener("click", async () => {
+      if (portEl.value === "__tcp_server__") return;
       try {
         const r = await fetch("/api/monitor/status");
         if (!r.ok) return;
@@ -706,6 +729,24 @@
         }
         await updateMonitorStatus();
         if (!data.active) await loadEvents();
+      } catch (e) { /* ignore */ }
+    });
+    useWiFiBtn.addEventListener("click", async () => {
+      try {
+        // Stop serial monitor if active
+        const monitorStatus = await fetch("/api/monitor/status");
+        if (monitorStatus.ok) {
+          const data = await monitorStatus.json();
+          if (data.active) {
+            await fetch("/api/monitor/stop", { method: "POST" });
+          }
+        }
+        // Switch to WiFi transport
+        await loadPorts();
+        if (portEl.querySelector('option[value="__tcp_server__"]')) {
+          portEl.value = "__tcp_server__";
+          await connectPort();
+        }
       } catch (e) { /* ignore */ }
     });
     document.getElementById("jumpToBottom").addEventListener("click", () => {
@@ -734,7 +775,7 @@
     async function connectPort() {
       const port = portEl.value;
       try {
-        if (port) {
+        if (port && port !== "__tcp_server__") {
           const res = await fetch("/api/monitor/start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -748,6 +789,7 @@
           await fetch("/api/monitor/stop", { method: "POST" });
         }
         await updateMonitorStatus();
+        await updateTcpStatus();
         await loadEvents();
       } catch (e) { /* ignore */ }
     }
@@ -756,6 +798,8 @@
     loadCommands();
     loadEvents();
     updateMonitorStatus();
+    updateTcpStatus();
+    setInterval(updateTcpStatus, 1000);
     portEl.addEventListener("change", connectPort);
 
     // ===================== Tab switching =====================

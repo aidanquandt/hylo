@@ -10,6 +10,22 @@
 #define PROTOCOL_TX_BUF_SIZE 110
 static uint8_t s_tx_buf[PROTOCOL_TX_BUF_SIZE];
 
+void protocol_tx_set_destination(protocol_tx_destination_e destination)
+{
+  if (destination == PROTOCOL_TX_DEST_UART_WIFI) {
+    protocol_set_uart_destination(PROTOCOL_UART_DEST_WIFI);
+    return;
+  }
+  protocol_set_uart_destination(PROTOCOL_UART_DEST_CONSOLE);
+}
+
+protocol_tx_destination_e protocol_tx_get_destination(void)
+{
+  return (protocol_get_uart_destination() == PROTOCOL_UART_DEST_WIFI)
+      ? PROTOCOL_TX_DEST_UART_WIFI
+      : PROTOCOL_TX_DEST_UART_CONSOLE;
+}
+
 void protocol_tx_AckResponse(const AckResponse *msg)
 {
   pb_ostream_t stream = pb_ostream_from_buffer(s_tx_buf, sizeof(s_tx_buf));

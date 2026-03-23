@@ -4,6 +4,14 @@
 #include "protocol_ids.h"
 #include "protocol.pb.h"
 
+typedef enum {
+	PROTOCOL_TX_DEST_UART_CONSOLE = 0,
+	PROTOCOL_TX_DEST_UART_WIFI = 1,
+} protocol_tx_destination_e;
+
+void protocol_tx_set_destination(protocol_tx_destination_e destination);
+protocol_tx_destination_e protocol_tx_get_destination(void);
+
 void protocol_tx_AckResponse(const AckResponse *msg);
 void protocol_tx_SystemGetUuidRequest(const SystemGetUuidRequest *msg);
 void protocol_tx_SystemGetUuidResponse(const SystemGetUuidResponse *msg);

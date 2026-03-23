@@ -7,6 +7,8 @@ from __future__ import annotations
 import io
 import json
 import os
+import select
+import socket
 import sys
 
 # Repo root and generated protocol for protocol_tool imports
@@ -36,6 +38,16 @@ _monitor_stop_event = threading.Event()
 _response_queue: queue.Queue = queue.Queue()
 _pending_expected_id: int | None = None
 _serial_lock = threading.Lock()
+
+# TCP server transport (WiFi firmware endpoint)
+_tcp_server_socket = None
+_tcp_server_thread: threading.Thread | None = None
+_tcp_server_stop_event = threading.Event()
+_tcp_client_socket = None
+_tcp_client_addr: tuple[str, int] | None = None
+_tcp_server_host = "0.0.0.0"
+_tcp_server_port = 5000
+_tcp_lock = threading.Lock()
 # SSE: list of queues to push new event lines to (one per connected client). Use stdlib queue for thread-safe put from reader thread.
 _sse_queues: list[queue.Queue] = []
 _sse_queues_lock = threading.Lock()
@@ -80,6 +92,12 @@ if os.path.isdir(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+@app.on_event("startup")
+def startup_tcp_server():
+    """Automatically start the TCP server when the app starts."""
+    _tcp_server_start_internal()
+
+
 class CommandRequest(BaseModel):
     port: str
     command: str
@@ -88,6 +106,25 @@ class CommandRequest(BaseModel):
 
 class MonitorStartRequest(BaseModel):
     port: str
+
+
+def _tcp_server_start_internal() -> bool:
+    """Internal function to start the TCP server. Returns True if successful."""
+    global _tcp_server_socket, _tcp_server_thread, _tcp_server_stop_event
+    if _tcp_server_thread is not None:
+        return True  # Already running
+    try:
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind((_tcp_server_host, _tcp_server_port))
+        srv.listen(1)
+    except Exception:
+        return False
+    _tcp_server_stop_event = threading.Event()
+    _tcp_server_socket = srv
+    _tcp_server_thread = threading.Thread(target=_tcp_server_loop, args=(srv, _tcp_server_stop_event), daemon=True)
+    _tcp_server_thread.start()
+    return True
 
 
 def _try_extract_viz_data(msg_id, payload) -> dict | None:
@@ -126,6 +163,108 @@ def _try_extract_viz_data(msg_id, payload) -> dict | None:
         return None
 
 
+def _handle_rx_frame(msg_id: int, payload: bytes) -> None:
+    global _event_log
+    line = "[rx] %s" % _protocol_tool.format_response(msg_id, payload)
+    with _event_log_lock:
+        _event_log = (_event_log + [line])[-EVENT_LOG_MAX:]
+    viz_event = _try_extract_viz_data(msg_id, payload)
+    with _sse_queues_lock:
+        for q in _sse_queues:
+            try:
+                q.put({"line": line, "viz": viz_event}, block=False)
+            except queue.Full:
+                pass
+    with _serial_lock:
+        if _pending_expected_id is not None and msg_id == _pending_expected_id:
+            _response_queue.put((msg_id, payload))
+
+
+def _tcp_client_is_alive() -> bool:
+    global _tcp_client_socket, _tcp_client_addr
+    with _tcp_lock:
+        client = _tcp_client_socket
+        if client is None:
+            return False
+
+        try:
+            readable, _, exceptional = select.select([client], [], [client], 0)
+            if exceptional:
+                raise OSError("TCP client socket has exceptional condition")
+
+            if readable:
+                probe = client.recv(1, socket.MSG_PEEK)
+                if probe == b"":
+                    raise ConnectionError("TCP client disconnected")
+
+            return True
+        except (BlockingIOError, InterruptedError):
+            return True
+        except Exception:
+            try:
+                client.close()
+            except Exception:
+                pass
+            if _tcp_client_socket is client:
+                _tcp_client_socket = None
+                _tcp_client_addr = None
+            return False
+
+
+def _tcp_server_loop(server_socket, stop_event: threading.Event) -> None:
+    global _tcp_client_socket, _tcp_client_addr
+    while not stop_event.is_set():
+        try:
+            server_socket.settimeout(0.25)
+            conn, addr = server_socket.accept()
+        except socket.timeout:
+            continue
+        except OSError:
+            break
+
+        with _tcp_lock:
+            if _tcp_client_socket is not None:
+                try:
+                    _tcp_client_socket.close()
+                except Exception:
+                    pass
+            _tcp_client_socket = conn
+            _tcp_client_addr = (str(addr[0]), int(addr[1]))
+
+        conn.settimeout(0.05)
+        buf = bytearray()
+        try:
+            while not stop_event.is_set():
+                try:
+                    chunk = conn.recv(4096)
+                    if not chunk:
+                        break
+                    buf.extend(chunk)
+                except socket.timeout:
+                    pass
+                except OSError:
+                    break
+
+                while 0x00 in buf:
+                    idx = buf.index(0x00)
+                    block = bytes(buf[: idx + 1])
+                    del buf[: idx + 1]
+                    result = _protocol_tool.parse_frame(block) if _protocol_tool else None
+                    if result:
+                        msg_id, payload = result
+                        _handle_rx_frame(msg_id, payload)
+                time.sleep(0.005)
+        finally:
+            with _tcp_lock:
+                if _tcp_client_socket is conn:
+                    _tcp_client_socket = None
+                    _tcp_client_addr = None
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 def _monitor_reader_loop(ser, stop_event: threading.Event) -> None:
     """Background thread: read COBS frames from serial, append to _event_log; if frame matches _pending_expected_id, put in _response_queue."""
     global _event_log
@@ -141,19 +280,7 @@ def _monitor_reader_loop(ser, stop_event: threading.Event) -> None:
                 result = _protocol_tool.parse_frame(block) if _protocol_tool else None
                 if result:
                     msg_id, payload = result
-                    line = "[rx] %s" % _protocol_tool.format_response(msg_id, payload)
-                    with _event_log_lock:
-                        _event_log = (_event_log + [line])[-EVENT_LOG_MAX:]
-                    viz_event = _try_extract_viz_data(msg_id, payload)
-                    with _sse_queues_lock:
-                        for q in _sse_queues:
-                            try:
-                                q.put({"line": line, "viz": viz_event}, block=False)
-                            except queue.Full:
-                                pass
-                    with _serial_lock:
-                        if _pending_expected_id is not None and msg_id == _pending_expected_id:
-                            _response_queue.put((msg_id, payload))
+                    _handle_rx_frame(msg_id, payload)
             time.sleep(0.01)
         except Exception:
             if not stop_event.is_set():
@@ -180,6 +307,63 @@ def _run_send_command(port: str, command: str, args: List[str]) -> tuple[bool, s
     global _event_log, _pending_expected_id
     if _protocol_tool is None:
         return False, "Protocol module not available. Run from repo root and ensure host.serial.protocol_tool is importable and protocol codegen has been run.", []
+
+    if port == "__tcp_server__":
+        with _event_log_lock:
+            prev_len = len(_event_log)
+        with _tcp_lock:
+            client = _tcp_client_socket
+        if client is None:
+            return False, "TCP server has no connected client", []
+        try:
+            req = _protocol_tool.build_request(command, args)
+            payload = req.SerializeToString()
+            if len(payload) > _protocol_tool.PROTOCOL_MAX_PAYLOAD:
+                return False, "Payload too large", []
+            msg_id_req = _protocol_tool.get_msg_id_for_type(command)
+            if msg_id_req is None:
+                return False, "Unknown command", []
+            resp_msg_id = _protocol_tool.get_expected_response_msg_id(command)
+            resp_type = _protocol_tool.get_response_type_for_request(command)
+            if resp_msg_id is None:
+                return False, "Unknown response type", []
+            frame = _protocol_tool.build_frame(msg_id_req, payload)
+            with _serial_lock:
+                while True:
+                    try:
+                        _response_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                _pending_expected_id = resp_msg_id
+            with _tcp_lock:
+                if _tcp_client_socket is None:
+                    with _serial_lock:
+                        _pending_expected_id = None
+                    return False, "TCP client disconnected", []
+                _tcp_client_socket.sendall(frame)
+            try:
+                result = _response_queue.get(timeout=5.0)
+            except queue.Empty:
+                return False, "Timeout waiting for response", []
+            finally:
+                with _serial_lock:
+                    _pending_expected_id = None
+            if result is None:
+                return False, "TCP read error", []
+            _, resp_payload = result
+            resp_cls = _protocol_tool.get_message_class(resp_type)
+            if resp_cls is None:
+                return True, "OK", []
+            resp = resp_cls()
+            resp.ParseFromString(resp_payload)
+            response_text = _protocol_tool.format_message(resp_type, resp)
+            with _event_log_lock:
+                new_events = list(_event_log[prev_len:])
+            return True, response_text, new_events
+        except Exception as e:
+            with _serial_lock:
+                _pending_expected_id = None
+            return False, str(e), []
 
     # Use shared serial when monitoring is active on this port
     if _monitor_serial is not None and _monitor_port == port:
@@ -399,10 +583,25 @@ def api_monitor_stop() -> dict:
     return {"ok": True}
 
 
+@app.get("/api/tcp/status")
+def api_tcp_status() -> dict:
+    """Return TCP server status and client connection details."""
+    client_connected = _tcp_client_is_alive()
+    with _tcp_lock:
+        client_addr = _tcp_client_addr if client_connected else None
+    return {
+        "active": _tcp_server_thread is not None,
+        "host": _tcp_server_host,
+        "port": _tcp_server_port,
+        "client_connected": client_connected,
+        "client": client_addr,
+    }
+
+
 @app.post("/api/command")
 def run_command(req: CommandRequest) -> dict:
     """Send one protocol command and return the response and any new events from this call."""
-    if serial is None:
+    if req.port != "__tcp_server__" and serial is None:
         raise HTTPException(status_code=503, detail="pyserial not installed")
     success, response, new_events = _run_send_command(req.port, req.command, req.args)
     return {"success": success, "response": response, "events": new_events}

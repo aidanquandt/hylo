@@ -19,6 +19,9 @@
 #include "common.h"
 #include "feature_config.h"
 #include "wifi_ota_parser.h"
+#include "protocol_tx.h"
+#include "protocol_handlers.h"
+#include "protocol.pb.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -416,6 +419,8 @@ STATIC void wifi_state_send_tcp_connect_on_entry(uint16_t prevState)
     state_inputs.response_ok = false;
     state_inputs.fault_present = false;
 
+    protocol_tx_set_destination(PROTOCOL_TX_DEST_UART_CONSOLE);
+
     // FIX: clear old response window. this did nothing idk
     // cmd_response_used = 0;
     // cmd_response_window[0] = 0;
@@ -710,6 +715,9 @@ STATIC void wifi_state_active_on_entry(uint16_t prevState)
     
     // Clear TCP closed flag
     tcp_closed_detected = false;
+
+    // Active transparent TCP mode carries protocol frames over UART_WIFI.
+    protocol_tx_set_destination(PROTOCOL_TX_DEST_UART_WIFI);
     
 }
 
@@ -719,6 +727,10 @@ STATIC void wifi_state_active_process(void)
     static char detect_window[128] = {0};
     static size_t detect_used = 0;
     static bool settling_complete = false;
+    
+    // Watchdog: track last time we got data from WiFi (for heartbeat timeout detection)
+    static uint32_t last_data_tick = 0;
+    static const uint32_t WIFI_HEARTBEAT_TIMEOUT_TICKS = 50;  // 5 seconds at 10Hz
 
     // Give ESP8266 500ms to settle into transparent mode and clear buffers
     if (!settling_complete) {
@@ -729,6 +741,7 @@ STATIC void wifi_state_active_process(void)
             return;
         }
         settling_complete = true;
+        last_data_tick = wifi_state_machine.timer;
     }
 
     // Transmit telemetry from queue
@@ -740,6 +753,19 @@ STATIC void wifi_state_active_process(void)
 
     uint8_t rx_buf[256];
     size_t rx_len = xStreamBufferReceive(wifi_rx_stream(), rx_buf, sizeof(rx_buf), 0);
+
+    if (rx_len > 0) {
+        /* Reset watchdog timer when we receive data */
+        last_data_tick = wifi_state_machine.timer;
+    }
+
+    /* Watchdog: check if we've exceeded 5-second timeout without data */
+    uint32_t elapsed_ticks = wifi_state_machine.timer - last_data_tick;
+    if (elapsed_ticks > WIFI_HEARTBEAT_TIMEOUT_TICKS) {
+        /* Bridge is broken - reset to TCP reconnect state */
+        wifi_state_machine.next_state = STATE_SEND_TCP_CONNECT;
+        return;
+    }
 
     if (rx_len == 0) {
         return;
@@ -766,7 +792,7 @@ STATIC void wifi_state_active_process(void)
     // Detect TCP CLOSED from ESP8266
     // -------------------------------------------------
 
-    if (strstr(detect_window, "+++")) {
+    if (strstr(detect_window, "CLOSED") != NULL) {
 
         tcp_closed_detected = true;
 
@@ -777,11 +803,11 @@ STATIC void wifi_state_active_process(void)
     }
 
     // -------------------------------------------------
-    // Feed bytes to OTA parser
+    // Feed bytes to protocol framing parser (WiFi transport path)
     // -------------------------------------------------
-    for (size_t i = 0; i < rx_len; i++) {
-        ota_parser_process_byte(rx_buf[i]);
-    }
+    // Always process RX data that arrives on WiFi
+    ota_parser_process_bytes(rx_buf, rx_len);
+
 
 
 }
@@ -789,72 +815,73 @@ STATIC void wifi_state_active_process(void)
 STATIC void wifi_state_faulted_on_entry(uint16_t prevState)
 {
     (void)prevState;
+    protocol_tx_set_destination(PROTOCOL_TX_DEST_UART_CONSOLE);
 }
 
 /**
  * @brief Transmit telemetry events from queue to WiFi
  * @note Called from wifi_state_active_process() at 10Hz
+
+ ISSUEEESSSSSSSSS
  */
 STATIC void wifi_transmit_telemetry_queue(void)
 {
     telemetry_event_t telem;
-    char tx_buf[256];
     
     // Drain telemetry queue and transmit (non-blocking)
     while (xQueueReceive(telemetry_queue, &telem, 0) == pdPASS)
     {
-        int len = 0;
+        bool sent = false;
         
         switch (telem.type)
         {
             case TELEMETRY_EVENT_RANGING:
-                len = snprintf(tx_buf, sizeof(tx_buf),
-                    "RANGE,%.3f,%.1f,%u,%.2f,%.2f,%.2f,%d\r\n",
-                    telem.data.ranging.distance_m,
-                    telem.data.ranging.rssi_dbm,
-                    telem.data.ranging.anchor_addr,
-                    telem.data.ranging.anchor_position.x,
-                    telem.data.ranging.anchor_position.y,
-                    telem.data.ranging.anchor_position.z,
-                    telem.data.ranging.anchor_position_valid ? 1 : 0);
+            {
+                TwrMgrRangeEvent ev = TwrMgrRangeEvent_init_zero;
+                ev.distance_m = telem.data.ranging.distance_m;
+                ev.addr = telem.data.ranging.anchor_addr;
+                ev.x = telem.data.ranging.anchor_position.x;
+                ev.y = telem.data.ranging.anchor_position.y;
+                ev.z = telem.data.ranging.anchor_position.z;
+                ev.position_unknown = !telem.data.ranging.anchor_position_valid;
+                protocol_tx_TwrMgrRangeEvent(&ev);
+                sent = true;
                 break;
+            }
                 
             case TELEMETRY_EVENT_SENSOR_EVENT:
-                if (telem.data.sensor_event.type == SENSOR_EVENT_IMU)
-                {
-                    len = snprintf(tx_buf, sizeof(tx_buf),
-                        "IMU,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f\r\n",
-                        telem.data.sensor_event.data.imu.accel_x,
-                        telem.data.sensor_event.data.imu.accel_y,
-                        telem.data.sensor_event.data.imu.accel_z,
-                        telem.data.sensor_event.data.imu.gyro_x,
-                        telem.data.sensor_event.data.imu.gyro_y,
-                        telem.data.sensor_event.data.imu.gyro_z,
-                        telem.data.sensor_event.data.imu.temp_c);
-                }
+                    ImuStreamPayload ev = ImuStreamPayload_init_zero;
+                    ev.accel_x = telem.data.sensor_event.data.imu.accel_x;
+                    ev.accel_y = telem.data.sensor_event.data.imu.accel_y;
+                    ev.accel_z = telem.data.sensor_event.data.imu.accel_z;
+                    ev.gyro_x = telem.data.sensor_event.data.imu.gyro_x;
+                    ev.gyro_y = telem.data.sensor_event.data.imu.gyro_y;
+                    ev.gyro_z = telem.data.sensor_event.data.imu.gyro_z;
+                    ev.temp_c = telem.data.sensor_event.data.imu.temp_c;
+                    ev.imu_index = 0;
+                    protocol_tx_ImuStreamPayload(&ev);
+                    sent = true;
                 break;
                 
             case TELEMETRY_EVENT_POSITION:
-                len = snprintf(tx_buf, sizeof(tx_buf),
-                    "POS,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.2f,%d,%d\r\n",
-                    telem.data.position.x,
-                    telem.data.position.y,
-                    telem.data.position.z,
-                    telem.data.position.vx,
-                    telem.data.position.vy,
-                    telem.data.position.vz,
-                    telem.data.position.confidence,
-                    telem.data.position.valid ? 1 : 0,
-                    telem.data.position.imu_enable);
+            {
+                SensorFusionGetStatusResponse ev = SensorFusionGetStatusResponse_init_zero;
+                ev.active = telem.data.position.valid;
+                ev.pos_x = telem.data.position.x;
+                ev.pos_y = telem.data.position.y;
+                ev.pos_z = telem.data.position.z;
+                ev.confidence = telem.data.position.confidence;
+                protocol_tx_SensorFusionGetStatusResponse(&ev);
+                sent = true;
                 break;
+            }
                 
             default:
                 continue; // Skip unknown types
         }
         
-        if (len > 0 && len < (int)sizeof(tx_buf))
+        if (sent)
         {
-            uart_driver_transmit(UART_WIFI, (uint8_t*)tx_buf, (uint16_t)len);
             telemetry_stats.events_transmitted++;
         }
     }

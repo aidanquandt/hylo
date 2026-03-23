@@ -6,6 +6,7 @@
 #include "protocol_dispatch.h"
 #include "protocol_tx.h"
 #include "protocol.pb.h"
+#include "uart_framing.h"
 #include "common.h"
 #include "datalogger.h"
 #include "imu.h"
@@ -739,4 +740,23 @@ void protocol_rx_BeaconPingRequest(const BeaconPingRequest *msg)
         r.success = true;
 
     protocol_tx_BeaconPingResponse(&r);
+}
+
+/*---------------------------------------------------------------------------
+ * Public Function Implementations (for exposing internal state)
+ *---------------------------------------------------------------------------*/
+
+bool protocol_handler_is_imu_streaming(void)
+{
+    return s_imu_stream_running;
+}
+
+void protocol_handler_set_response_destination(void)
+{
+    /* Route responses back to the same source that sent the request */
+    protocol_uart_destination_e decoder_source = protocol_get_decoder_source();
+    protocol_tx_destination_e dest = (decoder_source == PROTOCOL_UART_DEST_WIFI) 
+        ? PROTOCOL_TX_DEST_UART_WIFI 
+        : PROTOCOL_TX_DEST_UART_CONSOLE;
+    protocol_tx_set_destination(dest);
 }
