@@ -3,41 +3,26 @@
  *---------------------------------------------------------------------------*/
 #include "datalogger.h"
 #include "FreeRTOS.h"
-#include "app.h"
 #include "common.h"
-#include "module.h"
 #include "protocol_tx.h"
+#include "system_halt.h"
 #include "task.h"
+#include "task_config.h"
 #include "protocol.pb.h"
 #include <string.h>
 
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define DEADLINE_MISS_STARTUP_GRACE_PERIOD_S 5U
 #define HEAP_LOW_MEMORY_THRESHOLD_BYTES 1024U
+#define DATALOGGER_RATE_MS              1000U // 1 Hz
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
+STATIC void datalogger_task(void* pvParameters);
 STATIC void datalogger_monitor_rtos_usage(void);
 STATIC void datalogger_monitor_heap_usage(void);
-STATIC void datalogger_monitor_deadline_misses(void);
-STATIC void datalogger_process_1Hz(void);
-
-/*---------------------------------------------------------------------------
- * Module Functions
- *---------------------------------------------------------------------------*/
-extern const module_S datalogger_module;
-const module_S datalogger_module = {
-    .module_name        = "datalogger",
-    .module_init        = NULL,
-    .module_create_task = NULL,
-    .module_process_1Hz = datalogger_process_1Hz,
-    .module_process_10Hz  = NULL,
-    .module_process_100Hz = NULL,
-    .module_process_1kHz  = NULL,
-};
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -119,57 +104,6 @@ STATIC void datalogger_monitor_rtos_usage(void)
     prev_total_runtime = total_runtime;
 }
 
-STATIC void datalogger_monitor_deadline_misses(void)
-{
-    STATIC uint32_t prev_miss_count[NUM_MODULES] = {0};
-    STATIC uint32_t startup_counter              = 0;
-
-    // Skip reporting for first 5 seconds to allow modules to initialize
-    if (startup_counter < DEADLINE_MISS_STARTUP_GRACE_PERIOD_S)
-    {
-        startup_counter++;
-        // Initialize baseline after grace period
-        if (startup_counter == DEADLINE_MISS_STARTUP_GRACE_PERIOD_S)
-        {
-            /* Establish baseline; worst_latency is also reset here (per-module). */
-            for (modules_E module = (modules_E)0U; module < NUM_MODULES; module++)
-            {
-                prev_miss_count[module] = app_get_deadline_miss_count(module);
-                app_reset_deadline_stats(module);
-            }
-        }
-        return;
-    }
-
-    for (modules_E module = (modules_E)0U; module < NUM_MODULES; module++)
-    {
-        deadline_stats_t stats;
-        app_get_deadline_stats(module, &stats);
-
-        if (stats.miss_count > prev_miss_count[module])
-        {
-            uint32_t new_misses = stats.miss_count - prev_miss_count[module];
-            DataloggerTimingMissesEvent ev = DataloggerTimingMissesEvent_init_zero;
-            if (modules[module]->module_name != NULL)
-            {
-                strncpy(ev.task_name, modules[module]->module_name, sizeof(ev.task_name) - 1);
-                ev.task_name[sizeof(ev.task_name) - 1] = '\0';
-            }
-            ev.miss_count      = new_misses;
-            ev.deadline_ms     = stats.period_ms;
-            ev.worst_latency_ms = stats.worst_latency_ms;
-            protocol_tx_DataloggerTimingMissesEvent(&ev);
-            prev_miss_count[module] = stats.miss_count;
-        }
-    }
-}
-
-STATIC void datalogger_process_1Hz(void)
-{
-    datalogger_monitor_rtos_usage();
-    datalogger_monitor_heap_usage();
-    datalogger_monitor_deadline_misses();
-}
 
 STATIC void datalogger_monitor_heap_usage(void)
 {
@@ -185,9 +119,31 @@ STATIC void datalogger_monitor_heap_usage(void)
     }
 }
 
+STATIC void datalogger_task(void* pvParameters)
+{
+    (void)pvParameters;
+    TickType_t lastWake = xTaskGetTickCount();
+    for (;;)
+    {
+        datalogger_monitor_rtos_usage();
+        datalogger_monitor_heap_usage();
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(DATALOGGER_RATE_MS));
+    }
+}
+
 /*---------------------------------------------------------------------------
  * Public Function Implementation
  *---------------------------------------------------------------------------*/
+
+void datalogger_init(void)
+{
+    BaseType_t result = xTaskCreate(datalogger_task, "datalogger", TASK_STACK_2KB, NULL,
+                                    TASK_PRIORITY_DATALOGGER, NULL);
+    if (result != pdPASS)
+    {
+        system_halt("datalogger", "Failed to create datalogger task");
+    }
+}
 
 uint32_t datalogger_get_task_usage(task_cpu_info_t* tasks, uint32_t max_tasks)
 {

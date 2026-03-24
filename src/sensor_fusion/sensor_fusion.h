@@ -102,6 +102,7 @@ typedef struct
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
+void sensor_fusion_init(void);
 sensor_fusion_status_e sensor_fusion_push_event(const sensor_event_t* event);
 sensor_fusion_status_e sensor_fusion_pop_event(sensor_event_t* event);
 void sensor_fusion_get_stats(sensor_queue_stats_t* stats);

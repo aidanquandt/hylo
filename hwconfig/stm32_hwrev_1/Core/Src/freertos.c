@@ -47,7 +47,9 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
-
+/* FreeRTOS heap in RAM_D1 (AXI SRAM, 320 KB free) — keeps 82 KB of DTCMRAM available.
+ * configAPPLICATION_ALLOCATED_HEAP=1 tells heap_4.c to use this buffer instead of its own. */
+uint8_t ucHeap[configTOTAL_HEAP_SIZE] __attribute__((section(".freertos_heap")));
 /* USER CODE END Variables */
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -69,6 +71,7 @@ void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 /* Hook prototypes */
 void configureTimerForRunTimeStats(void);
 unsigned long getRunTimeCounterValue(void);
+void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName);
 
 /* USER CODE BEGIN 1 */
 /* Functions needed when configGENERATE_RUN_TIME_STATS is on */
@@ -82,19 +85,16 @@ __weak unsigned long getRunTimeCounterValue(void)
   return TIM5->CNT;
 }
 
-/* Stack overflow hook */
-void vApplicationStackOverflowHook(TaskHandle_t xTask, char* pcTaskName)
-{
-    /* This function will be called if a stack overflow is detected */
-    /* Halt execution for debugging */
-    (void)xTask;
-    (void)pcTaskName;
-    taskDISABLE_INTERRUPTS();
-    for (;;)
-        ;
-}
-
 /* USER CODE END 1 */
+
+/* USER CODE BEGIN 4 */
+void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName)
+{
+   /* Run time stack overflow checking is performed if
+   configCHECK_FOR_STACK_OVERFLOW is defined to 1 or 2. This hook function is
+   called if a stack overflow is detected. */
+}
+/* USER CODE END 4 */
 
 /**
   * @brief  FreeRTOS initialization

@@ -9,7 +9,8 @@
 #include "common.h"
 #include "protocol_tx.h"
 #include "protocol.pb.h"
-#include "module.h"
+#include "system_halt.h"
+#include "task_config.h"
 #include "sensor_fusion.h"
 #include "state_machine.h"
 #include "task.h"
@@ -68,22 +69,10 @@ STATIC void twr_manager_handle_ranging_failure(uint16_t target);
 STATIC void twr_manager_try_start_ranging(void);
 
 /*---------------------------------------------------------------------------
- * Module Functions
+ * Private Function Prototypes (module-internal)
  *---------------------------------------------------------------------------*/
-STATIC void twr_manager_init(void);
 STATIC void twr_manager_process_1kHz(void);
-
-extern const module_S twr_manager_module;
-
-const module_S twr_manager_module = {
-    .module_name         = "twr_manager",
-    .module_init         = twr_manager_init,
-    .module_create_task  = NULL,
-    .module_process_1Hz   = NULL,
-    .module_process_10Hz  = NULL,
-    .module_process_100Hz = NULL,
-    .module_process_1kHz  = twr_manager_process_1kHz,
-};
+STATIC void twr_manager_1kHz_task(void* pvParameters);
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -185,7 +174,18 @@ STATIC void twr_manager_try_start_ranging(void)
     }
 }
 
-STATIC void twr_manager_init(void)
+STATIC void twr_manager_1kHz_task(void* pvParameters)
+{
+    (void)pvParameters;
+    TickType_t lastWake = xTaskGetTickCount();
+    for (;;)
+    {
+        twr_manager_process_1kHz();
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(1));
+    }
+}
+
+void twr_manager_init(void)
 {
     twr_scheduler_init();
 
@@ -203,6 +203,13 @@ STATIC void twr_manager_init(void)
     twr_manager_state_machine.timer           = 0;
     twr_manager_state_machine.transitionLogic = twr_manager_transition_logic;
     twr_manager_state_machine.states          = states;
+
+    BaseType_t result = xTaskCreate(twr_manager_1kHz_task, "twrmgr_1khz", TASK_STACK_4KB,
+                                    NULL, TASK_PRIORITY_TWR_MANAGER, NULL);
+    if (result != pdPASS)
+    {
+        system_halt("twr_manager", "Failed to create 1kHz task");
+    }
 }
 
 STATIC void twr_manager_process_1kHz(void)

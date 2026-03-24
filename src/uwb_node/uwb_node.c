@@ -3,8 +3,10 @@
  *---------------------------------------------------------------------------*/
 #include "uwb_node.h"
 #include "FreeRTOS.h"
+#include "task.h"
 #include "common.h"
-#include "module.h"
+#include "system_halt.h"
+#include "task_config.h"
 #include "protocol_tx.h"
 #include "protocol.pb.h"
 #include "uwb.h"
@@ -28,28 +30,24 @@ STATIC bool module_initialized = false;
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
-STATIC void uwb_node_module_init(void);
 STATIC void uwb_node_process_1Hz(void);
-
-/*---------------------------------------------------------------------------
- * Module Registration
- *---------------------------------------------------------------------------*/
-extern const module_S uwb_node_module;
-
-const module_S uwb_node_module = {
-    .module_name         = "uwb_node",
-    .module_init         = uwb_node_module_init,
-    .module_create_task  = NULL,
-    .module_process_1Hz  = uwb_node_process_1Hz,
-    .module_process_10Hz  = NULL,
-    .module_process_100Hz = NULL,
-    .module_process_1kHz  = NULL,
-};
+STATIC void uwb_node_1Hz_task(void* pvParameters);
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
-STATIC void uwb_node_module_init(void)
+STATIC void uwb_node_1Hz_task(void* pvParameters)
+{
+    (void)pvParameters;
+    TickType_t lastWake = xTaskGetTickCount();
+    for (;;)
+    {
+        uwb_node_process_1Hz();
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(1000));
+    }
+}
+
+void uwb_node_init(void)
 {
     if (module_initialized)
     {
@@ -58,6 +56,13 @@ STATIC void uwb_node_module_init(void)
 
     uwb_node_config.configured = true;
     module_initialized         = true;
+
+    BaseType_t result = xTaskCreate(uwb_node_1Hz_task, "uwb_node_1hz", TASK_STACK_2KB,
+                                    NULL, TASK_PRIORITY_UWB_NODE, NULL);
+    if (result != pdPASS)
+    {
+        system_halt("uwb_node", "Failed to create 1Hz task");
+    }
 }
 
 STATIC void uwb_node_process_1Hz(void)

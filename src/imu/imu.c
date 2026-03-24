@@ -12,7 +12,8 @@
 #include "imu_driver.h"
 #include "protocol_tx.h"
 #include "protocol.pb.h"
-#include "module.h"
+#include "system_halt.h"
+#include "task_config.h"
 #include "gpio_driver.h"
 #include "timer_driver.h"
 #include "sensor_fusion.h"
@@ -68,20 +69,10 @@ STATIC void imu_state_faulted_on_entry(uint16_t prevState);
 STATIC imu_state_e imu_get_overall_state(void);
 
 /*---------------------------------------------------------------------------
- * Module Functions
+ * Private Function Prototypes (module-internal)
  *---------------------------------------------------------------------------*/
-STATIC void imu_init(void);
 STATIC void imu_process_1kHz(void);
-
-const module_S imu_module = {
-    .module_name         = "imu",
-    .module_init         = imu_init,
-    .module_create_task  = NULL,
-    .module_process_1Hz   = NULL,
-    .module_process_10Hz  = NULL,
-    .module_process_100Hz = NULL,
-    .module_process_1kHz  = imu_process_1kHz,
-};
+STATIC void imu_1kHz_task(void* pvParameters);
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -390,7 +381,18 @@ STATIC imu_state_e imu_get_overall_state(void)
     return IMU_STATE_FAULTED;
 }
 
-STATIC void imu_init(void)
+STATIC void imu_1kHz_task(void* pvParameters)
+{
+    (void)pvParameters;
+    TickType_t lastWake = xTaskGetTickCount();
+    for (;;)
+    {
+        imu_process_1kHz();
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(1));
+    }
+}
+
+void imu_init(void)
 {
     /* Initialize all slots to a known state (avoids uninitialized read when IMU_NUM_DEVICES is 0). */
     for (uint8_t i = 0; i < (uint8_t)IMU_MAX_DEVICES; i++)
@@ -403,6 +405,13 @@ STATIC void imu_init(void)
         ctx->state_machine.timer           = 0;
         ctx->state_machine.transitionLogic = imu_transition_logic;
         ctx->state_machine.states          = imu_states;
+    }
+
+    BaseType_t result = xTaskCreate(imu_1kHz_task, "imu_1khz", TASK_STACK_8KB,
+                                    NULL, TASK_PRIORITY_IMU_PERIODIC, NULL);
+    if (result != pdPASS)
+    {
+        system_halt("imu", "Failed to create 1kHz task");
     }
 }
 

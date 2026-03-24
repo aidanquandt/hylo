@@ -103,11 +103,13 @@ uint16_t twr_scheduler_get_next_target(void)
 
         case TWR_SCHED_STRATEGY_PRIORITY:
         case TWR_SCHED_STRATEGY_ADAPTIVE:
+        {
             // Future implementation
             TwrSchedulerStrategyNotImplementedEvent ev = TwrSchedulerStrategyNotImplementedEvent_init_zero;
             protocol_tx_TwrSchedulerStrategyNotImplementedEvent(&ev);
             next_address = get_next_round_robin(); // Fallback
             break;
+        }
 
         default:
             next_address = get_next_round_robin();

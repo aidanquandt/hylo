@@ -13,5 +13,6 @@ void wifi_start_task(void);
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
+void wifi_init(void);
 
 bool wifi_telemetry_is_ready(void);

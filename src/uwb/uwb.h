@@ -4,7 +4,6 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "common.h"
-#include "uwb_driver.h"
 
 /*---------------------------------------------------------------------------
  * Typedefs
@@ -39,7 +38,7 @@ typedef struct
     uint32_t message_id; // Unique ID to correlate with TX complete callback (never 0)
 } uwb_send_result_t;
 
-/* Driver-level statistics (app-layer copy; populated by uwb_get_driver_statistics) */
+/* Hardware-level statistics (diagnostic counters from the DW3000 chip) */
 typedef struct
 {
     uint32_t rx_ok_count;
@@ -59,7 +58,7 @@ typedef struct
     uint32_t irq_status;
     uint32_t status_lo;
     uint32_t status_hi;
-} uwb_driver_stats_t;
+} uwb_hw_stats_t;
 
 typedef void (*uwb_protocol_handler_t)(const uint8_t* data, uint16_t length, uint16_t src_addr,
                                        uint64_t rx_timestamp);
@@ -68,6 +67,7 @@ typedef void (*uwb_tx_complete_handler_t)(uint32_t message_id, uint64_t tx_times
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
+void uwb_init(void);
 void uwb_get_status(uwb_status_t* status);
 void uwb_get_rx_stats(uwb_rx_stats_t* stats);
 void uwb_reset_rx_stats(void);
@@ -88,4 +88,4 @@ void uwb_register_tx_complete_handler(uwb_tx_complete_handler_t handler);
 void uwb_unregister_protocol_handler(uint8_t protocol_type);
 void uwb_get_protocol_stats(uint32_t* total_received, uint32_t* unhandled, uint32_t* invalid);
 void uwb_reset_protocol_stats(void);
-void uwb_get_driver_statistics(uwb_driver_stats_t* out);
+void uwb_get_hw_stats(uwb_hw_stats_t* out);

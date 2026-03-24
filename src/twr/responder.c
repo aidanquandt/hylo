@@ -243,10 +243,12 @@ STATIC void responder_handle_message_impl(const twr_event_t* event, twr_context_
         }
 
         default:
+        {
             ResponderUnexpectedMessageTypeEvent ev = ResponderUnexpectedMessageTypeEvent_init_zero;
             ev.message_type = (int32_t)msg_type;
             protocol_tx_ResponderUnexpectedMessageTypeEvent(&ev);
             break;
+        }
     }
 }
 

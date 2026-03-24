@@ -17,6 +17,7 @@
 struct imu_dev_s
 {
     struct bmi3_dev bmi_dev;
+    spi_driver_interface_E spi_interface;
 };
 
 /*---------------------------------------------------------------------------
@@ -30,16 +31,15 @@ STATIC bool validate_gyro_range(imu_gyro_range_t range);
 STATIC bool validate_odr(imu_odr_t odr);
 
 /*---------------------------------------------------------------------------
+ * Defines
+ *---------------------------------------------------------------------------*/
+/* read_write_len is set to 32; +1 for the address byte prepended in imu_spi_read. */
+#define IMU_DRIVER_SPI_BUF_LEN (33U)
+
+/*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
 STATIC struct imu_dev_s imu_devices[IMU_MAX_DEVICES];
-
-STATIC const spi_driver_cs_E imu_cs_pins[IMU_MAX_DEVICES] = {
-    SPI_DRIVER_CS_IMU_0,
-    SPI_DRIVER_CS_IMU_1,
-    SPI_DRIVER_CS_IMU_2,
-    SPI_DRIVER_CS_IMU_3,
-};
 
 /*---------------------------------------------------------------------------
  * Public Function Implementations
@@ -54,11 +54,12 @@ imu_dev_t* imu_driver_init(imu_device_e device)
 
     uint8_t idx = (uint8_t)device;
     struct imu_dev_s* dev = &imu_devices[idx];
-    dev->bmi_dev.intf           = BMI3_SPI_INTF;
-    dev->bmi_dev.read           = imu_spi_read;
-    dev->bmi_dev.write          = imu_spi_write;
-    dev->bmi_dev.delay_us       = imu_delay_us;
-    dev->bmi_dev.intf_ptr       = (void*)&imu_cs_pins[idx];
+    dev->spi_interface   = (spi_driver_interface_E)((uint8_t)SPI_DRIVER_INTERFACE_IMU_0 + idx);
+    dev->bmi_dev.intf    = BMI3_SPI_INTF;
+    dev->bmi_dev.read    = imu_spi_read;
+    dev->bmi_dev.write   = imu_spi_write;
+    dev->bmi_dev.delay_us = imu_delay_us;
+    dev->bmi_dev.intf_ptr = &dev->spi_interface;
     dev->bmi_dev.read_write_len = 32;
 
     return dev;
@@ -71,19 +72,25 @@ imu_driver_status_t imu_driver_probe_and_init(imu_dev_t* dev)
         return IMU_DRIVER_ERROR_NULL_PTR;
     }
 
-    spi_driver_cs_E cs = *(const spi_driver_cs_E*)dev->bmi_dev.intf_ptr;
+    spi_driver_interface_E iface = *(const spi_driver_interface_E*)dev->bmi_dev.intf_ptr;
 
-    spi_driver_cs_low(cs);
+    if (spi_driver_acquire(iface) != SPI_DRIVER_SUCCESS)
+    {
+        return IMU_DRIVER_ERROR_INIT_FAIL;
+    }
     os_driver_delay_us_blocking(100);
-    spi_driver_cs_high(cs);
+    spi_driver_release(iface);
     os_driver_delay_us_blocking(500);
 
     uint8_t dummy_rx[3] = {0};
-    spi_driver_cs_low(cs);
+    if (spi_driver_acquire(iface) != SPI_DRIVER_SUCCESS)
+    {
+        return IMU_DRIVER_ERROR_INIT_FAIL;
+    }
     uint8_t dummy_cmd = 0x80;
-    spi_driver_transmit(&dummy_cmd, 1);
-    spi_driver_receive(dummy_rx, 3);
-    spi_driver_cs_high(cs);
+    spi_driver_transmit_in_session(iface, &dummy_cmd, 1);
+    spi_driver_receive_in_session(iface, dummy_rx, 3);
+    spi_driver_release(iface);
     vTaskDelay(pdMS_TO_TICKS(2));
 
     int8_t rslt = bmi323_init(&dev->bmi_dev);
@@ -385,18 +392,21 @@ STATIC int8_t imu_spi_read(uint8_t reg_addr, uint8_t* reg_data, uint32_t len, vo
         return BMI3_E_NULL_PTR;
     }
 
-    spi_driver_cs_E cs = *(const spi_driver_cs_E*)intf_ptr;
-    spi_driver_cs_low(cs);
+    spi_driver_interface_E iface = *(const spi_driver_interface_E*)intf_ptr;
+    if (spi_driver_acquire(iface) != SPI_DRIVER_SUCCESS)
+    {
+        return BMI3_E_COM_FAIL;
+    }
 
-    uint8_t tx_buf[len + 1];
-    uint8_t rx_buf[len + 1];
+    uint8_t tx_buf[IMU_DRIVER_SPI_BUF_LEN];
+    uint8_t rx_buf[IMU_DRIVER_SPI_BUF_LEN];
 
-    memset(tx_buf, 0, len + 1);
+    memset(tx_buf, 0, IMU_DRIVER_SPI_BUF_LEN);
     tx_buf[0] = reg_addr;
 
-    if (spi_driver_transfer(tx_buf, rx_buf, len + 1) != SPI_DRIVER_SUCCESS)
+    if (spi_driver_transfer_in_session(iface, tx_buf, rx_buf, len + 1) != SPI_DRIVER_SUCCESS)
     {
-        spi_driver_cs_high(cs);
+        spi_driver_release(iface);
         return BMI3_E_COM_FAIL;
     }
 
@@ -405,7 +415,7 @@ STATIC int8_t imu_spi_read(uint8_t reg_addr, uint8_t* reg_data, uint32_t len, vo
         reg_data[i] = rx_buf[i + 1];
     }
 
-    spi_driver_cs_high(cs);
+    spi_driver_release(iface);
 
     return BMI3_OK;
 }
@@ -417,23 +427,26 @@ STATIC int8_t imu_spi_write(uint8_t reg_addr, const uint8_t* reg_data, uint32_t 
         return BMI3_E_NULL_PTR;
     }
 
-    spi_driver_cs_E cs = *(const spi_driver_cs_E*)intf_ptr;
-    spi_driver_cs_low(cs);
+    spi_driver_interface_E iface = *(const spi_driver_interface_E*)intf_ptr;
+    if (spi_driver_acquire(iface) != SPI_DRIVER_SUCCESS)
+    {
+        return BMI3_E_COM_FAIL;
+    }
 
     uint8_t addr_byte = reg_addr & 0x7F;
-    if (spi_driver_transmit(&addr_byte, 1) != SPI_DRIVER_SUCCESS)
+    if (spi_driver_transmit_in_session(iface, &addr_byte, 1) != SPI_DRIVER_SUCCESS)
     {
-        spi_driver_cs_high(cs);
+        spi_driver_release(iface);
         return BMI3_E_COM_FAIL;
     }
 
-    if (spi_driver_transmit(reg_data, len) != SPI_DRIVER_SUCCESS)
+    if (spi_driver_transmit_in_session(iface, reg_data, len) != SPI_DRIVER_SUCCESS)
     {
-        spi_driver_cs_high(cs);
+        spi_driver_release(iface);
         return BMI3_E_COM_FAIL;
     }
 
-    spi_driver_cs_high(cs);
+    spi_driver_release(iface);
 
     return BMI3_OK;
 }

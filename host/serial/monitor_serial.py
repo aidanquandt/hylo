@@ -1,9 +1,14 @@
+import argparse
 import serial
 import time
 
-# Open serial port
-ser = serial.Serial('COM10', 115200, timeout=1)
-print("Monitoring COM10 at 115200 baud...")
+parser = argparse.ArgumentParser(description="Raw serial monitor")
+parser.add_argument("--port", default="/dev/ttyUSB0", help="Serial port (e.g. /dev/ttyUSB0, COM10)")
+parser.add_argument("--baud", type=int, default=115200, help="Baud rate")
+args = parser.parse_args()
+
+ser = serial.Serial(args.port, args.baud, timeout=1)
+print(f"Monitoring {args.port} at {args.baud} baud...")
 print("Press Ctrl+C to stop\n")
 
 try:

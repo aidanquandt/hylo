@@ -1,3 +1,4 @@
+import argparse
 import pygame
 import math
 from math import atan2, asin, pi, fmod, degrees, sin, cos, acos, sqrt
@@ -11,7 +12,7 @@ from pygame.locals import *
 class Display:
     useQuat = False  # using Euler angles computed from accel/gyro
 
-    def __init__(self):
+    def __init__(self, port="/dev/ttyUSB0", baud=115200):
         video_flags = OPENGL | DOUBLEBUF
         pygame.init()
         screen = pygame.display.set_mode((640, 480), video_flags)
@@ -25,7 +26,7 @@ class Display:
         glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST)
         
         # Open the serial port for receiving IMU data
-        self.ser = serial.Serial('COM10', 115200, timeout=1)  # Update with your port and baud rate
+        self.ser = serial.Serial(port, baud, timeout=1)
         
         # IMU data storage
         self.roll = 0.0
@@ -151,9 +152,13 @@ class Display:
 
 # Main loop
 if __name__ == "__main__":
-    display = Display()
+    ap = argparse.ArgumentParser(description="Hylo IMU 3D attitude visualization")
+    ap.add_argument("--port", default="/dev/ttyUSB0", help="Serial port (e.g. /dev/ttyUSB0, COM10)")
+    ap.add_argument("--baud", type=int, default=115200, help="Baud rate")
+    args = ap.parse_args()
+    display = Display(port=args.port, baud=args.baud)
     print("Hylo IMU Visualization Started")
-    print("Waiting for IMU data on COM10...")
+    print(f"Waiting for IMU data on {args.port}...")
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:

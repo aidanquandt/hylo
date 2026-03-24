@@ -229,14 +229,24 @@ SECTIONS
   PROVIDE( __bss_start = __tbss_start );
   PROVIDE( __bss_size = __bss_end - __bss_start );
 
-  /* DMA buffers in D2 SRAM (non-cacheable) */
+  /* DMA buffers in D1 AXI SRAM — required for DCache-coherent SDMMC DMA on STM32H7.
+   * D1 SRAM (0x24000000) is on the AXI bus, so CM7 D-cache and SDMMC IDMA can both
+   * access it coherently. D2 SRAM (0x30000000) does not have this property. */
   .dma_buffer (NOLOAD) :
   {
-    . = ALIGN(4);
+    . = ALIGN(32);
     *(.dma_buffer)
     *(.dma_buffer*)
-    . = ALIGN(4);
-  } >RAM_D2
+    . = ALIGN(32);
+  } >RAM_D1
+
+  /* FreeRTOS heap in RAM_D1 (AXI SRAM) — 200 KB, keeps DTCMRAM free for stack/BSS */
+  .freertos_heap (NOLOAD) :
+  {
+    . = ALIGN(8);
+    *(.freertos_heap)
+    . = ALIGN(8);
+  } >RAM_D1
 
   /* User_heap_stack section, used to check that there is enough RAM left */
   ._user_heap_stack (NOLOAD) :

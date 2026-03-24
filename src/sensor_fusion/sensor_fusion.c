@@ -8,7 +8,7 @@
 #include "feature_config.h"
 #include "system_halt.h"
 #include "kalman_core.h"
-#include "module.h"
+#include "task_config.h"
 #include "timer_driver.h"
 #include "queue.h"
 #include "task.h"
@@ -31,8 +31,9 @@
  *---------------------------------------------------------------------------*/
 STATIC void process_ranging_event(const sensor_event_t* event);
 STATIC void process_imu_event(const sensor_event_t* event);
-STATIC void sensor_fusion_init(void);
+void sensor_fusion_init(void);
 STATIC void sensor_fusion_task(void* pvParameters);
+STATIC void sensor_fusion_10Hz_task(void* pvParameters);
 STATIC void sensor_fusion_process_10Hz(void);
 STATIC void sensor_fusion_update_position_estimate(void);
 
@@ -46,20 +47,6 @@ STATIC void sdcard_log_imu(const sensor_event_t* event);
 STATIC void sdcard_log_position(const sensor_fusion_position_t* position);
 #endif
 
-/*---------------------------------------------------------------------------
- * Module Functions
- *---------------------------------------------------------------------------*/
-extern const module_S sensor_fusion_module;
-
-const module_S sensor_fusion_module = {
-    .module_name         = "sensor_fusion",
-    .module_init         = sensor_fusion_init,
-    .module_create_task  = NULL,
-    .module_process_1Hz   = NULL,
-    .module_process_10Hz  = sensor_fusion_process_10Hz,
-    .module_process_100Hz = NULL,
-    .module_process_1kHz  = NULL,
-};
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -133,7 +120,7 @@ STATIC void process_imu_event(const sensor_event_t* event)
     
 }
 
-STATIC void sensor_fusion_init(void)
+void sensor_fusion_init(void)
 {
     sensor_queue = xQueueCreate(SENSOR_FUSION_QUEUE_SIZE, sizeof(sensor_event_t));
     if (sensor_queue == NULL)
@@ -169,6 +156,24 @@ STATIC void sensor_fusion_init(void)
     if (result != pdPASS)
     {
         system_halt("sensor_fusion", "Failed to create processing task");
+    }
+
+    result = xTaskCreate(sensor_fusion_10Hz_task, "sf_10hz", TASK_STACK_2KB,
+                         NULL, TASK_PRIORITY_SENSOR_FUSION, NULL);
+    if (result != pdPASS)
+    {
+        system_halt("sensor_fusion", "Failed to create 10Hz task");
+    }
+}
+
+STATIC void sensor_fusion_10Hz_task(void* pvParameters)
+{
+    (void)pvParameters;
+    TickType_t lastWake = xTaskGetTickCount();
+    for (;;)
+    {
+        sensor_fusion_process_10Hz();
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(100));
     }
 }
 

@@ -42,6 +42,7 @@ typedef struct
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
+void uwb_node_init(void);
 void uwb_node_set_type(uwb_node_type_e type);
 uwb_node_type_e uwb_node_get_type(void);
 void uwb_node_set_position(const vec3_t* position);

@@ -538,10 +538,9 @@ def _run_send_command(port: str | None, command: str, args: List[str], route_ove
                 return True, f"OK [src:{str(resp_source).upper()}]", []
             resp = resp_cls()
             resp.ParseFromString(resp_payload)
-            response_text = _protocol_tool.format_message(resp_type, resp) + f" [src:{str(resp_source).upper()}]"
-            with _event_log_lock:
-                new_events = list(_event_log[prev_len:])
-            return True, response_text, new_events
+            response_text = _protocol_tool.format_message(resp_type, resp)
+            # Don't return new_events here: the SSE stream already delivered them to the frontend.
+            return True, response_text, []
         except Exception as e:
             with _serial_lock:
                 _pending_expected_id = None
@@ -615,18 +614,24 @@ def api_get_events() -> dict:
 
 
 def _event_stream_generator():
-    """Yield SSE events for each new log line. Reader thread pushes to our queue (thread-safe stdlib queue)."""
+    """Yield SSE events for each new log line and viz position updates."""
     event_queue: queue.Queue = queue.Queue()
     with _sse_queues_lock:
         _sse_queues.append(event_queue)
     try:
         while True:
             try:
-                line = event_queue.get(timeout=30)
+                item = event_queue.get(timeout=30)
             except queue.Empty:
                 yield ": keepalive\n\n"
                 continue
-            yield f"data: {json.dumps({'line': line})}\n\n"
+            if isinstance(item, dict):
+                yield f"data: {json.dumps({'line': item.get('line', '')})}\n\n"
+                viz = item.get("viz")
+                if viz:
+                    yield f"event: viz\ndata: {json.dumps(viz)}\n\n"
+            else:
+                yield f"data: {json.dumps({'line': item})}\n\n"
     finally:
         with _sse_queues_lock:
             if event_queue in _sse_queues:
@@ -768,6 +773,42 @@ def run_command(req: CommandRequest) -> dict:
         "events": new_events,
         "route_used": route_used,
     }
+
+
+@app.get("/api/viz/state")
+def api_viz_state() -> dict:
+    """Return current visualization state: tag position, ranges, anchors, and trail."""
+    with _viz_lock:
+        return {
+            "position": dict(_viz_position),
+            "ranges": {str(k): v for k, v in _viz_ranges.items()},
+            "anchors": dict(_viz_anchors),
+            "trail": list(_viz_trail),
+        }
+
+
+class AnchorConfig(BaseModel):
+    anchors: dict  # addr (str) -> {"x": float, "y": float, "z": float, "label": str}
+
+
+@app.post("/api/viz/anchors")
+def api_viz_set_anchors(req: AnchorConfig) -> dict:
+    """Set anchor positions for visualization overlay."""
+    global _viz_anchors
+    with _viz_lock:
+        _viz_anchors = {str(k): v for k, v in req.anchors.items()}
+    return {"ok": True, "count": len(_viz_anchors)}
+
+
+@app.post("/api/viz/clear")
+def api_viz_clear() -> dict:
+    """Clear visualization trail and ranges."""
+    global _viz_trail, _viz_ranges, _viz_position
+    with _viz_lock:
+        _viz_trail = []
+        _viz_ranges = {}
+        _viz_position = {"x": 0.0, "y": 0.0, "z": 0.0, "timestamp_ms": 0}
+    return {"ok": True}
 
 
 @app.get("/")

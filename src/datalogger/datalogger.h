@@ -31,6 +31,7 @@ typedef struct
 /*---------------------------------------------------------------------------
  * Public Function Prototypes
  *---------------------------------------------------------------------------*/
+void datalogger_init(void);
 uint32_t datalogger_get_task_usage(task_cpu_info_t* tasks, uint32_t max_tasks);
 void datalogger_get_system_stats(system_stats_t* stats, task_cpu_info_t* task_buffer,
                                  uint32_t max_tasks);
