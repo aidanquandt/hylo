@@ -103,9 +103,6 @@ STATIC void wifi_check_response(const char *expected_token, uint32_t timeout_ms)
 STATIC void wifi_task(void* argument);
 STATIC StaticTask_t wifi_task_tcb;
 STATIC StackType_t wifi_task_stack[WIFI_TASK_STACK_SIZE];
-
-STATIC void wifi_process_10Hz(void);
-STATIC void wifi_10Hz_task(void* pvParameters);
 #endif
 
 /*---------------------------------------------------------------------------
@@ -164,13 +161,6 @@ void wifi_init(void)
     gpio_driver_esp_set();
     ota_parser_init();
     uart_driver_rx_start(UART_WIFI);
-
-    BaseType_t result = xTaskCreate(wifi_10Hz_task, "wifi_10hz", TASK_STACK_2KB,
-                                    NULL, TASK_PRIORITY_WIFI, NULL);
-    if (result != pdPASS)
-    {
-        system_halt("wifi", "Failed to create 10Hz task");
-    }
 
     (void)xTaskCreateStatic(
         wifi_task,

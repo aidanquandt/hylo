@@ -20,26 +20,29 @@ void protocol_tx_AckResponse(const AckResponse *msg)
 
 void protocol_tx_TransportSetRequest(const TransportSetRequest *msg)
 {
-  pb_ostream_t stream = pb_ostream_from_buffer(s_tx_buf, sizeof(s_tx_buf));
+  uint8_t tx_buf[PROTOCOL_TX_BUF_SIZE];
+  pb_ostream_t stream = pb_ostream_from_buffer(tx_buf, sizeof(tx_buf));
   if (!pb_encode(&stream, TransportSetRequest_fields, msg))
     return;
-  protocol_send_frame(MSG_ID_TransportSetRequest, s_tx_buf, stream.bytes_written);
+  protocol_send_frame(MSG_ID_TransportSetRequest, tx_buf, stream.bytes_written);
 }
 
 void protocol_tx_TransportGetRequest(const TransportGetRequest *msg)
 {
-  pb_ostream_t stream = pb_ostream_from_buffer(s_tx_buf, sizeof(s_tx_buf));
+  uint8_t tx_buf[PROTOCOL_TX_BUF_SIZE];
+  pb_ostream_t stream = pb_ostream_from_buffer(tx_buf, sizeof(tx_buf));
   if (!pb_encode(&stream, TransportGetRequest_fields, msg))
     return;
-  protocol_send_frame(MSG_ID_TransportGetRequest, s_tx_buf, stream.bytes_written);
+  protocol_send_frame(MSG_ID_TransportGetRequest, tx_buf, stream.bytes_written);
 }
 
 void protocol_tx_TransportGetResponse(const TransportGetResponse *msg)
 {
-  pb_ostream_t stream = pb_ostream_from_buffer(s_tx_buf, sizeof(s_tx_buf));
+  uint8_t tx_buf[PROTOCOL_TX_BUF_SIZE];
+  pb_ostream_t stream = pb_ostream_from_buffer(tx_buf, sizeof(tx_buf));
   if (!pb_encode(&stream, TransportGetResponse_fields, msg))
     return;
-  protocol_send_frame(MSG_ID_TransportGetResponse, s_tx_buf, stream.bytes_written);
+  protocol_send_frame(MSG_ID_TransportGetResponse, tx_buf, stream.bytes_written);
 }
 
 void protocol_tx_SystemGetUuidRequest(const SystemGetUuidRequest *msg)
