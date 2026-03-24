@@ -5,6 +5,9 @@
 #include "protocol.pb.h"
 
 void protocol_tx_AckResponse(const AckResponse *msg);
+void protocol_tx_TransportSetRequest(const TransportSetRequest *msg);
+void protocol_tx_TransportGetRequest(const TransportGetRequest *msg);
+void protocol_tx_TransportGetResponse(const TransportGetResponse *msg);
 void protocol_tx_SystemGetUuidRequest(const SystemGetUuidRequest *msg);
 void protocol_tx_SystemGetUuidResponse(const SystemGetUuidResponse *msg);
 void protocol_tx_SystemGetInfoRequest(const SystemGetInfoRequest *msg);

@@ -9,6 +9,9 @@
 void protocol_dispatch(uint16_t msg_id, const uint8_t *payload, size_t len);
 
 void protocol_rx_AckResponse(const AckResponse *msg);
+void protocol_rx_TransportSetRequest(const TransportSetRequest *msg);
+void protocol_rx_TransportGetRequest(const TransportGetRequest *msg);
+void protocol_rx_TransportGetResponse(const TransportGetResponse *msg);
 void protocol_rx_SystemGetUuidRequest(const SystemGetUuidRequest *msg);
 void protocol_rx_SystemGetUuidResponse(const SystemGetUuidResponse *msg);
 void protocol_rx_SystemGetInfoRequest(const SystemGetInfoRequest *msg);

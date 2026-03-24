@@ -9,22 +9,25 @@
 #include "wifi.h"
 #include "wifi_config.h"
 #include "imu.h"
-#include "module.h"
 #include "uart_driver.h"
 #include "state_machine.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "stream_buffer.h"
-#include "queue.h"
 #include "common.h"
 #include "feature_config.h"
 #include "wifi_ota_parser.h"
+#include "uart_framing.h"
+#include "gpio_driver.h"
 
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
 #define STARTUP_DELAY_MS            (4000U)  // ESP8266 boot time
 #define AT_COMMAND_TIMEOUT_MS       (2000U)  // AT command response timeout
+#define WIFI_TASK_STACK_SIZE        (1024U)
+#define WIFI_TASK_PRIORITY          (2U)
+#define WIFI_TASK_PERIOD_MS         (100U)
 
 STATIC inline StreamBufferHandle_t wifi_rx_stream(void)
 {
@@ -63,11 +66,6 @@ typedef struct {
     uint8_t retry_count;
 } wifi_state_inputs_t;
 
-typedef struct {
-    uint8_t data[128];
-    uint16_t len;
-} wifi_payload_t;
-
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
@@ -96,36 +94,16 @@ STATIC void wifi_state_faulted_on_entry(uint16_t prevState);
 STATIC void wifi_start_command(const char *cmd);
 STATIC void wifi_check_response(const char *expected_token, uint32_t timeout_ms);
 
-// Telemetry transmission
-STATIC void wifi_transmit_telemetry_queue(void);
-
-
 /*---------------------------------------------------------------------------
  * Module Functions
  *---------------------------------------------------------------------------*/
 #if FEATURE_WIFI_MODULE
 STATIC void wifi_init(void);
-STATIC void wifi_process_10Hz(void);
+STATIC void wifi_task(void* argument);
+STATIC StaticTask_t wifi_task_tcb;
+STATIC StackType_t wifi_task_stack[WIFI_TASK_STACK_SIZE];
+STATIC bool wifi_task_started = false;
 
-const module_S wifi_module= {
-    .module_name         = "wifi",
-    .module_init         = wifi_init,
-    .module_create_task  = NULL,
-    .module_process_1Hz   = NULL,
-    .module_process_10Hz  = wifi_process_10Hz,
-    .module_process_100Hz = NULL,
-    .module_process_1kHz  = NULL,
-};
-#else
-const module_S wifi_module= {
-    .module_name         = "wifi",
-    .module_init         = NULL,
-    .module_create_task  = NULL,
-    .module_process_1Hz   = NULL,
-    .module_process_10Hz  = NULL,
-    .module_process_100Hz = NULL,
-    .module_process_1kHz  = NULL,
-};
 #endif
 
 /*---------------------------------------------------------------------------
@@ -168,25 +146,11 @@ STATIC char cmd_response_window[512] = {0};
 STATIC size_t cmd_response_used = 0;
 STATIC TickType_t cmd_start_time = 0;
 
-// TCP connection monitoring
-STATIC volatile bool tcp_closed_detected = false;
-
 // WiFi configuration
 STATIC const char *SSID = WIFI_SSID;
 STATIC const char *PASS = WIFI_PASS;
 STATIC const char *HOST = WIFI_HOST;
 STATIC const uint16_t PORT = WIFI_PORT;
-
-// Telemetry queue
-#define TELEMETRY_QUEUE_SIZE 16U
-STATIC QueueHandle_t telemetry_queue = NULL;
-STATIC struct
-{
-    volatile uint32_t events_pushed;
-    volatile uint32_t events_dropped;
-    volatile uint32_t events_transmitted;
-    volatile uint32_t sequence;
-} telemetry_stats = {0};
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -194,34 +158,46 @@ STATIC struct
 
 #if FEATURE_WIFI_MODULE
 STATIC void wifi_init(void)
-{
-    telemetry_queue = xQueueCreate(TELEMETRY_QUEUE_SIZE, sizeof(telemetry_event_t));
-    configASSERT(telemetry_queue != NULL);
-
-    telemetry_stats.events_pushed = 0;
-    telemetry_stats.events_dropped = 0;
-    telemetry_stats.events_transmitted = 0;
-    telemetry_stats.sequence = 0;
-
+{   
+    gpio_driver_esp_set();
     ota_parser_init();
     uart_driver_rx_start(UART_WIFI);
 }
 
-STATIC void wifi_process_10Hz(void)
+STATIC void wifi_task(void* argument)
 {
-    state_machine_periodic(&wifi_state_machine);
+    (void)argument;
+    TickType_t lastWake = xTaskGetTickCount();
+    for (;;) {
+        state_machine_periodic(&wifi_state_machine);
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(WIFI_TASK_PERIOD_MS));
+    }
 }
 #endif /* FEATURE_WIFI_MODULE */
+
+void wifi_start_task(void)
+{
+#if FEATURE_WIFI_MODULE
+    if (wifi_task_started) {
+        return;
+    }
+
+    wifi_init();
+    (void)xTaskCreateStatic(
+        wifi_task,
+        "WIFI",
+        WIFI_TASK_STACK_SIZE,
+        NULL,
+        WIFI_TASK_PRIORITY,
+        wifi_task_stack,
+        &wifi_task_tcb);
+    wifi_task_started = true;
+#endif
+}
 
 STATIC uint16_t wifi_transition_logic(uint16_t currentState, uint32_t stateTimer)
 {
     uint16_t nextState = currentState;
-    static uint16_t last_printed_state = 0xFF;
-
-    /* Track state for first-entry / change detection when FEATURE_WIFI_PRINT_STATE is used */
-    if (FEATURE_WIFI_PRINT_STATE && (currentState != last_printed_state)) {
-        last_printed_state = currentState;
-    }
 
     switch (currentState) {
         case STATE_STARTUP:
@@ -332,10 +308,6 @@ STATIC uint16_t wifi_transition_logic(uint16_t currentState, uint32_t stateTimer
             break;
 
         case STATE_ACTIVE:
-            if (tcp_closed_detected) {
-                tcp_closed_detected = false;
-                nextState = STATE_SEND_TCP_CONNECT;
-            }
             break;
 
         case STATE_FAULTED:
@@ -611,9 +583,6 @@ STATIC void wifi_state_wait_cipmode_process(void)
     // Wait for OK response
     wifi_check_response("OK", 2000);
     
-    // Debug: print what we received if we got a response
-    // if (state_inputs.response_received) {
-    // }
 }
 
 STATIC void wifi_state_send_cipsend_on_entry(uint16_t prevState)
@@ -703,37 +672,16 @@ STATIC void wifi_state_wait_cipsend_process(void)
 STATIC void wifi_state_active_on_entry(uint16_t prevState)
 {
     (void)prevState;
-    
+
     // Drain any leftover RX data from initialization
     uint8_t dump[256];
-    while (xStreamBufferReceive(wifi_rx_stream(), dump, sizeof(dump), 0) > 0) {}
-    
-    // Clear TCP closed flag
-    tcp_closed_detected = false;
-    
+    while (xStreamBufferReceive(wifi_rx_stream(), dump, sizeof(dump), 0) > 0) {
+        /* drain */
+    }
 }
 
 STATIC void wifi_state_active_process(void)
 {
-    // Persistent rolling window for detecting ESP messages like "CLOSED"
-    static char detect_window[128] = {0};
-    static size_t detect_used = 0;
-    static bool settling_complete = false;
-
-    // Give ESP8266 500ms to settle into transparent mode and clear buffers
-    if (!settling_complete) {
-        if (wifi_state_machine.timer < MS_TO_10HZ_TICKS(500)) {
-            // Still draining during settling period
-            uint8_t dump[256];
-            while (xStreamBufferReceive(wifi_rx_stream(), dump, sizeof(dump), 0) > 0) {}
-            return;
-        }
-        settling_complete = true;
-    }
-
-    // Transmit telemetry from queue
-    wifi_transmit_telemetry_queue();
-
     // -------------------------------------------------
     // Process incoming data (OTA commands)
     // -------------------------------------------------
@@ -741,123 +689,23 @@ STATIC void wifi_state_active_process(void)
     uint8_t rx_buf[256];
     size_t rx_len = xStreamBufferReceive(wifi_rx_stream(), rx_buf, sizeof(rx_buf), 0);
 
-    if (rx_len == 0) {
-        return;
-    }
+    /* RECEIVING DATA: Feed the stream to the protocol decoder */
+    if (rx_len > 0) {
 
-    // -------------------------------------------------
-    // Append to rolling window for token detection
-    // -------------------------------------------------
-
-    for (size_t i = 0; i < rx_len; i++) {
-
-        if (detect_used < sizeof(detect_window) - 1) {
-            detect_window[detect_used++] = rx_buf[i];
-        } else {
-            memmove(detect_window, detect_window + 1, sizeof(detect_window) - 2);
-            detect_window[sizeof(detect_window) - 2] = rx_buf[i];
-            detect_used = sizeof(detect_window) - 1;
-        }
-
-        detect_window[detect_used] = 0;
-    }
-
-    // -------------------------------------------------
-    // Detect TCP CLOSED from ESP8266
-    // -------------------------------------------------
-
-    if (strstr(detect_window, "+++")) {
-
-        tcp_closed_detected = true;
-
-        detect_used = 0;
-        detect_window[0] = 0;
+        uart_framing_feed(UART_WIFI, rx_buf, rx_len);
+    } else {
 
         return;
     }
-
-    // -------------------------------------------------
-    // Feed bytes to OTA parser
-    // -------------------------------------------------
-    for (size_t i = 0; i < rx_len; i++) {
-        ota_parser_process_byte(rx_buf[i]);
-    }
-
-
 }
 
 STATIC void wifi_state_faulted_on_entry(uint16_t prevState)
 {
     (void)prevState;
-}
-
-/**
- * @brief Transmit telemetry events from queue to WiFi
- * @note Called from wifi_state_active_process() at 10Hz
- */
-STATIC void wifi_transmit_telemetry_queue(void)
-{
-    telemetry_event_t telem;
-    char tx_buf[256];
-    
-    // Drain telemetry queue and transmit (non-blocking)
-    while (xQueueReceive(telemetry_queue, &telem, 0) == pdPASS)
-    {
-        int len = 0;
-        
-        switch (telem.type)
-        {
-            case TELEMETRY_EVENT_RANGING:
-                len = snprintf(tx_buf, sizeof(tx_buf),
-                    "RANGE,%.3f,%.1f,%u,%.2f,%.2f,%.2f,%d\r\n",
-                    telem.data.ranging.distance_m,
-                    telem.data.ranging.rssi_dbm,
-                    telem.data.ranging.anchor_addr,
-                    telem.data.ranging.anchor_position.x,
-                    telem.data.ranging.anchor_position.y,
-                    telem.data.ranging.anchor_position.z,
-                    telem.data.ranging.anchor_position_valid ? 1 : 0);
-                break;
-                
-            case TELEMETRY_EVENT_SENSOR_EVENT:
-                if (telem.data.sensor_event.type == SENSOR_EVENT_IMU)
-                {
-                    len = snprintf(tx_buf, sizeof(tx_buf),
-                        "IMU,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f\r\n",
-                        telem.data.sensor_event.data.imu.accel_x,
-                        telem.data.sensor_event.data.imu.accel_y,
-                        telem.data.sensor_event.data.imu.accel_z,
-                        telem.data.sensor_event.data.imu.gyro_x,
-                        telem.data.sensor_event.data.imu.gyro_y,
-                        telem.data.sensor_event.data.imu.gyro_z,
-                        telem.data.sensor_event.data.imu.temp_c);
-                }
-                break;
-                
-            case TELEMETRY_EVENT_POSITION:
-                len = snprintf(tx_buf, sizeof(tx_buf),
-                    "POS,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.2f,%d,%d\r\n",
-                    telem.data.position.x,
-                    telem.data.position.y,
-                    telem.data.position.z,
-                    telem.data.position.vx,
-                    telem.data.position.vy,
-                    telem.data.position.vz,
-                    telem.data.position.confidence,
-                    telem.data.position.valid ? 1 : 0,
-                    telem.data.position.imu_enable);
-                break;
-                
-            default:
-                continue; // Skip unknown types
-        }
-        
-        if (len > 0 && len < (int)sizeof(tx_buf))
-        {
-            //uart_driver_transmit(UART_WIFI, (uint8_t*)tx_buf, (uint16_t)len);
-            telemetry_stats.events_transmitted++;
-        }
-    }
+    gpio_driver_led_1_off();
+    // char fault_msg[64];
+    // snprintf(fault_msg, sizeof(fault_msg), "[WIFI FAULTED from state %u]\r\n", (unsigned)prevState);
+    // uart_driver_transmit(UART_CONSOLE, (uint8_t*)fault_msg, strlen(fault_msg));
 }
 
 // Non-blocking command helpers
@@ -943,55 +791,13 @@ STATIC void wifi_check_response(const char *expected_token, uint32_t timeout_ms)
     }
 }
 
-/*---------------------------------------------------------------------------
- * Public Function Implementations
- *---------------------------------------------------------------------------*/
-
-wifi_telemetry_status_e wifi_push_telemetry(const telemetry_event_t* event)
-{
-    if (event == NULL)
-    {
-        return WIFI_TELEMETRY_ERROR_NULL_PTR;
-    }
-
-    if (telemetry_queue == NULL)
-    {
-        return WIFI_TELEMETRY_ERROR_NOT_INITIALIZED;
-    }
-
-    if (event->type >= NUM_TELEMETRY_EVENT_TYPES)
-    {
-        return WIFI_TELEMETRY_ERROR_INVALID_TYPE;
-    }
-
-    // Only accept data when in ACTIVE state
-    if (wifi_state_machine.curr_state != STATE_ACTIVE)
-    {
-        return WIFI_TELEMETRY_ERROR_NOT_CONNECTED;
-    }
-
-    telemetry_event_t queued_event = *event;
-
-    taskENTER_CRITICAL();
-    queued_event.sequence = telemetry_stats.sequence++;
-    taskEXIT_CRITICAL();
-
-    BaseType_t result = xQueueSend(telemetry_queue, &queued_event, 0);
-
-    if (result == pdPASS)
-    {
-        telemetry_stats.events_pushed++;
-        return WIFI_TELEMETRY_SUCCESS;
-    }
-
-    // Queue full - drop the event (non-blocking)
-    telemetry_stats.events_dropped++;
-    return WIFI_TELEMETRY_ERROR_QUEUE_FULL;
-}
-
 bool wifi_telemetry_is_ready(void)
 {
-    return (telemetry_queue != NULL && wifi_state_machine.curr_state == STATE_ACTIVE);
+#if FEATURE_WIFI_MODULE
+    return (wifi_state_machine.curr_state == STATE_ACTIVE);
+#else
+    return false;
+#endif
 }
 
 

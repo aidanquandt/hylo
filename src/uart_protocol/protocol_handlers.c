@@ -23,6 +23,9 @@
 #include "uwb.h"
 #include "uwb_node.h"
 #include "uwb_protocol_messages.h"
+#include "uart_framing.h"
+#include "uart_driver.h"
+#include "wifi.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include <stdbool.h>
@@ -90,6 +93,25 @@ void protocol_rx_SystemGetInfoRequest(const SystemGetInfoRequest *msg)
         }
     }
     protocol_tx_SystemGetInfoResponse(&r);
+}
+
+void protocol_rx_TransportSetRequest(const TransportSetRequest *msg)
+{
+    (void)msg;
+    AckResponse ack = AckResponse_init_zero;
+    ack.success = true;
+    protocol_tx_AckResponse(&ack);
+}
+
+void protocol_rx_TransportGetRequest(const TransportGetRequest *msg)
+{
+    (void)msg;
+    TransportGetResponse r = TransportGetResponse_init_zero;
+    r.active_transport = (protocol_get_endpoint() == UART_WIFI)
+        ? TransportType_TRANSPORT_TYPE_WIFI
+        : TransportType_TRANSPORT_TYPE_UART;
+    r.wifi_ready = wifi_telemetry_is_ready();
+    protocol_tx_TransportGetResponse(&r);
 }
 
 /*---------------------------------------------------------------------------

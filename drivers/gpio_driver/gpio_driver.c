@@ -48,6 +48,34 @@ void gpio_driver_toggle_led_green(void)
 #endif
 }
 
+void gpio_driver_esp_set(void)
+{
+    #if (HWREV == 1)
+    HAL_GPIO_WritePin(ESP_nRST_GPIO_Port, ESP_nRST_Pin, GPIO_PIN_SET);
+    #endif
+}
+
+void gpio_driver_esp_reset(void)
+{   
+    #if (HWREV == 1)
+    HAL_GPIO_WritePin(ESP_nRST_GPIO_Port, ESP_nRST_Pin, GPIO_PIN_RESET);
+    #endif
+}
+
+void gpio_driver_led_1_on(void)
+{   
+    #if (HWREV == 1)
+    HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_RESET);
+    #endif
+}
+
+void gpio_driver_led_1_off(void)
+{   
+    #if (HWREV == 1)
+    HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_SET);
+    #endif
+}
+
 gpio_driver_state_t gpio_driver_read_pin(gpio_driver_pin_t pin)
 {
 #if (HWREV == 0)

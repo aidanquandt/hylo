@@ -9,6 +9,15 @@
 PB_BIND(AckResponse, AckResponse, AUTO)
 
 
+PB_BIND(TransportSetRequest, TransportSetRequest, AUTO)
+
+
+PB_BIND(TransportGetRequest, TransportGetRequest, AUTO)
+
+
+PB_BIND(TransportGetResponse, TransportGetResponse, AUTO)
+
+
 PB_BIND(SystemGetUuidRequest, SystemGetUuidRequest, AUTO)
 
 
@@ -499,6 +508,7 @@ PB_BIND(WatchdogTaskFailureEvent, WatchdogTaskFailureEvent, AUTO)
 
 
 PB_BIND(SystemFatalEvent, SystemFatalEvent, AUTO)
+
 
 
 

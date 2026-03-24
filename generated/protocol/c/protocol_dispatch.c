@@ -6,6 +6,9 @@
 #include <stddef.h>
 
 __attribute__((weak)) void protocol_rx_AckResponse(const AckResponse *msg) { (void)msg; }
+__attribute__((weak)) void protocol_rx_TransportSetRequest(const TransportSetRequest *msg) { (void)msg; }
+__attribute__((weak)) void protocol_rx_TransportGetRequest(const TransportGetRequest *msg) { (void)msg; }
+__attribute__((weak)) void protocol_rx_TransportGetResponse(const TransportGetResponse *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_SystemGetUuidRequest(const SystemGetUuidRequest *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_SystemGetUuidResponse(const SystemGetUuidResponse *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_SystemGetInfoRequest(const SystemGetInfoRequest *msg) { (void)msg; }
@@ -179,6 +182,24 @@ void protocol_dispatch(uint16_t msg_id, const uint8_t *payload, size_t len)
       AckResponse decoded = AckResponse_init_zero;
       if (pb_decode(&stream, AckResponse_fields, &decoded))
         protocol_rx_AckResponse(&decoded);
+      break;
+    }
+    case MSG_ID_TransportSetRequest: {
+      TransportSetRequest decoded = TransportSetRequest_init_zero;
+      if (pb_decode(&stream, TransportSetRequest_fields, &decoded))
+        protocol_rx_TransportSetRequest(&decoded);
+      break;
+    }
+    case MSG_ID_TransportGetRequest: {
+      TransportGetRequest decoded = TransportGetRequest_init_zero;
+      if (pb_decode(&stream, TransportGetRequest_fields, &decoded))
+        protocol_rx_TransportGetRequest(&decoded);
+      break;
+    }
+    case MSG_ID_TransportGetResponse: {
+      TransportGetResponse decoded = TransportGetResponse_init_zero;
+      if (pb_decode(&stream, TransportGetResponse_fields, &decoded))
+        protocol_rx_TransportGetResponse(&decoded);
       break;
     }
     case MSG_ID_SystemGetUuidRequest: {

@@ -7,14 +7,25 @@
 #include "protocol_dispatch.h"
 #include "protocol_ids.h"
 #include "uart_driver.h"
+#include "semphr.h"
+#include "task.h"
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 #define PROTOCOL_VERSION  1U
 #define PROTOCOL_HEADER_LEN 7U  /* version(1) + msg_id(2) + payload_len(2) + crc16(2) */
 #define PROTOCOL_MAX_PAYLOAD 110U
 #define UART_TX_MAX_LEN 128U
+
+/* Static variable to track which port is currently "Active" for telemetry */
+static uart_id_t s_active_proto_port = UART_CONSOLE;
+static volatile bool s_dispatch_route_active;
+static volatile uart_id_t s_dispatch_route_port;
+static TaskHandle_t s_dispatch_route_task;
+
+static SemaphoreHandle_t tx_mutex_get(void);
 
 /* CRC16-CCITT: poly 0x1021, init 0xFFFF */
 static uint16_t crc16_ccitt(const uint8_t *data, size_t len)
@@ -93,11 +104,23 @@ static size_t cobs_decode(const uint8_t *src, size_t src_len, uint8_t *dst, size
     return out;
 }
 
+void protocol_set_endpoint(uint8_t port) {
+    if (port < UART_COUNT)
+        s_active_proto_port = (uart_id_t)port;
+}
+
+uint8_t protocol_get_endpoint(void)
+{
+    return (uint8_t)s_active_proto_port;
+}
+
 // getting to here
+/* Update the signature in uart_framing.h as well */
 void protocol_send_frame(uint16_t msg_id, const uint8_t *payload, size_t len)
 {
     if (payload == NULL || len > PROTOCOL_MAX_PAYLOAD)
         return;
+
     uint8_t raw[PROTOCOL_HEADER_LEN + PROTOCOL_MAX_PAYLOAD];
     raw[0] = (uint8_t)PROTOCOL_VERSION;
     raw[1] = (uint8_t)(msg_id & 0xFF);
@@ -105,56 +128,114 @@ void protocol_send_frame(uint16_t msg_id, const uint8_t *payload, size_t len)
     raw[3] = (uint8_t)(len & 0xFF);
     raw[4] = (uint8_t)(len >> 8);
     memcpy(raw + 5, payload, len);
+    
     uint16_t crc = crc16_ccitt(raw, 5 + len);
     raw[5 + len] = (uint8_t)(crc & 0xFF);
     raw[6 + len] = (uint8_t)(crc >> 8);
+    
     size_t raw_len = 7 + len;
 
     uint8_t cobs_buf[UART_TX_MAX_LEN];
     size_t cobs_len = cobs_encode(raw, raw_len, cobs_buf, sizeof(cobs_buf));
+    
     if (cobs_len == 0)
         return;
-    uart_driver_transmit(UART_CONSOLE, cobs_buf, cobs_len);
+
+    SemaphoreHandle_t tx_mutex = tx_mutex_get();
+    if (tx_mutex == NULL)
+        return;
+
+    if (xSemaphoreTake(tx_mutex, portMAX_DELAY) != pdTRUE)
+        return;
+
+    uart_id_t tx_port = s_active_proto_port;
+    if (s_dispatch_route_active && (xTaskGetCurrentTaskHandle() == s_dispatch_route_task)) {
+        tx_port = s_dispatch_route_port;
+    }
+    uart_driver_transmit(tx_port, cobs_buf, cobs_len);
+
+    (void)xSemaphoreGive(tx_mutex);
 }
 
 /* Streaming decoder state */
 #define DECODE_RAW_CAP (PROTOCOL_HEADER_LEN + PROTOCOL_MAX_PAYLOAD)
-static struct {
+typedef struct {
     uint8_t cobs_buf[UART_TX_MAX_LEN];
     size_t cobs_len;
     uint8_t raw_buf[DECODE_RAW_CAP];
-} s_decoder;
+} protocol_decoder_state_t;
 
-void uart_framing_feed(const uint8_t *buf, size_t len)
+static protocol_decoder_state_t s_decoders[UART_COUNT];
+static StaticSemaphore_t s_tx_mutex_buf;
+static SemaphoreHandle_t s_tx_mutex;
+static StaticSemaphore_t s_dispatch_mutex_buf;
+static SemaphoreHandle_t s_dispatch_mutex;
+
+static SemaphoreHandle_t tx_mutex_get(void)
 {
+    if (s_tx_mutex == NULL) {
+        s_tx_mutex = xSemaphoreCreateMutexStatic(&s_tx_mutex_buf);
+    }
+    return s_tx_mutex;
+}
+
+static SemaphoreHandle_t dispatch_mutex_get(void)
+{
+    if (s_dispatch_mutex == NULL) {
+        s_dispatch_mutex = xSemaphoreCreateMutexStatic(&s_dispatch_mutex_buf);
+    }
+    return s_dispatch_mutex;
+}
+
+void uart_framing_feed(uint8_t port, const uint8_t *buf, size_t len)
+{
+    if (port >= UART_COUNT || buf == NULL || len == 0U) {
+        return;
+    }
+
+    protocol_decoder_state_t *decoder = &s_decoders[port];
+
     for (size_t i = 0; i < len; i++) {
         uint8_t b = buf[i];
         if (b == 0x00) {
             /* End of COBS block */
-            if (s_decoder.cobs_len > 0) {
-                size_t raw_len = cobs_decode(s_decoder.cobs_buf, s_decoder.cobs_len,
-                                            s_decoder.raw_buf, sizeof(s_decoder.raw_buf));
-                s_decoder.cobs_len = 0;
+            if (decoder->cobs_len > 0) {
+                size_t raw_len = cobs_decode(decoder->cobs_buf, decoder->cobs_len,
+                                            decoder->raw_buf, sizeof(decoder->raw_buf));
+                decoder->cobs_len = 0;
                 if (raw_len >= PROTOCOL_HEADER_LEN) {
-                    uint16_t payload_len = (uint16_t)s_decoder.raw_buf[3]
-                        | ((uint16_t)s_decoder.raw_buf[4] << 8);
+                    uint16_t payload_len = (uint16_t)decoder->raw_buf[3]
+                        | ((uint16_t)decoder->raw_buf[4] << 8);
                     if (payload_len <= PROTOCOL_MAX_PAYLOAD && raw_len == (size_t)(7U + payload_len)) {
-                        uint16_t crc = (uint16_t)s_decoder.raw_buf[5 + payload_len]
-                            | ((uint16_t)s_decoder.raw_buf[6 + payload_len] << 8);
-                        if (crc == crc16_ccitt(s_decoder.raw_buf, 5 + payload_len)) {
-                            uint16_t msg_id = (uint16_t)s_decoder.raw_buf[1]
-                                | ((uint16_t)s_decoder.raw_buf[2] << 8);
-                            const uint8_t *payload = s_decoder.raw_buf + 5;
-                            protocol_dispatch(msg_id, payload, payload_len);
+                        uint16_t crc = (uint16_t)decoder->raw_buf[5 + payload_len]
+                            | ((uint16_t)decoder->raw_buf[6 + payload_len] << 8);
+                        if (crc == crc16_ccitt(decoder->raw_buf, 5 + payload_len)) {
+                            uint16_t msg_id = (uint16_t)decoder->raw_buf[1]
+                                | ((uint16_t)decoder->raw_buf[2] << 8);
+                            const uint8_t *payload = decoder->raw_buf + 5;
+                            // NEW: Temporarily set the response endpoint to the incoming port
+                            SemaphoreHandle_t dispatch_mutex = dispatch_mutex_get();
+                            if (dispatch_mutex != NULL && xSemaphoreTake(dispatch_mutex, portMAX_DELAY) == pdTRUE) {
+                                protocol_set_endpoint(port);
+                                s_dispatch_route_active = true;
+                                s_dispatch_route_port = (uart_id_t)port;
+                                s_dispatch_route_task = xTaskGetCurrentTaskHandle();
+                                protocol_dispatch(msg_id, payload, payload_len);
+                                s_dispatch_route_active = false;
+                                s_dispatch_route_task = NULL;
+                                (void)xSemaphoreGive(dispatch_mutex);
+                            }
                         }
+
                     }
                 }
             }
             continue;
         }
-        if (s_decoder.cobs_len < sizeof(s_decoder.cobs_buf))
-            s_decoder.cobs_buf[s_decoder.cobs_len++] = b;
+        if (decoder->cobs_len < sizeof(decoder->cobs_buf))
+            decoder->cobs_buf[decoder->cobs_len++] = b;
         else
-            s_decoder.cobs_len = 0; /* overflow, reset */
+            decoder->cobs_len = 0; /* overflow, reset */
     }
+
 }
