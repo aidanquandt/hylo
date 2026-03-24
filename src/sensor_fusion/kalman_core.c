@@ -52,8 +52,8 @@ void kalmanCoreDefaultParams(kalmanCoreParams_t* params)
     /* to appropriately weight IMU predictions vs UWB measurements */
     params->procNoiseAcc_xy = 0.5f;    /* Accelerometer noise XY (m/s^2) */
     params->procNoiseAcc_z  = 1.0f;    /* Accelerometer noise Z (m/s^2) */
-    params->procNoiseVel    = 0.01f;   /* Velocity random walk (m/s) - REVERTED to original */
-    params->procNoisePos    = 0.001f;  /* Position random walk (m) - Conservative middle ground */
+    params->procNoiseVel    = 0.1f;    /* Velocity random walk (m/s) - tuned for human walking pace */
+    params->procNoisePos    = 0.01f;   /* Position random walk (m) - tuned for human walking pace */
     params->procNoiseAtt    = 0.0001f; /* Attitude drift (rad) - Small but non-zero */
 
     /* Measurement noise */

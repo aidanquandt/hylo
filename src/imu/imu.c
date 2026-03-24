@@ -175,16 +175,18 @@ STATIC void imu_aggregate_and_push(void)
 
 STATIC void imu_transform_accel(const vec3_t* accel_in, vec3_t* accel_out)
 {
-    accel_out->x = accel_in->z;
-    accel_out->y = accel_in->y;
-    accel_out->z = -1.0f * accel_in->x;
+    // Physical mounting: sensor X → body +Z, sensor Y → body +Y, sensor Z → body -X
+    accel_out->x = -accel_in->z;
+    accel_out->y =  accel_in->y;
+    accel_out->z =  accel_in->x;
 }
 
 STATIC void imu_transform_gyro(const vec3_t* gyro_in, vec3_t* gyro_out)
 {
-    gyro_out->x = gyro_in->z;
-    gyro_out->y = gyro_in->y;
-    gyro_out->z = -1.0f * gyro_in->x;
+    // Same axis mapping as accel
+    gyro_out->x = -gyro_in->z;
+    gyro_out->y =  gyro_in->y;
+    gyro_out->z =  gyro_in->x;
 }
 
 STATIC uint16_t imu_transition_logic(uint16_t currentState, uint32_t stateTimer)
@@ -521,6 +523,22 @@ bool imu_soft_reset(void)
         }
     }
     return any_ok;
+}
+
+/* Runs BMI323 hardware calibration (gyro SC + accel FOC) on the specified IMU.
+ * Device must be stationary and flat. Returns true on success. */
+bool imu_calibrate(uint32_t imu_index)
+{
+    if (imu_index >= (uint32_t)IMU_NUM_DEVICES || IMU_NUM_DEVICES == 0U)
+    {
+        return false;
+    }
+    imu_ctx_t* c = &imu_ctxs[imu_index];
+    if (!c->active || c->dev == NULL)
+    {
+        return false;
+    }
+    return imu_driver_calibrate(c->dev) == IMU_DRIVER_SUCCESS;
 }
 
 imu_state_e imu_get_state(imu_device_e device)

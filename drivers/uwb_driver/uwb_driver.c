@@ -78,7 +78,7 @@ STATIC uint32_t uwb_driver_read_status_register_high(void);
 #define UWB_DRIVER_RX_TASK_STACK_SIZE (768U)
 #define UWB_DRIVER_RX_TASK_PRIORITY (6U)
 #define UWB_DRIVER_TX_TASK_STACK_SIZE (512U)
-#define UWB_DRIVER_TX_TASK_PRIORITY (5U)
+#define UWB_DRIVER_TX_TASK_PRIORITY (7U)
 
 typedef struct
 {
