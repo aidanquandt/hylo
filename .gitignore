@@ -67,3 +67,7 @@ __pycache__/
 
 # Wifi keys and other sensitive information
 **/wifi_config.h
+
+# Video generation — Manim render output and test data
+video/media/
+test_data/
