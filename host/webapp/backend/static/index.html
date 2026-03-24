@@ -313,7 +313,9 @@
       font-size: 0.75rem;
     }
     .viz-toolbar button:hover { filter: brightness(1.1); }
+    .viz-toolbar button.toggled { background: var(--accent); color: var(--bg); border-color: var(--accent); }
     .viz-toolbar .viz-status { color: var(--muted); margin-left: auto; }
+    .sf-confidence { font-size: 0.72rem; color: var(--success); }
     .anchor-config {
       flex-shrink: 0;
       max-height: 9rem;
@@ -337,6 +339,7 @@
     .anchor-config .btn-add { background: var(--accent); color: var(--bg); }
     .anchor-config .btn-del { background: var(--error); color: #fff; }
     .anchor-config .btn-apply { background: var(--success); color: var(--bg); }
+    .anchor-config .btn-check { background: var(--surface2); color: var(--accent); border: 1px solid var(--accent); }
     .anchor-config .btn-apply:disabled { opacity: 0.5; cursor: not-allowed; }
     .anchor-config .btn-apply.sent { background: var(--muted); }
   </style>
@@ -378,6 +381,8 @@
             <span>Event log</span>
             <span>
               <button type="button" id="jumpToBottom" class="btn-jump" title="Scroll to latest">Jump to bottom</button>
+              <button type="button" id="hideRangesBtn" class="btn-clear" title="Hide/show TWR range lines">Hide Ranges</button>
+              <button type="button" id="hideSFBtn" class="btn-clear" title="Hide/show SensorFusion status lines">Hide SF</button>
               <button type="button" id="clearEvents" class="btn-clear" title="Clear event log">Clear</button>
             </span>
           </div>
@@ -394,6 +399,9 @@
             </div>
             <div class="viz-toolbar">
               <button type="button" id="vizClear" title="Clear trail & ranges">Clear</button>
+              <button type="button" id="sfLiveBtn" title="Poll SensorFusionGetStatusRequest every 500ms to stream tag position">SF Live</button>
+              <button type="button" id="trailBtn" class="toggled" title="Show/hide position trail">Trail</button>
+              <span id="sfConfidence" class="sf-confidence"></span>
               <label>Bounds X:</label>
               <input type="text" id="vizMinX" value="-0.5" style="width:3rem" />
               <span>to</span>
@@ -406,7 +414,7 @@
             </div>
             <div class="anchor-config" id="anchorConfig">
               <table>
-                <thead><tr><th>Addr</th><th>Label</th><th>X</th><th>Y</th><th>Z</th><th></th><th></th></tr></thead>
+                <thead><tr><th>Addr</th><th>Label</th><th>X (cfg)</th><th>Y (cfg)</th><th>Z (cfg)</th><th>Reported</th><th></th><th></th><th></th></tr></thead>
                 <tbody id="anchorRows"></tbody>
               </table>
               <button type="button" class="btn-add" id="addAnchor" style="margin-top:0.2rem">+ Add anchor</button>
@@ -467,36 +475,53 @@
       return el.scrollHeight - el.clientHeight - el.scrollTop <= 50;
     }
 
+    let hideRanges = false;
+    let hideSF = false;
+
+    function shouldHideLine(text) {
+      if (hideRanges && (text.includes("TWR range addr=") || text.includes("TwrMgrRangeEvent"))) return true;
+      if (hideSF && text.includes("SensorFusionGetStatusResponse")) return true;
+      return false;
+    }
+
+    function makeLogLine(text) {
+      const line = document.createElement("div");
+      line.className = "event-log-line";
+      const safe = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      line.innerHTML = safe.replace(/^(\[rx\]\s*)/, "<span class=\"event-prefix\">$1</span>");
+      return line;
+    }
+
+    let _pendingLines = [];
+    // Flush batched lines into the DOM at most every 80ms to avoid per-message reflow
+    setInterval(() => {
+      if (_pendingLines.length === 0) return;
+      const lines = _pendingLines;
+      _pendingLines = [];
+      const wasAtBottom = isEventLogAtBottom();
+      eventLogEntries = eventLogEntries.concat(lines);
+      eventLogEmptyEl.style.display = "none";
+      const frag = document.createDocumentFragment();
+      lines.forEach(text => { if (!shouldHideLine(text)) frag.appendChild(makeLogLine(text)); });
+      eventLogLinesEl.appendChild(frag);
+      if (wasAtBottom) eventLogContentEl.scrollTop = eventLogContentEl.scrollHeight;
+    }, 80);
+
     function appendEvents(events) {
       if (!events || events.length === 0) return;
-      const wasAtBottom = isEventLogAtBottom();
-      eventLogEntries = eventLogEntries.concat(events);
-      eventLogEmptyEl.style.display = "none";
-      events.forEach(text => {
-        const line = document.createElement("div");
-        line.className = "event-log-line";
-        const safe = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        line.innerHTML = safe.replace(/^(\[rx\]\s*)/, "<span class=\"event-prefix\">$1</span>");
-        eventLogLinesEl.appendChild(line);
-      });
-      if (wasAtBottom) eventLogContentEl.scrollTop = eventLogContentEl.scrollHeight;
+      _pendingLines = _pendingLines.concat(events);
     }
 
     function renderEventLog() {
       const wasAtBottom = eventLogEntries.length === 0 || isEventLogAtBottom();
       eventLogLinesEl.innerHTML = "";
-      if (eventLogEntries.length === 0) {
+      const toRender = eventLogEntries.filter(t => !shouldHideLine(t));
+      if (toRender.length === 0) {
         eventLogEmptyEl.style.display = "block";
         return;
       }
       eventLogEmptyEl.style.display = "none";
-      eventLogEntries.forEach(text => {
-        const line = document.createElement("div");
-        line.className = "event-log-line";
-        const safe = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        line.innerHTML = safe.replace(/^(\[rx\]\s*)/, "<span class=\"event-prefix\">$1</span>");
-        eventLogLinesEl.appendChild(line);
-      });
+      toRender.forEach(text => eventLogLinesEl.appendChild(makeLogLine(text)));
       if (wasAtBottom) eventLogContentEl.scrollTop = eventLogContentEl.scrollHeight;
     }
 
@@ -886,9 +911,10 @@
     const vizState = {
       position: { x: 0, y: 0, z: 0 },
       positionKnown: false,
-      ranges: {},   // addr -> { distance_m }
-      trail: [],    // [{x,y}]
-      anchors: {},  // addr -> {x,y,z,label}
+      ranges: {},           // addr -> { distance_m }
+      trail: [],            // [{x,y}]
+      anchors: {},          // addr -> {x,y,z,label}  (user-configured)
+      reportedAnchors: {},  // addr -> {x,y,z,position_unknown} (from TwrMgrRangeEvent)
     };
     const ANCHOR_COLORS = [
       "#ff4444", "#44ff44", "#4488ff", "#ffff44",
@@ -1006,7 +1032,7 @@
       });
 
       // Trail
-      if (vizState.trail.length > 1) {
+      if (showTrail && vizState.trail.length > 1) {
         ctx.strokeStyle = "rgba(122,162,247,0.35)";
         ctx.lineWidth = 1.5;
         ctx.beginPath();
@@ -1062,21 +1088,62 @@
     }
 
     // ===================== SSE viz event handler =====================
+    // TWR range event: x/y/z are the ANCHOR's self-reported position, not the tag.
+    // Store to reportedAnchors for verification; user-configured vizState.anchors is unchanged.
     function handleVizEvent(data) {
-      if (!data.position_unknown) {
-        vizState.position = { x: data.x, y: data.y, z: data.z };
-        vizState.positionKnown = true;
-        vizState.trail.push({ x: data.x, y: data.y });
-        if (vizState.trail.length > 200) vizState.trail.shift();
-      }
-      vizState.ranges[String(data.addr)] = { distance_m: data.distance_m };
-      vizStatusEl.textContent = `Tag: (${data.x.toFixed(2)}, ${data.y.toFixed(2)}) | Addr: 0x${data.addr.toString(16).toUpperCase()}`;
+      const addrStr = String(data.addr);
+      vizState.reportedAnchors[addrStr] = {
+        x: data.x, y: data.y, z: data.z,
+        position_unknown: data.position_unknown,
+      };
+      vizState.ranges[addrStr] = { distance_m: data.distance_m };
+      updateAnchorReportedCell(addrStr);
+      const sfText = vizState.positionKnown
+        ? ` | Tag: (${vizState.position.x.toFixed(2)}, ${vizState.position.y.toFixed(2)})`
+        : "";
+      vizStatusEl.textContent = `0x${data.addr.toString(16).toUpperCase()}: ${data.distance_m.toFixed(2)}m${sfText}`;
       if (document.getElementById("tabViz").classList.contains("active")) {
         requestAnimationFrame(vizDraw);
       }
     }
 
-    // Patch the existing SSE connection to also listen for viz events
+    // Update the "Reported" cell in the anchor table for a given addr string
+    function updateAnchorReportedCell(addrStr) {
+      const cell = document.querySelector(`[data-reported="${addrStr}"]`);
+      if (!cell) return;
+      const r = vizState.reportedAnchors[addrStr];
+      if (!r) { cell.textContent = "?"; cell.style.color = "var(--muted)"; return; }
+      if (r.position_unknown) {
+        cell.textContent = "not set";
+        cell.style.color = "var(--error)";
+      } else {
+        const cfg = vizState.anchors[addrStr];
+        const dx = cfg ? Math.abs(r.x - cfg.x) + Math.abs(r.y - cfg.y) + Math.abs(r.z - cfg.z) : null;
+        const match = dx !== null && dx < 0.01;
+        cell.textContent = `(${r.x.toFixed(2)}, ${r.y.toFixed(2)}, ${r.z.toFixed(2)})`;
+        cell.style.color = match ? "var(--success)" : "var(--accent)";
+      }
+    }
+
+    // Sensor fusion event: actual tag position from EKF
+    function handleFusionEvent(data) {
+      const confEl = document.getElementById("sfConfidence");
+      if (data.active && data.confidence > 0) {
+        vizState.position = { x: data.x, y: data.y, z: data.z };
+        vizState.positionKnown = true;
+        vizState.trail.push({ x: data.x, y: data.y });
+        if (vizState.trail.length > 200) vizState.trail.shift();
+        confEl.textContent = `conf: ${(data.confidence * 100).toFixed(0)}%`;
+        vizStatusEl.textContent = `SF: (${data.x.toFixed(2)}, ${data.y.toFixed(2)}) conf=${(data.confidence * 100).toFixed(0)}%`;
+      } else {
+        confEl.textContent = data.active ? "conf: 0% (no updates)" : "SF inactive";
+      }
+      if (document.getElementById("tabViz").classList.contains("active")) {
+        requestAnimationFrame(vizDraw);
+      }
+    }
+
+    // Patch the existing SSE connection to also listen for viz and fusion events
     const origConnectEventStream = connectEventStream;
     connectEventStream = function() {
     
@@ -1085,16 +1152,19 @@
         eventStreamSource.addEventListener("viz", (e) => {
           try { handleVizEvent(JSON.parse(e.data)); } catch (err) { /* ignore */ }
         });
+        eventStreamSource.addEventListener("fusion", (e) => {
+          try { handleFusionEvent(JSON.parse(e.data)); } catch (err) { /* ignore */ }
+        });
       }
     };
 
     // ===================== Anchor configuration =====================
     const anchorRowsEl = document.getElementById("anchorRows");
     const defaultAnchors = {
-      "0": { x: 4.915, y: 3.758, z: 0, label: "B0" },
-      "1": { x: 0.877, y: 0.020, z: 0, label: "B1" },
-      "2": { x: 0.828, y: 4.018, z: 0, label: "B2" },
-      "3": { x: 4.904, y: 0.460, z: 0, label: "B3" },
+      "3": { x: 0, y: 0, z: 0, label: "A3" },
+      "4": { x: 0, y: 0, z: 0, label: "A4" },
+      "5": { x: 0, y: 0, z: 0, label: "A5" },
+      "6": { x: 0, y: 0, z: 0, label: "A6" },
     };
 
     function loadAnchors() {
@@ -1135,10 +1205,13 @@
         <td><input data-field="x" type="number" step="0.01" value="${a.x}" /></td>
         <td><input data-field="y" type="number" step="0.01" value="${a.y}" /></td>
         <td><input data-field="z" type="number" step="0.01" value="${a.z}" /></td>
-        <td><button class="btn-apply" title="Send OtaConfigSendPositionRequest to device">Apply</button></td>
+        <td><span data-reported="${escapeHtml(addr)}" style="font-size:0.7rem;color:var(--muted)">?</span></td>
+        <td><button class="btn-apply" title="Send OtaConfigSendPositionRequest to anchor">Apply</button></td>
+        <td><button class="btn-check" title="Do one-shot TWR range to read anchor-reported position">Check</button></td>
         <td><button class="btn-del" title="Remove">✕</button></td>`;
       tr.querySelector(".btn-del").addEventListener("click", () => { tr.remove(); saveAnchors(); });
       tr.querySelector(".btn-apply").addEventListener("click", () => applyAnchorPosition(tr));
+      tr.querySelector(".btn-check").addEventListener("click", () => checkAnchorPosition(tr));
       tr.querySelectorAll("input").forEach(inp => inp.addEventListener("change", saveAnchors));
       anchorRowsEl.appendChild(tr);
     }
@@ -1187,6 +1260,45 @@
       }, 2000);
     }
 
+    async function checkAnchorPosition(tr) {
+      const port = portEl.value;
+      if (!port) { alert("Select a port first."); return; }
+      const addr = tr.querySelector("[data-field=addr]").value.trim();
+      if (!addr) return;
+      const addrStr = String(addr);
+      const btn = tr.querySelector(".btn-check");
+      const cell = tr.querySelector(`[data-reported="${addrStr}"]`);
+      btn.disabled = true;
+      btn.textContent = "…";
+      if (cell) { cell.textContent = "ranging…"; cell.style.color = "var(--muted)"; }
+      try {
+        const r = await fetch("/api/command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ port, command: "TwrRangeRequest", args: [addr] })
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!data.success) {
+          btn.textContent = "✕";
+          if (cell) { cell.textContent = "failed"; cell.style.color = "var(--error)"; }
+        } else {
+          btn.textContent = "✓";
+          // Result arrives via SSE TwrMgrRangeEvent → handleVizEvent → updateAnchorReportedCell
+          // If not already updated, show waiting indicator briefly
+          setTimeout(() => {
+            if (cell && cell.textContent === "ranging…") {
+              cell.textContent = "no event";
+              cell.style.color = "var(--muted)";
+            }
+          }, 3000);
+        }
+      } catch (e) {
+        btn.textContent = "✕";
+        if (cell) { cell.textContent = "error"; cell.style.color = "var(--error)"; }
+      }
+      setTimeout(() => { btn.disabled = false; btn.textContent = "Check"; }, 2000);
+    }
+
     function initAnchors() {
       const anchors = loadAnchors();
       vizState.anchors = anchors;
@@ -1196,6 +1308,8 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ anchors })
       }).catch(() => {});
+      // Refresh any already-known reported cells
+      Object.keys(vizState.reportedAnchors).forEach(updateAnchorReportedCell);
     }
 
     document.getElementById("addAnchor").addEventListener("click", () => {
@@ -1204,10 +1318,65 @@
       saveAnchors();
     });
 
+    // ===================== SF Live toggle =====================
+    let sfLiveInterval = null;
+    const sfLiveBtn = document.getElementById("sfLiveBtn");
+    sfLiveBtn.addEventListener("click", () => {
+      if (sfLiveInterval) {
+        clearInterval(sfLiveInterval);
+        sfLiveInterval = null;
+        sfLiveBtn.classList.remove("toggled");
+        document.getElementById("sfConfidence").textContent = "";
+      } else {
+        if (!portEl.value) { alert("Select a port first."); return; }
+        sfLiveBtn.classList.add("toggled");
+        const poll = async () => {
+          if (!portEl.value) return;
+          try {
+            await fetch("/api/command", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ port: portEl.value, command: "SensorFusionGetStatusRequest", args: [] })
+            });
+          } catch (e) { /* ignore */ }
+        };
+        poll(); // immediate first poll
+        sfLiveInterval = setInterval(poll, 100);
+      }
+    });
+
+    // ===================== Hide Ranges toggle =====================
+    const hideRangesBtn = document.getElementById("hideRangesBtn");
+    hideRangesBtn.addEventListener("click", () => {
+      hideRanges = !hideRanges;
+      hideRangesBtn.textContent = hideRanges ? "Show Ranges" : "Hide Ranges";
+      hideRangesBtn.style.color = hideRanges ? "var(--accent)" : "";
+      renderEventLog();
+    });
+
+    // ===================== Hide SF Status toggle =====================
+    const hideSFBtn = document.getElementById("hideSFBtn");
+    hideSFBtn.addEventListener("click", () => {
+      hideSF = !hideSF;
+      hideSFBtn.textContent = hideSF ? "Show SF" : "Hide SF";
+      hideSFBtn.style.color = hideSF ? "var(--accent)" : "";
+      renderEventLog();
+    });
+
+    // ===================== Trail toggle =====================
+    let showTrail = true;
+    const trailBtn = document.getElementById("trailBtn");
+    trailBtn.addEventListener("click", () => {
+      showTrail = !showTrail;
+      trailBtn.classList.toggle("toggled", showTrail);
+      if (document.getElementById("tabViz").classList.contains("active")) requestAnimationFrame(vizDraw);
+    });
+
     document.getElementById("vizClear").addEventListener("click", async () => {
       vizState.trail = [];
       vizState.ranges = {};
       vizState.positionKnown = false;
+      document.getElementById("sfConfidence").textContent = sfLiveInterval ? "conf: 0%" : "";
       vizStatusEl.textContent = "No data";
       try { await fetch("/api/viz/clear", { method: "POST" }); } catch (e) { /* ignore */ }
       vizDraw();

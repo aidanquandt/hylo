@@ -61,7 +61,7 @@ STATIC kalmanCoreData_t kf_data;
 STATIC kalmanCoreParams_t kf_params;
 STATIC uint32_t update_count                  = 0;
 STATIC TaskHandle_t sensor_fusion_task_handle = NULL;
-STATIC bool imu_enabled                       = true; // Enable IMU by default
+STATIC bool imu_enabled                       = false; // Disabled: IMU gravity compensation not yet validated
 
 STATIC struct
 {
@@ -85,6 +85,13 @@ STATIC void process_ranging_event(const sensor_event_t* event)
         {
         }
         return; // Cannot update without known anchor position
+    }
+
+    // When IMU is disabled there is no prediction step, so the covariance never grows.
+    // Add process noise here so the Kalman gain stays non-trivial and position tracks movement.
+    if (!imu_enabled)
+    {
+        kalmanCoreAddProcessNoise(&kf_data, &kf_params, event->timestamp_ms);
     }
 
     distanceMeasurement_t d = {.x        = ranging->anchor_position.x,
@@ -278,7 +285,15 @@ STATIC void sensor_fusion_update_position_estimate(void)
                            fabsf(position_estimate.y) < MAX_VALID_POSITION_M &&
                            fabsf(position_estimate.z) < MAX_VALID_POSITION_M);
     bool no_nans =
-        (!isnan(position_estimate.x) && !isnan(position_estimate.y) && !isnan(position_estimate.z));
+        (!isnan(position_estimate.x) && !isnan(position_estimate.y) && !isnan(position_estimate.z) &&
+         !isnan(position_estimate.vx) && !isnan(position_estimate.vy) && !isnan(position_estimate.vz));
+
+    if (!no_nans || !reasonable_pos)
+    {
+        // Filter has diverged — reset to recover
+        kalmanCoreInit(&kf_data, &kf_params, timer_driver_get_time_ms());
+        update_count = 0;
+    }
 
     position_estimate.valid = valid_updates && reasonable_pos && no_nans;
 

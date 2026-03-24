@@ -139,8 +139,7 @@ class RouteSelectRequest(BaseModel):
 
 
 def _try_extract_viz_data(msg_id, payload) -> dict | None:
-    """If this message is a TwrMgrRangeEvent, extract position/ranging data for visualization and return a viz event dict."""
-    global _viz_position, _viz_trail
+    """If this message is a TwrMgrRangeEvent, extract ranging data and return a viz event dict."""
     if _protocol_tool is None:
         return None
     try:
@@ -161,15 +160,41 @@ def _try_extract_viz_data(msg_id, payload) -> dict | None:
         pos_unknown = getattr(msg, "position_unknown", True)
         with _viz_lock:
             _viz_ranges[addr] = {"distance_m": float(distance_m), "addr": addr}
-            if not pos_unknown:
-                _viz_position = {"x": float(x), "y": float(y), "z": float(z), "timestamp_ms": int(time.time() * 1000)}
-                _viz_trail = (_viz_trail + [{"x": float(x), "y": float(y)}])[-_VIZ_TRAIL_MAX:]
         return {
             "type": "viz",
             "x": float(x), "y": float(y), "z": float(z),
             "position_unknown": bool(pos_unknown),
             "addr": addr, "distance_m": float(distance_m),
         }
+    except Exception:
+        return None
+
+
+def _try_extract_fusion_data(msg_id, payload) -> dict | None:
+    """If this message is a SensorFusionGetStatusResponse, extract position and return a fusion event dict."""
+    global _viz_position, _viz_trail
+    if _protocol_tool is None:
+        return None
+    try:
+        from generated.protocol.python import protocol_ids
+        name = protocol_ids.MSG_NAMES[msg_id] if msg_id < len(protocol_ids.MSG_NAMES) else None
+        if name != "SensorFusionGetStatusResponse":
+            return None
+        cls = _protocol_tool.get_message_class(name)
+        if cls is None:
+            return None
+        msg = cls()
+        msg.ParseFromString(payload)
+        active = bool(getattr(msg, "active", False))
+        pos_x = float(getattr(msg, "pos_x", 0.0))
+        pos_y = float(getattr(msg, "pos_y", 0.0))
+        pos_z = float(getattr(msg, "pos_z", 0.0))
+        confidence = float(getattr(msg, "confidence", 0.0))
+        if active and confidence > 0:
+            with _viz_lock:
+                _viz_position = {"x": pos_x, "y": pos_y, "z": pos_z, "timestamp_ms": int(time.time() * 1000)}
+                _viz_trail = (_viz_trail + [{"x": pos_x, "y": pos_y}])[-_VIZ_TRAIL_MAX:]
+        return {"type": "fusion", "active": active, "x": pos_x, "y": pos_y, "z": pos_z, "confidence": confidence}
     except Exception:
         return None
 
@@ -184,10 +209,11 @@ def _publish_rx_message(msg_id: int, payload: bytes, source: str) -> None:
         _event_log = (_event_log + [line])[-EVENT_LOG_MAX:]
 
     viz_event = _try_extract_viz_data(msg_id, payload)
+    fusion_event = _try_extract_fusion_data(msg_id, payload)
     with _sse_queues_lock:
         for q in _sse_queues:
             try:
-                q.put({"line": line, "viz": viz_event}, block=False)
+                q.put({"line": line, "viz": viz_event, "fusion": fusion_event}, block=False)
             except queue.Full:
                 pass
 
@@ -630,6 +656,9 @@ def _event_stream_generator():
                 viz = item.get("viz")
                 if viz:
                     yield f"event: viz\ndata: {json.dumps(viz)}\n\n"
+                fusion = item.get("fusion")
+                if fusion:
+                    yield f"event: fusion\ndata: {json.dumps(fusion)}\n\n"
             else:
                 yield f"data: {json.dumps({'line': item})}\n\n"
     finally:
