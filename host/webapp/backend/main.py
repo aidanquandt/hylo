@@ -58,6 +58,8 @@ _wifi_last_loop_error_log_t = 0.0
 # SSE: list of queues to push new event lines to (one per connected client). Use stdlib queue for thread-safe put from reader thread.
 _sse_queues: list[queue.Queue] = []
 _sse_queues_lock = threading.Lock()
+_last_viz_sse_push: float = 0.0   # throttle viz-only SSE events to 20 Hz
+_VIZ_SSE_MIN_INTERVAL = 0.05      # seconds between viz SSE pushes (20 Hz)
 
 _HIDDEN_UI_COMMANDS = {
     "TransportSetRequest",
@@ -199,23 +201,45 @@ def _try_extract_fusion_data(msg_id, payload) -> dict | None:
         return None
 
 
+def _is_high_frequency_msg(msg_id: int) -> bool:
+    """Return True for messages that are too frequent to log (e.g. every ranging result)."""
+    try:
+        from generated.protocol.python import protocol_ids
+        name = protocol_ids.MSG_NAMES[msg_id] if msg_id < len(protocol_ids.MSG_NAMES) else None
+        return name in ("TwrMgrRangeEvent",)
+    except Exception:
+        return False
+
+
 def _publish_rx_message(msg_id: int, payload: bytes, source: str) -> None:
-    global _event_log
+    global _event_log, _last_viz_sse_push
     if _protocol_tool is None:
         return
 
-    line = "[%s] %s" % (source, _protocol_tool.format_response(msg_id, payload))
-    with _event_log_lock:
-        _event_log = (_event_log + [line])[-EVENT_LOG_MAX:]
-
+    high_freq = _is_high_frequency_msg(msg_id)
     viz_event = _try_extract_viz_data(msg_id, payload)
     fusion_event = _try_extract_fusion_data(msg_id, payload)
-    with _sse_queues_lock:
-        for q in _sse_queues:
-            try:
-                q.put({"line": line, "viz": viz_event, "fusion": fusion_event}, block=False)
-            except queue.Full:
-                pass
+
+    if not high_freq:
+        line = "[%s] %s" % (source, _protocol_tool.format_response(msg_id, payload))
+        with _event_log_lock:
+            _event_log = (_event_log + [line])[-EVENT_LOG_MAX:]
+        with _sse_queues_lock:
+            for q in _sse_queues:
+                try:
+                    q.put({"line": line, "viz": viz_event, "fusion": fusion_event}, block=False)
+                except queue.Full:
+                    pass
+    elif viz_event:
+        now = time.monotonic()
+        if now - _last_viz_sse_push >= _VIZ_SSE_MIN_INTERVAL:
+            _last_viz_sse_push = now
+            with _sse_queues_lock:
+                for q in _sse_queues:
+                    try:
+                        q.put({"line": "", "viz": viz_event, "fusion": None}, block=False)
+                    except queue.Full:
+                        pass
 
     with _serial_lock:
         global _rx_seq
@@ -411,7 +435,7 @@ def _monitor_reader_loop(ser, stop_event: threading.Event) -> None:
                 if result:
                     msg_id, payload = result
                     _publish_rx_message(msg_id, payload, "uart")
-            time.sleep(0.01)
+            time.sleep(0.002)
         except Exception:
             if not stop_event.is_set():
                 try:
@@ -641,7 +665,7 @@ def api_get_events() -> dict:
 
 def _event_stream_generator():
     """Yield SSE events for each new log line and viz position updates."""
-    event_queue: queue.Queue = queue.Queue()
+    event_queue: queue.Queue = queue.Queue(maxsize=200)
     with _sse_queues_lock:
         _sse_queues.append(event_queue)
     try:
