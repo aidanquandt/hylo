@@ -8,7 +8,6 @@
  *---------------------------------------------------------------------------*/
 #include "wifi.h"
 #include "wifi_config.h"
-#include "imu.h"
 #include "system_halt.h"
 #include "task_config.h"
 #include "uart_driver.h"
@@ -18,7 +17,6 @@
 #include "stream_buffer.h"
 #include "common.h"
 #include "feature_config.h"
-#include "wifi_ota_parser.h"
 #include "uart_framing.h"
 #include "gpio_driver.h"
 
@@ -159,7 +157,6 @@ STATIC const uint16_t PORT = WIFI_PORT;
 void wifi_init(void)
 {   
     gpio_driver_esp_set();
-    ota_parser_init();
     uart_driver_rx_start(UART_WIFI);
 
     (void)xTaskCreateStatic(
@@ -684,7 +681,6 @@ STATIC void wifi_state_active_process(void)
 
         uart_framing_feed(UART_WIFI, rx_buf, rx_len);
     } else {
-
         return;
     }
 }
@@ -693,9 +689,7 @@ STATIC void wifi_state_faulted_on_entry(uint16_t prevState)
 {
     (void)prevState;
     gpio_driver_led_1_off();
-    // char fault_msg[64];
-    // snprintf(fault_msg, sizeof(fault_msg), "[WIFI FAULTED from state %u]\r\n", (unsigned)prevState);
-    // uart_driver_transmit(UART_CONSOLE, (uint8_t*)fault_msg, strlen(fault_msg));
+
 }
 
 // Non-blocking command helpers
