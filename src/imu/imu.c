@@ -525,22 +525,6 @@ bool imu_soft_reset(void)
     return any_ok;
 }
 
-/* Runs BMI323 hardware calibration (gyro SC + accel FOC) on the specified IMU.
- * Device must be stationary and flat. Returns true on success. */
-bool imu_calibrate(uint32_t imu_index)
-{
-    if (imu_index >= (uint32_t)IMU_NUM_DEVICES || IMU_NUM_DEVICES == 0U)
-    {
-        return false;
-    }
-    imu_ctx_t* c = &imu_ctxs[imu_index];
-    if (!c->active || c->dev == NULL)
-    {
-        return false;
-    }
-    return imu_driver_calibrate(c->dev) == IMU_DRIVER_SUCCESS;
-}
-
 imu_state_e imu_get_state(imu_device_e device)
 {
     if ((uint8_t)device >= (uint8_t)IMU_MAX_DEVICES || IMU_NUM_DEVICES == 0U)

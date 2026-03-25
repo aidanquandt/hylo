@@ -46,4 +46,3 @@ bool imu_get_individual_data(imu_device_e device, imu_data_t* data);
 uint8_t imu_get_device_count(void);
 uint8_t imu_get_active_count(void);
 bool imu_soft_reset(void);
-bool imu_calibrate(uint32_t imu_index);
