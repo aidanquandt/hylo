@@ -1,4 +1,4 @@
-/* Auto-generated from protocol.proto by tools/protocol_codegen/codegen_protocol.py */
+/* Auto-generated from protocol/protocol.proto barrel by tools/protocol_codegen/codegen_protocol.py */
 #ifndef PROTOCOL_TX_H
 #define PROTOCOL_TX_H
 #include "protocol_ids.h"

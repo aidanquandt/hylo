@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+import "host_options.proto";
+
+option (host.default_host_ui_module) = HOST_UI_MODULE_BEACON;
+
+message PingRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message PingResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  uint32 seq = 1;
+}

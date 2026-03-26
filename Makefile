@@ -11,10 +11,11 @@ PRESET_DEBUG := arm-gcc-debug
 
 # Regenerate protocol if generated files are missing or .proto files are newer
 ensure-protocol-codegen:
-	@if [ ! -f generated/protocol/c/protocol.pb.c ] || [ ! -f generated/protocol/c/host_options.pb.c ] || \
-	     [ protocol/protocol.proto -nt generated/protocol/c/protocol.pb.c ] || \
-	     [ protocol/host_options.proto -nt generated/protocol/c/host_options.pb.c ]; then \
+	@if [ ! -f generated/protocol/c/messages/protocol_common.pb.c ] || [ ! -f generated/protocol/c/host_options.pb.c ]; then \
 		echo "Protocol codegen missing or out of date, regenerating..."; \
+		$(MAKE) protocol-codegen; \
+	elif find protocol -name '*.proto' -newer generated/protocol/c/messages/protocol_common.pb.c | grep -q .; then \
+		echo "Protocol .proto newer than generated C, regenerating..."; \
 		$(MAKE) protocol-codegen; \
 	fi
 
@@ -70,6 +71,12 @@ host host-help:
 	@echo "Host targets: host-interactive, host-monitor, host-enable-streaming, host-visualization, host-webapp"
 	@echo "Run from repo root. For host-interactive: make host-interactive [PORT=/dev/ttyUSB0]"
 
+# Prefer project .venv when present (PEP 668–safe installs)
+PYTHON ?= python3
+ifneq ($(wildcard $(CURDIR)/.venv/bin/python),)
+PYTHON := $(CURDIR)/.venv/bin/python
+endif
+
 ifeq ($(OS),Windows_NT)
 PORT ?= COM10
 else
@@ -93,8 +100,8 @@ host-visualization:
 
 host-webapp:
 	@bash tools/scripts/attach-usb.sh serial
-	(python -c "import time, webbrowser; time.sleep(2); webbrowser.open('http://127.0.0.1:8000')") &
-	python3 -m uvicorn host.webapp.backend.main:app --reload
+	($(PYTHON) -c "import time, webbrowser; time.sleep(2); webbrowser.open('http://127.0.0.1:8000')") &
+	PYTHONPATH="$(CURDIR)/generated/protocol/python:$(CURDIR)" $(PYTHON) -m uvicorn host.webapp.backend.main:app --reload
 
 check-deps:
 	@bash tools/scripts/check_deps.sh

@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+import "host_options.proto";
+
+option (host.default_host_ui_module) = HOST_UI_MODULE_STOPWATCH;
+
+message StopwatchGetRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message StopwatchGetResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  uint32 elapsed_ms = 1;
+  bool running = 2;
+}
+message StopwatchStartRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message StopwatchStopRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}

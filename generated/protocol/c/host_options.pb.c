@@ -22,5 +22,38 @@ const pb_extension_type_t host_host_ui_module = {
     &host_host_ui_module_extmsg_msg
 };
 
+/* Definition for extension field host_host_message_type */
+typedef struct _host_host_message_type_extmsg {
+    host_HostMessageType host_message_type;
+} host_host_message_type_extmsg;
+#define host_host_message_type_extmsg_FIELDLIST(X, a) \
+X(a, STATIC,   REQUIRED, ENUM,     host_message_type, 50001)
+#define host_host_message_type_extmsg_CALLBACK NULL
+#define host_host_message_type_extmsg_DEFAULT NULL
+pb_byte_t host_host_message_type_extmsg_default[] = {0x00};
+PB_BIND(host_host_message_type_extmsg, host_host_message_type_extmsg, 4)
+const pb_extension_type_t host_host_message_type = {
+    NULL,
+    NULL,
+    &host_host_message_type_extmsg_msg
+};
+
+/* Definition for extension field host_default_host_ui_module */
+typedef struct _host_default_host_ui_module_extmsg {
+    host_HostUiModule default_host_ui_module;
+} host_default_host_ui_module_extmsg;
+#define host_default_host_ui_module_extmsg_FIELDLIST(X, a) \
+X(a, STATIC,   REQUIRED, ENUM,     default_host_ui_module, 50010)
+#define host_default_host_ui_module_extmsg_CALLBACK NULL
+#define host_default_host_ui_module_extmsg_DEFAULT NULL
+pb_byte_t host_default_host_ui_module_extmsg_default[] = {0x00};
+PB_BIND(host_default_host_ui_module_extmsg, host_default_host_ui_module_extmsg, 4)
+const pb_extension_type_t host_default_host_ui_module = {
+    NULL,
+    NULL,
+    &host_default_host_ui_module_extmsg_msg
+};
+
+
 
 

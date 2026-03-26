@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+import "host_options.proto";
+
+option (host.default_host_ui_module) = HOST_UI_MODULE_ERROR;
+
+message ErrorClearRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}

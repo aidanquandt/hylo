@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+import "nanopb.proto";
+import "host_options.proto";
+
+option (host.default_host_ui_module) = HOST_UI_MODULE_TWR_MGR;
+
+message TwrMgrStartRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message TwrMgrStopRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message TwrMgrGetStatusRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message TwrMgrGetStatusResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  uint32 state = 1;
+  uint32 target_count = 2;
+  uint32 ranging_rate_hz = 3;
+}
+
+message TwrMgrAddTargetRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  uint32 address = 1;
+}
+message TwrMgrRemoveTargetRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  uint32 address = 1;
+}
+message TwrMgrSetTargetsRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  repeated uint32 addresses = 1 [(nanopb).max_count = 16];
+}
+message TwrMgrClearTargetsRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message TwrMgrSetRangingRateRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  uint32 rate_hz = 1;
+}
+message TwrMgrGetRangingRateRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message TwrMgrGetRangingRateResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  uint32 rate_hz = 1;
+}
+
+message TwrMgrFailedToPushRangingEventEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  int32 sf_status = 1;
+}
+message TwrMgrRangeEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  float distance_m = 1;
+  uint32 addr = 2;
+  float x = 3;
+  float y = 4;
+  float z = 5;
+  bool position_unknown = 6;
+}
+message TwrMgrEnteringIdleStateEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message TwrMgrEnteringRangingStateEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 prev_state = 1;
+}
+message TwrMgrEnteringFaultedStateEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message TwrMgrCannotStartNoTargetsEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message TwrMgrFailedToStartInitiatorEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message TwrMgrInvalidRangingRateEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 rate_hz = 1;
+  uint32 valid_min_hz = 2;
+  uint32 valid_max_hz = 3;
+}
+message TwrMgrRangingRateSetEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 rate_hz = 1;
+  uint32 period_ms = 2;
+}

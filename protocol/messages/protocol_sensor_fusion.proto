@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+import "nanopb.proto";
+import "host_options.proto";
+
+option (host.default_host_ui_module) = HOST_UI_MODULE_SENSOR_FUSION;
+
+message SensorFusionGetDebugRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message SensorFusionSetDebugRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  uint32 debug_flags = 1;
+}
+message SensorFusionGetStatusRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message SensorFusionGetStatusResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  bool active = 1;
+  float pos_x = 2;
+  float pos_y = 3;
+  float pos_z = 4;
+  float confidence = 5;
+}
+message SensorFusionSetActiveRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  bool active = 1;
+}
+message SensorFusionGetImuEnabledRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message SensorFusionGetImuEnabledResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  bool imu_enabled = 1;
+}
+message SensorFusionSetImuEnabledRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  bool imu_enabled = 1;
+}
+message SensorFusionSetNoiseRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  float pos = 1;
+  float vel = 2;
+  float att = 3;
+}
+message SensorFusionGetNoiseRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message SensorFusionGetNoiseResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  float pos = 1;
+  float vel = 2;
+  float att = 3;
+}
+message SensorFusionGetConfigRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message SensorFusionSetConfigRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  bytes config = 1 [(nanopb).max_length = 32];
+}
