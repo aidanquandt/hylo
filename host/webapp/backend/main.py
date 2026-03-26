@@ -22,7 +22,7 @@ import threading
 import time
 from collections import deque
 from contextlib import redirect_stdout
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException
 
@@ -32,13 +32,13 @@ _event_log: List[str] = []
 _event_log_lock = threading.Lock()
 # Background monitor: one serial port open, reader thread pushes all frames to _event_log; commands use same port.
 _monitor_serial = None
-_monitor_port: str | None = None
-_monitor_thread: threading.Thread | None = None
+_monitor_port: Optional[str] = None
+_monitor_thread: Optional[threading.Thread] = None
 _monitor_stop_event = threading.Event()
 _monitor_enabled = False
 _response_queue: queue.Queue = queue.Queue()
-_pending_expected_id: int | None = None
-_pending_transport: str | None = None
+_pending_expected_id: Optional[int] = None
+_pending_transport: Optional[str] = None
 _serial_lock = threading.Lock()
 _command_lock = threading.Lock()
 _active_route = "uart"
@@ -46,15 +46,15 @@ _recent_rx_frames = deque(maxlen=32)   # (seq, source, msg_id, payload_len)
 _response_mailbox = deque(maxlen=256)  # (seq, t_monotonic, msg_id, payload, source)
 _rx_seq = 0
 _WAIT_DIAG_REV = "wait-v2"
-_wifi_silent_resp_counts: dict[int, int] = {}
+_wifi_silent_resp_counts: Dict[int, int] = {}
 
 _wifi_server_host = os.getenv("HYLO_WIFI_SERVER_HOST", "0.0.0.0")
 _wifi_server_port = int(os.getenv("HYLO_WIFI_SERVER_PORT", "5000"))
-_wifi_server_thread: threading.Thread | None = None
+_wifi_server_thread: Optional[threading.Thread] = None
 _wifi_server_stop_event = threading.Event()
-_wifi_server_socket: socket.socket | None = None
-_wifi_client_socket: socket.socket | None = None
-_wifi_client_addr: str | None = None
+_wifi_server_socket: Optional[socket.socket] = None
+_wifi_client_socket: Optional[socket.socket] = None
+_wifi_client_addr: Optional[str] = None
 _wifi_lock = threading.Lock()
 _wifi_last_loop_error_log_t = 0.0
 # SSE: list of queues to push new event lines to (one per connected client). Use stdlib queue for thread-safe put from reader thread.
@@ -135,14 +135,14 @@ class CommandRequest(BaseModel):
 
 
 class MonitorStartRequest(BaseModel):
-    port: str | None = None
+    port: Optional[str] = None
 
 
 class RouteSelectRequest(BaseModel):
     route: str
 
 
-def _try_extract_viz_data(msg_id, payload) -> dict | None:
+def _try_extract_viz_data(msg_id, payload) -> Optional[dict]:
     """If this message is a TwrMgrRangeEvent, extract ranging data and return a viz event dict."""
     if _protocol_tool is None:
         return None
@@ -174,7 +174,7 @@ def _try_extract_viz_data(msg_id, payload) -> dict | None:
         return None
 
 
-def _try_extract_fusion_data(msg_id, payload) -> dict | None:
+def _try_extract_fusion_data(msg_id, payload) -> Optional[dict]:
     """If this message is a SensorFusionGetStatusResponse, extract position and return a fusion event dict."""
     global _viz_position, _viz_trail
     if _protocol_tool is None:
@@ -243,7 +243,18 @@ def _publish_rx_message(msg_id: int, payload: bytes, source: str) -> None:
             _response_queue.put((msg_id, payload))
 
     # Match UART behavior for command/response UX: don't show WiFi command responses in Event Log.
+    # But still extract and push viz/fusion SSE events so the frontend visualization updates.
     if source == "wifi" and (matched_pending_response or matched_silent_wifi_response):
+        if _monitor_enabled:
+            viz_event = _try_extract_viz_data(msg_id, payload)
+            fusion_event = _try_extract_fusion_data(msg_id, payload)
+            if viz_event or fusion_event:
+                with _sse_queues_lock:
+                    for q in _sse_queues:
+                        try:
+                            q.put({"line": "", "viz": viz_event, "fusion": fusion_event}, block=False)
+                        except queue.Full:
+                            pass
         return
 
     if not _monitor_enabled:
@@ -343,7 +354,7 @@ def _wait_for_response(expected_msg_id: int, min_seq: int, timeout_s: float):
     return None
 
 
-def _mailbox_diag(expected_msg_id: int) -> tuple[int, str]:
+def _mailbox_diag(expected_msg_id: int) -> Tuple[int, str]:
     with _serial_lock:
         count_expected = sum(1 for (_, _, mid, _, _) in _response_mailbox if mid == expected_msg_id)
         tail = list(_response_mailbox)[-8:]
@@ -497,7 +508,7 @@ def list_ports() -> dict:
     return {"ports": ports}
 
 
-def _run_send_command(port: str | None, command: str, args: List[str], route_override: str | None = None) -> tuple[bool, str, List[str]]:
+def _run_send_command(port: Optional[str], command: str, args: List[str], route_override: Optional[str] = None) -> Tuple[bool, str, List[str]]:
     """Send a command over selected host route (uart/wifi)."""
     global _event_log, _pending_expected_id, _pending_transport
     if _protocol_tool is None:

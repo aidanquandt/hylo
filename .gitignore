@@ -17,6 +17,7 @@ compile_commands.json
 build.ninja
 rules.ninja
 **/build/Makefile
+Makefile
 
 # Compiled binaries and libraries
 *.exe

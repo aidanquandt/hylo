@@ -54,7 +54,7 @@ void kalmanCoreDefaultParams(kalmanCoreParams_t* params)
     params->procNoiseAcc_z  = 1.0f;    /* Accelerometer noise Z (m/s^2) */
     params->procNoiseVel    = 0.1f;    /* Velocity random walk (m/s) - tuned for human walking pace */
     params->procNoisePos    = 0.01f;   /* Position random walk (m) - tuned for human walking pace */
-    params->procNoiseAtt    = 0.0001f; /* Attitude drift (rad) - Small but non-zero */
+    params->procNoiseAtt    = 0.001f;  /* Attitude drift (rad) - allows gravity update to have meaningful gain */
 
     /* Measurement noise */
     params->measNoiseGyro_rollpitch = 0.1f; /* rad/s */

@@ -123,3 +123,4 @@ void sensor_fusion_set_process_noise(float pos, float vel, float att);
 void sensor_fusion_get_process_noise(float* pos, float* vel, float* att);
 void sensor_fusion_get_kalman_params(kalmanCoreParams_t* params);
 void sensor_fusion_set_kalman_params(const kalmanCoreParams_t* params);
+void sensor_fusion_set_accel_gyro_bias(const Axis3f* accel_bias, const Axis3f* gyro_bias);

@@ -62,6 +62,8 @@ STATIC kalmanCoreParams_t kf_params;
 STATIC uint32_t update_count                  = 0;
 STATIC TaskHandle_t sensor_fusion_task_handle = NULL;
 STATIC bool imu_enabled                       = false; // Disabled: IMU gravity compensation not yet validated
+STATIC Axis3f sw_accel_bias                   = {0.0f, 0.0f, 0.0f};
+STATIC Axis3f sw_gyro_bias                    = {0.0f, 0.0f, 0.0f};
 
 STATIC struct
 {
@@ -112,16 +114,17 @@ STATIC void process_imu_event(const sensor_event_t* event)
 {
     const sensor_imu_data_t* imu = &event->data.imu;
 
-    Axis3f acc = {.x = imu->accel_x, .y = imu->accel_y, .z = imu->accel_z};
-
-    Axis3f gyro = {.x = imu->gyro_x, .y = imu->gyro_y, .z = imu->gyro_z};
+    Axis3f acc = {.x = imu->accel_x - sw_accel_bias.x,
+                  .y = imu->accel_y - sw_accel_bias.y,
+                  .z = imu->accel_z - sw_accel_bias.z};
+    Axis3f gyro = {.x = imu->gyro_x - sw_gyro_bias.x,
+                   .y = imu->gyro_y - sw_gyro_bias.y,
+                   .z = imu->gyro_z - sw_gyro_bias.z};
 
     kalmanCorePredict(&kf_data, &kf_params, &acc, &gyro, event->timestamp_ms);
     kalmanCoreAddProcessNoise(&kf_data, &kf_params, event->timestamp_ms);
 
-    /* DISABLED: Gravity constraint - causing divergence issues */
-    /* TODO: Debug and re-enable after fixing Jacobian */
-    // kalmanCoreUpdateWithGravity(&kf_data, &acc, 1.0f);
+    kalmanCoreUpdateWithGravity(&kf_data, &acc, 2.0f);
 
     kalmanCoreFinalize(&kf_data);
     
@@ -724,4 +727,16 @@ void sensor_fusion_set_kalman_params(const kalmanCoreParams_t* params)
     }
 
     kf_params = *params;
+}
+
+void sensor_fusion_set_accel_gyro_bias(const Axis3f* accel_bias, const Axis3f* gyro_bias)
+{
+    if (accel_bias != NULL)
+    {
+        sw_accel_bias = *accel_bias;
+    }
+    if (gyro_bias != NULL)
+    {
+        sw_gyro_bias = *gyro_bias;
+    }
 }

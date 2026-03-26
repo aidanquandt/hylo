@@ -28,6 +28,7 @@
 #define IMU_EXPECTED_CHIP_ID_1 (0x43U)
 #define IMU_EXPECTED_CHIP_ID_2 (0x44U)
 #define STARTUP_DELAY_MS (2000U)
+#define N_BIAS_SAMPLES 200  /* samples collected for software bias estimate (~1s at 5ms interval) */
 #define IMU_PROCESS_FREQ_HZ (1000U)
 #define IMU_ACCEL_GYRO_READ_FREQ_HZ (200U)
 #define IMU_TEMPERATURE_READ_FREQ_HZ (1U)
@@ -184,7 +185,7 @@ STATIC void imu_aggregate_and_push(void)
 STATIC void imu_transform_accel(const vec3_t* accel_in, vec3_t* accel_out)
 {
     // Physical mounting: sensor X → body +Z, sensor Y → body +Y, sensor Z → body -X
-    accel_out->x = -accel_in->z;
+    accel_out->x = -1.0f * accel_in->z;
     accel_out->y =  accel_in->y;
     accel_out->z =  accel_in->x;
 }
@@ -192,7 +193,7 @@ STATIC void imu_transform_accel(const vec3_t* accel_in, vec3_t* accel_out)
 STATIC void imu_transform_gyro(const vec3_t* gyro_in, vec3_t* gyro_out)
 {
     // Same axis mapping as accel
-    gyro_out->x = -gyro_in->z;
+    gyro_out->x = -1.0f * gyro_in->z;
     gyro_out->y =  gyro_in->y;
     gyro_out->z =  gyro_in->x;
 }
@@ -311,13 +312,9 @@ STATIC void imu_state_initialization_on_entry(uint16_t prevState)
 
 STATIC void imu_state_active_process(void)
 {
-    uint8_t  idx = imu_ctx_current_index;
-    imu_ctx_t* ctx = &imu_ctxs[idx];
-
-    if (!imu_read_single(ctx))
-    {
-        ctx->fault_code = FAULT_READ_FAILED;
-    }
+    /* Reads moved to 200Hz prescaler block in imu_process_1kHz() to match BMI323 ODR.
+     * State machine still runs at 1kHz for transition logic only. */
+    (void)0;
 }
 
 STATIC void imu_state_faulted_on_entry(uint16_t prevState)
@@ -456,6 +453,19 @@ STATIC void imu_process_1kHz(void)
 
     if (counter_uint8_t(&prescaler_avg, IMU_ACCEL_GYRO_PRESCALER))
     {
+        /* Read all active IMUs at 200Hz (matches BMI323 ODR) */
+        for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
+        {
+            imu_ctx_t* c = &imu_ctxs[i];
+            if (c->paused || !c->active || c->state_machine.curr_state != IMU_STATE_ACTIVE)
+            {
+                continue;
+            }
+            if (!imu_read_single(c))
+            {
+                c->fault_code = FAULT_READ_FAILED;
+            }
+        }
         imu_aggregate_and_push();
         if (imu_get_overall_state() == IMU_STATE_ACTIVE)
         {
@@ -548,6 +558,39 @@ static void imu_cal_task_fn(void* arg)
     vTaskDelay(pdMS_TO_TICKS(5));   /* drain any in-flight SPI transfer */
 
     bool ok = (imu_driver_calibrate(ctx->dev) == IMU_DRIVER_SUCCESS);
+
+    /* Software bias measurement: while still paused, collect samples to compute
+     * residual offset left after hardware FOC. Only do this for IMU 0 (sensor
+     * fusion receives the aggregate of all IMUs; IMU 0's residuals are representative
+     * since all BMI323s share the same FOC procedure). */
+    if (ok && idx == 0)
+    {
+        vec3_t accel_sum = {0.0f, 0.0f, 0.0f};
+        vec3_t gyro_sum  = {0.0f, 0.0f, 0.0f};
+        for (int s = 0; s < N_BIAS_SAMPLES; s++)
+        {
+            imu_read_single(ctx);  /* reads hardware, applies axis transform → ctx->raw_data */
+            accel_sum.x += ctx->raw_data.accel.x;
+            accel_sum.y += ctx->raw_data.accel.y;
+            accel_sum.z += ctx->raw_data.accel.z;
+            gyro_sum.x  += ctx->raw_data.gyro.x;
+            gyro_sum.y  += ctx->raw_data.gyro.y;
+            gyro_sum.z  += ctx->raw_data.gyro.z;
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
+        Axis3f accel_bias = {
+            .x = accel_sum.x / N_BIAS_SAMPLES,
+            .y = accel_sum.y / N_BIAS_SAMPLES,
+            .z = accel_sum.z / N_BIAS_SAMPLES - 9.80665f,
+        };
+        Axis3f gyro_bias = {
+            .x = gyro_sum.x / N_BIAS_SAMPLES,
+            .y = gyro_sum.y / N_BIAS_SAMPLES,
+            .z = gyro_sum.z / N_BIAS_SAMPLES,
+        };
+        sensor_fusion_set_accel_gyro_bias(&accel_bias, &gyro_bias);
+    }
+
     ctx->paused = false;
 
     ImuCalibrateCompleteEvent ev = ImuCalibrateCompleteEvent_init_zero;

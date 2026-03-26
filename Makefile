@@ -2,6 +2,7 @@
 # Usage: make [target]. Run "make help" for targets.
 
 CONFIG ?= debug
+PYTHON ?= python3
 PRESET_DEBUG := arm-gcc-debug
 
 .PHONY: all build clean rebuild help check-deps flash distclean debug
@@ -93,8 +94,8 @@ host-visualization:
 
 host-webapp:
 	@bash tools/scripts/attach-usb.sh serial
-	(python -c "import time, webbrowser; time.sleep(2); webbrowser.open('http://127.0.0.1:8000')") &
-	python3 -m uvicorn host.webapp.backend.main:app --reload
+	($(PYTHON) -c "import time, webbrowser; time.sleep(2); webbrowser.open('http://127.0.0.1:8000')") &
+	$(PYTHON) -m uvicorn host.webapp.backend.main:app --reload
 
 check-deps:
 	@bash tools/scripts/check_deps.sh

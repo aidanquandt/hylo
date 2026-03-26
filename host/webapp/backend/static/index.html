@@ -504,6 +504,13 @@
       const frag = document.createDocumentFragment();
       lines.forEach(text => { if (!shouldHideLine(text)) frag.appendChild(makeLogLine(text)); });
       eventLogLinesEl.appendChild(frag);
+      const MAX_LOG_LINES = 500;
+      while (eventLogLinesEl.childElementCount > MAX_LOG_LINES) {
+        eventLogLinesEl.removeChild(eventLogLinesEl.firstChild);
+      }
+      if (eventLogEntries.length > MAX_LOG_LINES) {
+        eventLogEntries = eventLogEntries.slice(-MAX_LOG_LINES);
+      }
       if (wasAtBottom) eventLogContentEl.scrollTop = eventLogContentEl.scrollHeight;
     }, 80);
 
