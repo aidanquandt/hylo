@@ -19,11 +19,11 @@
  *---------------------------------------------------------------------------*/
 
 // Critical real-time tasks (timing-sensitive)
-#define TASK_PRIORITY_UWB_RX 6 // Deferred interrupt processing
-#define TASK_PRIORITY_UWB_TX 5 // Frame transmission timing
+#define TASK_PRIORITY_UWB_RX 7 // Deferred interrupt processing
+#define TASK_PRIORITY_UWB_TX 6 // Frame transmission timing
 
 // High-rate processing
-#define TASK_PRIORITY_IMU_PERIODIC 4 // 1kHz sensor sampling
+#define TASK_PRIORITY_IMU_PERIODIC 5 // 1kHz sensor sampling
 
 // Normal processing
 #define TASK_PRIORITY_UART_TX 3 // Communication I/O

@@ -22,7 +22,7 @@ import threading
 import time
 from collections import deque
 from contextlib import redirect_stdout
-from typing import List
+from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException
 
@@ -59,7 +59,7 @@ _wifi_last_loop_error_log_t = 0.0
 _sse_queues: list[queue.Queue] = []
 _sse_queues_lock = threading.Lock()
 _last_viz_sse_push: float = 0.0   # throttle viz-only SSE events to 20 Hz
-_VIZ_SSE_MIN_INTERVAL = 0.05      # seconds between viz SSE pushes (20 Hz)
+_VIZ_SSE_MIN_INTERVAL = 0.1       # seconds between viz SSE pushes (10 Hz)
 
 _HIDDEN_UI_COMMANDS = {
     "TransportSetRequest",
@@ -126,10 +126,10 @@ def _shutdown_wifi_server() -> None:
 
 
 class CommandRequest(BaseModel):
-    port: str | None = None
+    port: Optional[str] = None
     command: str
     args: List[str] = []
-    route: str | None = None
+    route: Optional[str] = None
 
 
 class MonitorStartRequest(BaseModel):

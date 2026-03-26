@@ -256,6 +256,30 @@ void protocol_rx_ImuStreamStopRequest(const ImuStreamStopRequest *msg)
     protocol_tx_AckResponse(&ack);
 }
 
+void protocol_rx_ImuCalibrateRequest(const ImuCalibrateRequest *msg)
+{
+    ImuCalibrateResponse r = ImuCalibrateResponse_init_zero;
+    r.imu_index = msg->imu_index;
+
+    if (msg->imu_index < (uint32_t)IMU_NUM_DEVICES)
+    {
+        r.started = imu_calibrate_start(msg->imu_index);
+    }
+    else
+    {
+        /* Trigger calibration on all active IMUs; each gets its own task */
+        r.started = false;
+        for (uint32_t i = 0; i < (uint32_t)IMU_NUM_DEVICES; i++)
+        {
+            if (imu_calibrate_start(i))
+            {
+                r.started = true;
+            }
+        }
+    }
+    protocol_tx_ImuCalibrateResponse(&r);
+}
+
 /*---------------------------------------------------------------------------
  * UWB node (type, position, status)
  *---------------------------------------------------------------------------*/

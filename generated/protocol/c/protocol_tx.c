@@ -189,6 +189,33 @@ void protocol_tx_ImuStreamStopRequest(const ImuStreamStopRequest *msg)
   protocol_send_frame(MSG_ID_ImuStreamStopRequest, tx_buf, stream.bytes_written);
 }
 
+void protocol_tx_ImuCalibrateRequest(const ImuCalibrateRequest *msg)
+{
+  uint8_t tx_buf[PROTOCOL_TX_BUF_SIZE];
+  pb_ostream_t stream = pb_ostream_from_buffer(tx_buf, sizeof(tx_buf));
+  if (!pb_encode(&stream, ImuCalibrateRequest_fields, msg))
+    return;
+  protocol_send_frame(MSG_ID_ImuCalibrateRequest, tx_buf, stream.bytes_written);
+}
+
+void protocol_tx_ImuCalibrateResponse(const ImuCalibrateResponse *msg)
+{
+  uint8_t tx_buf[PROTOCOL_TX_BUF_SIZE];
+  pb_ostream_t stream = pb_ostream_from_buffer(tx_buf, sizeof(tx_buf));
+  if (!pb_encode(&stream, ImuCalibrateResponse_fields, msg))
+    return;
+  protocol_send_frame(MSG_ID_ImuCalibrateResponse, tx_buf, stream.bytes_written);
+}
+
+void protocol_tx_ImuCalibrateCompleteEvent(const ImuCalibrateCompleteEvent *msg)
+{
+  uint8_t tx_buf[PROTOCOL_TX_BUF_SIZE];
+  pb_ostream_t stream = pb_ostream_from_buffer(tx_buf, sizeof(tx_buf));
+  if (!pb_encode(&stream, ImuCalibrateCompleteEvent_fields, msg))
+    return;
+  protocol_send_frame(MSG_ID_ImuCalibrateCompleteEvent, tx_buf, stream.bytes_written);
+}
+
 void protocol_tx_ImuStreamPayload(const ImuStreamPayload *msg)
 {
   uint8_t tx_buf[PROTOCOL_TX_BUF_SIZE];

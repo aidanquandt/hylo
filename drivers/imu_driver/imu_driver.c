@@ -328,6 +328,33 @@ imu_driver_status_t imu_driver_soft_reset(imu_dev_t* dev)
     return IMU_DRIVER_SUCCESS;
 }
 
+imu_driver_status_t imu_driver_calibrate(imu_dev_t* dev)
+{
+    if (dev == NULL)
+    {
+        return IMU_DRIVER_ERROR_NULL_PTR;
+    }
+
+    /* Gyro self-calibration: offset mode, apply correction immediately.
+     * Device must be stationary. */
+    struct bmi3_self_calib_rslt sc_rslt = {0};
+    int8_t rc = bmi3_perform_gyro_sc(BMI3_SC_OFFSET_EN, 1, &sc_rslt, &dev->bmi_dev);
+    if (rc != BMI3_OK)
+    {
+        return IMU_DRIVER_ERROR_INIT_FAIL;
+    }
+
+    /* Accel FOC: board is flat, sensor-X → body-Z = up (+1g on sensor X-axis). */
+    struct bmi3_accel_foc_g_value g_val = { .x = 1, .y = 0, .z = 0, .sign = 0 };
+    rc = bmi3_perform_accel_foc(&g_val, &dev->bmi_dev);
+    if (rc != BMI3_OK)
+    {
+        return IMU_DRIVER_ERROR_INIT_FAIL;
+    }
+
+    return IMU_DRIVER_SUCCESS;
+}
+
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/

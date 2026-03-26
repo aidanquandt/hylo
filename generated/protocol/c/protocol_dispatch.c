@@ -25,6 +25,9 @@ __attribute__((weak)) void protocol_rx_ImuGetDataRequest(const ImuGetDataRequest
 __attribute__((weak)) void protocol_rx_ImuGetDataResponse(const ImuGetDataResponse *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_ImuStreamStartRequest(const ImuStreamStartRequest *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_ImuStreamStopRequest(const ImuStreamStopRequest *msg) { (void)msg; }
+__attribute__((weak)) void protocol_rx_ImuCalibrateRequest(const ImuCalibrateRequest *msg) { (void)msg; }
+__attribute__((weak)) void protocol_rx_ImuCalibrateResponse(const ImuCalibrateResponse *msg) { (void)msg; }
+__attribute__((weak)) void protocol_rx_ImuCalibrateCompleteEvent(const ImuCalibrateCompleteEvent *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_ImuStreamPayload(const ImuStreamPayload *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_UwbNodeSetTypeRequest(const UwbNodeSetTypeRequest *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_UwbNodeGetTypeRequest(const UwbNodeGetTypeRequest *msg) { (void)msg; }
@@ -296,6 +299,24 @@ void protocol_dispatch(uint16_t msg_id, const uint8_t *payload, size_t len)
       ImuStreamStopRequest decoded = ImuStreamStopRequest_init_zero;
       if (pb_decode(&stream, ImuStreamStopRequest_fields, &decoded))
         protocol_rx_ImuStreamStopRequest(&decoded);
+      break;
+    }
+    case MSG_ID_ImuCalibrateRequest: {
+      ImuCalibrateRequest decoded = ImuCalibrateRequest_init_zero;
+      if (pb_decode(&stream, ImuCalibrateRequest_fields, &decoded))
+        protocol_rx_ImuCalibrateRequest(&decoded);
+      break;
+    }
+    case MSG_ID_ImuCalibrateResponse: {
+      ImuCalibrateResponse decoded = ImuCalibrateResponse_init_zero;
+      if (pb_decode(&stream, ImuCalibrateResponse_fields, &decoded))
+        protocol_rx_ImuCalibrateResponse(&decoded);
+      break;
+    }
+    case MSG_ID_ImuCalibrateCompleteEvent: {
+      ImuCalibrateCompleteEvent decoded = ImuCalibrateCompleteEvent_init_zero;
+      if (pb_decode(&stream, ImuCalibrateCompleteEvent_fields, &decoded))
+        protocol_rx_ImuCalibrateCompleteEvent(&decoded);
       break;
     }
     case MSG_ID_ImuStreamPayload: {

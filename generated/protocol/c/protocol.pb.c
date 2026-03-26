@@ -66,6 +66,15 @@ PB_BIND(ImuStreamStartRequest, ImuStreamStartRequest, AUTO)
 PB_BIND(ImuStreamStopRequest, ImuStreamStopRequest, AUTO)
 
 
+PB_BIND(ImuCalibrateRequest, ImuCalibrateRequest, AUTO)
+
+
+PB_BIND(ImuCalibrateResponse, ImuCalibrateResponse, AUTO)
+
+
+PB_BIND(ImuCalibrateCompleteEvent, ImuCalibrateCompleteEvent, AUTO)
+
+
 PB_BIND(ImuStreamPayload, ImuStreamPayload, AUTO)
 
 
