@@ -208,7 +208,7 @@ def _is_high_frequency_msg(msg_id: int) -> bool:
     try:
         from generated.protocol.python import protocol_ids
         name = protocol_ids.MSG_NAMES[msg_id] if msg_id < len(protocol_ids.MSG_NAMES) else None
-        return name in ("TwrMgrRangeEvent",)
+        return name in ("TwrMgrRangeEvent", "SensorFusionGetStatusResponse")
     except Exception:
         return False
 
@@ -274,14 +274,14 @@ def _publish_rx_message(msg_id: int, payload: bytes, source: str) -> None:
                     q.put({"line": line, "viz": viz_event, "fusion": fusion_event}, block=False)
                 except queue.Full:
                     pass
-    elif viz_event:
+    elif viz_event or fusion_event:
         now = time.monotonic()
         if now - _last_viz_sse_push >= _VIZ_SSE_MIN_INTERVAL:
             _last_viz_sse_push = now
             with _sse_queues_lock:
                 for q in _sse_queues:
                     try:
-                        q.put({"line": "", "viz": viz_event, "fusion": None}, block=False)
+                        q.put({"line": "", "viz": viz_event, "fusion": fusion_event}, block=False)
                     except queue.Full:
                         pass
 
@@ -365,6 +365,8 @@ def _mailbox_diag(expected_msg_id: int) -> Tuple[int, str]:
 def _publish_tx_event(command: str, source: str) -> None:
     global _event_log
     if not _monitor_enabled:
+        return
+    if command in ("SensorFusionGetStatusRequest",):
         return
     line = "[tx:%s] %s" % (source, command)
     with _event_log_lock:
