@@ -6,15 +6,20 @@ option (host.default_host_ui_module) = HOST_UI_MODULE_STOPWATCH;
 
 message StopwatchGetRequest {
   option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  // 0 .. STOPWATCH_MAX_INSTANCES-1 on device (10 instances today).
+  uint32 stopwatch_num = 1;
 }
 message StopwatchGetResponse {
   option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
-  uint32 elapsed_ms = 1;
+  // Same unit as stopwatch_elapsed_us() on device.
+  uint32 elapsed_us = 1;
   bool running = 2;
 }
 message StopwatchStartRequest {
   option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  uint32 stopwatch_num = 1;
 }
 message StopwatchStopRequest {
   option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  uint32 stopwatch_num = 1;
 }

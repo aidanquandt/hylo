@@ -568,28 +568,32 @@ void protocol_rx_TwrMgrGetRangingRateRequest(const TwrMgrGetRangingRateRequest *
  *---------------------------------------------------------------------------*/
 void protocol_rx_StopwatchGetRequest(const StopwatchGetRequest *msg)
 {
-    (void)msg;
     StopwatchGetResponse r = StopwatchGetResponse_init_zero;
-    r.elapsed_ms = stopwatch_elapsed_us(0) / 1000;
-    r.running    = stopwatch_is_running(0);
+    if (msg->stopwatch_num < STOPWATCH_MAX_INSTANCES) {
+        uint8_t id = (uint8_t)msg->stopwatch_num;
+        r.elapsed_us = stopwatch_elapsed_us(id);
+        r.running    = stopwatch_is_running(id);
+    }
     protocol_tx_StopwatchGetResponse(&r);
 }
 
 void protocol_rx_StopwatchStartRequest(const StopwatchStartRequest *msg)
 {
-    (void)msg;
-    stopwatch_start(0);
     AckResponse ack = AckResponse_init_zero;
-    ack.success = true;
+    if (msg->stopwatch_num < STOPWATCH_MAX_INSTANCES) {
+        stopwatch_start((uint8_t)msg->stopwatch_num);
+        ack.success = true;
+    }
     protocol_tx_AckResponse(&ack);
 }
 
 void protocol_rx_StopwatchStopRequest(const StopwatchStopRequest *msg)
 {
-    (void)msg;
-    stopwatch_stop(0);
     AckResponse ack = AckResponse_init_zero;
-    ack.success = true;
+    if (msg->stopwatch_num < STOPWATCH_MAX_INSTANCES) {
+        stopwatch_stop((uint8_t)msg->stopwatch_num);
+        ack.success = true;
+    }
     protocol_tx_AckResponse(&ack);
 }
 

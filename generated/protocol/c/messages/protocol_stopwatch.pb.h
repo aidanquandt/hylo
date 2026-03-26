@@ -12,20 +12,22 @@
 
 /* Struct definitions */
 typedef struct _StopwatchGetRequest {
-    char dummy_field;
+    /* 0 .. STOPWATCH_MAX_INSTANCES-1 on device (10 instances today). */
+    uint32_t stopwatch_num;
 } StopwatchGetRequest;
 
 typedef struct _StopwatchGetResponse {
-    uint32_t elapsed_ms;
+    /* Same unit as stopwatch_elapsed_us() on device. */
+    uint32_t elapsed_us;
     bool running;
 } StopwatchGetResponse;
 
 typedef struct _StopwatchStartRequest {
-    char dummy_field;
+    uint32_t stopwatch_num;
 } StopwatchStartRequest;
 
 typedef struct _StopwatchStopRequest {
-    char dummy_field;
+    uint32_t stopwatch_num;
 } StopwatchStopRequest;
 
 
@@ -44,28 +46,31 @@ extern "C" {
 #define StopwatchStopRequest_init_zero           {0}
 
 /* Field tags (for use in manual encoding/decoding) */
-#define StopwatchGetResponse_elapsed_ms_tag      1
+#define StopwatchGetRequest_stopwatch_num_tag    1
+#define StopwatchGetResponse_elapsed_us_tag      1
 #define StopwatchGetResponse_running_tag         2
+#define StopwatchStartRequest_stopwatch_num_tag  1
+#define StopwatchStopRequest_stopwatch_num_tag   1
 
 /* Struct field encoding specification for nanopb */
 #define StopwatchGetRequest_FIELDLIST(X, a) \
-
+X(a, STATIC,   SINGULAR, UINT32,   stopwatch_num,     1)
 #define StopwatchGetRequest_CALLBACK NULL
 #define StopwatchGetRequest_DEFAULT NULL
 
 #define StopwatchGetResponse_FIELDLIST(X, a) \
-X(a, STATIC,   SINGULAR, UINT32,   elapsed_ms,        1) \
+X(a, STATIC,   SINGULAR, UINT32,   elapsed_us,        1) \
 X(a, STATIC,   SINGULAR, BOOL,     running,           2)
 #define StopwatchGetResponse_CALLBACK NULL
 #define StopwatchGetResponse_DEFAULT NULL
 
 #define StopwatchStartRequest_FIELDLIST(X, a) \
-
+X(a, STATIC,   SINGULAR, UINT32,   stopwatch_num,     1)
 #define StopwatchStartRequest_CALLBACK NULL
 #define StopwatchStartRequest_DEFAULT NULL
 
 #define StopwatchStopRequest_FIELDLIST(X, a) \
-
+X(a, STATIC,   SINGULAR, UINT32,   stopwatch_num,     1)
 #define StopwatchStopRequest_CALLBACK NULL
 #define StopwatchStopRequest_DEFAULT NULL
 
@@ -82,10 +87,10 @@ extern const pb_msgdesc_t StopwatchStopRequest_msg;
 
 /* Maximum encoded size of messages (where known) */
 #define MESSAGES_PROTOCOL_STOPWATCH_PB_H_MAX_SIZE StopwatchGetResponse_size
-#define StopwatchGetRequest_size                 0
+#define StopwatchGetRequest_size                 6
 #define StopwatchGetResponse_size                8
-#define StopwatchStartRequest_size               0
-#define StopwatchStopRequest_size                0
+#define StopwatchStartRequest_size               6
+#define StopwatchStopRequest_size                6
 
 #ifdef __cplusplus
 } /* extern "C" */

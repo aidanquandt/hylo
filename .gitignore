@@ -4,6 +4,7 @@
 # Build output folders
 build/
 **/build/
+build-hw*/
 # Ad-hoc CMake binary dirs (cmake -B …); not part of the source tree
 **/bin/
 **/out/

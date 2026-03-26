@@ -8,9 +8,15 @@
 #include "main.h"
 #include "semphr.h"
 #include "spi.h"
+#include "task.h"
+#include <string.h>
 
-#define SPI_TIMEOUT_MS          (5U)
-#define SPI_MUTEX_TIMEOUT_MS    (100U)
+#define SPI_TIMEOUT_MS           (5U)
+#define SPI_MUTEX_TIMEOUT_MS     (100U)
+/** DW3000 stack may TX up to this in one SPI leg (deca_device_api.h). */
+#define SPI_DMA_MAX_LEN          (1024U)
+/** Below this length, use blocking HAL to avoid DMA+ISR overhead. */
+#define SPI_DMA_MIN_LENGTH       (8U)
 
 typedef struct
 {
@@ -43,6 +49,7 @@ STATIC const spi_cs_map_t cs_map[] = {
 };
 
 STATIC SemaphoreHandle_t bus_mutex[SPI_DRIVER_BUS_COUNT];
+STATIC SemaphoreHandle_t dma_done_sem[SPI_DRIVER_BUS_COUNT];
 STATIC volatile bool init_done = false;
 
 /** Per-bus session handle: which hspi is in session on this bus. NULL = no session. */
@@ -53,8 +60,56 @@ STATIC volatile uint32_t spi_cs_low_count        = 0;
 STATIC volatile uint32_t spi_cs_high_count        = 0;
 STATIC volatile HAL_StatusTypeDef last_hal_status = HAL_OK;
 
+/* DMA buffers in DMA-accessible RAM (RAM_D1 .dma_buffer). DTCM is not reachable by DMA on H7. */
+__attribute__((section(".dma_buffer"))) __attribute__((aligned(32)))
+STATIC uint8_t spi_tx_dma_buf[SPI_DRIVER_BUS_COUNT][SPI_DMA_MAX_LEN];
+__attribute__((section(".dma_buffer"))) __attribute__((aligned(32)))
+STATIC uint8_t spi_rx_dma_buf[SPI_DRIVER_BUS_COUNT][SPI_DMA_MAX_LEN];
+
 STATIC void cs_low(spi_driver_interface_E interface);
 STATIC void cs_high(spi_driver_interface_E interface);
+
+STATIC uint8_t bus_id_from_hspi(SPI_HandleTypeDef* hspi)
+{
+    if (hspi == NULL)
+        return (uint8_t)SPI_DRIVER_BUS_COUNT;
+#if (HWREV == 0)
+    if (hspi->Instance == SPI1)
+        return 0U;
+    (void)hspi5;
+#elif (HWREV == 1)
+    if (hspi->Instance == SPI2)
+        return 0U;
+    if (hspi->Instance == SPI4)
+        return 1U;
+#endif
+    return (uint8_t)SPI_DRIVER_BUS_COUNT;
+}
+
+STATIC bool hspi_dma_capable(SPI_HandleTypeDef* hspi)
+{
+    return hspi != NULL && hspi->hdmarx != NULL && hspi->hdmatx != NULL;
+}
+
+STATIC void dma_complete_from_isr(uint8_t bus_id)
+{
+    BaseType_t woken = pdFALSE;
+    if (bus_id < SPI_DRIVER_BUS_COUNT && dma_done_sem[bus_id] != NULL)
+        xSemaphoreGiveFromISR(dma_done_sem[bus_id], &woken);
+    portYIELD_FROM_ISR(woken);
+}
+
+STATIC spi_driver_status_E wait_dma_complete(uint8_t bus_id, SPI_HandleTypeDef* hspi)
+{
+    if (xSemaphoreTake(dma_done_sem[bus_id], pdMS_TO_TICKS(SPI_TIMEOUT_MS)) != pdTRUE)
+    {
+        (void)HAL_SPI_Abort(hspi);
+        return SPI_DRIVER_TIMEOUT;
+    }
+    if (HAL_SPI_GetState(hspi) != HAL_SPI_STATE_READY || hspi->ErrorCode != HAL_SPI_ERROR_NONE)
+        return SPI_DRIVER_ERROR;
+    return SPI_DRIVER_SUCCESS;
+}
 
 /** Validate interface and return bus_id; return SPI_DRIVER_BUS_COUNT if invalid. */
 STATIC uint8_t get_bus_id(spi_driver_interface_E interface)
@@ -86,17 +141,25 @@ STATIC void cs_high(spi_driver_interface_E interface)
 
 void spi_driver_init(void)
 {
-    for (size_t i = 0; i < SPI_DRIVER_BUS_COUNT; i++)
+    size_t i;
+
+    for (i = 0; i < SPI_DRIVER_BUS_COUNT; i++)
     {
-        bus_mutex[i] = xSemaphoreCreateMutex();
-        if (bus_mutex[i] == NULL)
+        bus_mutex[i]    = xSemaphoreCreateMutex();
+        dma_done_sem[i] = xSemaphoreCreateBinary();
+        if (bus_mutex[i] == NULL || dma_done_sem[i] == NULL)
         {
-            /* Fail explicitly: do not leave partial state. */
             for (size_t j = 0; j < i; j++)
             {
                 vSemaphoreDelete(bus_mutex[j]);
                 bus_mutex[j] = NULL;
+                vSemaphoreDelete(dma_done_sem[j]);
+                dma_done_sem[j] = NULL;
             }
+            if (bus_mutex[i] != NULL)
+                vSemaphoreDelete(bus_mutex[i]);
+            if (dma_done_sem[i] != NULL)
+                vSemaphoreDelete(dma_done_sem[i]);
             return;
         }
     }
@@ -142,78 +205,64 @@ void spi_driver_release(spi_driver_interface_E interface)
     }
 }
 
-spi_driver_status_E spi_driver_transfer(spi_driver_interface_E interface,
-                                        const uint8_t* tx_data, uint8_t* rx_data, uint16_t length)
+/**
+ * Run one SPI transfer on the given bus/hspi.
+ * When @p use_dma is true, caller pointers are not passed to HAL — data is copied via .dma_buffer.
+ */
+STATIC spi_driver_status_E spi_run_transfer(uint8_t bus_id, SPI_HandleTypeDef* hspi, const uint8_t* tx_data,
+                                           uint8_t* rx_data, uint16_t length, bool use_dma)
 {
-    uint8_t bus_id = get_bus_id(interface);
-    if (bus_id >= SPI_DRIVER_BUS_COUNT)
+    HAL_StatusTypeDef status = HAL_ERROR;
+
+    if (length > SPI_DMA_MAX_LEN)
         return SPI_DRIVER_ERROR;
 
-    spi_driver_status_E st = take_bus_mutex(bus_id);
-    if (st != SPI_DRIVER_SUCCESS)
-        return st;
-
-    cs_low(interface);
-
-    HAL_StatusTypeDef status;
-    if (tx_data != NULL && rx_data != NULL)
-        status = HAL_SPI_TransmitReceive(cs_map[interface].hspi, (uint8_t*)tx_data, rx_data,
-                                         length, SPI_TIMEOUT_MS);
-    else if (tx_data != NULL)
-        status = HAL_SPI_Transmit(cs_map[interface].hspi, (uint8_t*)tx_data, length,
-                                 SPI_TIMEOUT_MS);
-    else if (rx_data != NULL)
-        status = HAL_SPI_Receive(cs_map[interface].hspi, rx_data, length, SPI_TIMEOUT_MS);
-    else
+    if (use_dma && hspi_dma_capable(hspi))
     {
-        cs_high(interface);
-        session_hspi[bus_id] = NULL;
-        give_bus_mutex(bus_id);
+        if (tx_data != NULL && rx_data != NULL)
+        {
+            memcpy(spi_tx_dma_buf[bus_id], tx_data, length);
+            status = HAL_SPI_TransmitReceive_DMA(hspi, spi_tx_dma_buf[bus_id], spi_rx_dma_buf[bus_id],
+                                                 length);
+            last_hal_status = status;
+            if (status != HAL_OK)
+                return SPI_DRIVER_ERROR;
+            {
+                spi_driver_status_E w = wait_dma_complete(bus_id, hspi);
+                if (w != SPI_DRIVER_SUCCESS)
+                    return w;
+            }
+            memcpy(rx_data, spi_rx_dma_buf[bus_id], length);
+            return SPI_DRIVER_SUCCESS;
+        }
+        if (tx_data != NULL)
+        {
+            memcpy(spi_tx_dma_buf[bus_id], tx_data, length);
+            status = HAL_SPI_Transmit_DMA(hspi, spi_tx_dma_buf[bus_id], length);
+            last_hal_status = status;
+            if (status != HAL_OK)
+                return SPI_DRIVER_ERROR;
+            return wait_dma_complete(bus_id, hspi);
+        }
+        if (rx_data != NULL)
+        {
+            status = HAL_SPI_Receive_DMA(hspi, spi_rx_dma_buf[bus_id], length);
+            last_hal_status = status;
+            if (status != HAL_OK)
+                return SPI_DRIVER_ERROR;
+            {
+                spi_driver_status_E w = wait_dma_complete(bus_id, hspi);
+                if (w != SPI_DRIVER_SUCCESS)
+                    return w;
+            }
+            memcpy(rx_data, spi_rx_dma_buf[bus_id], length);
+            return SPI_DRIVER_SUCCESS;
+        }
         return SPI_DRIVER_ERROR;
     }
 
-    cs_high(interface);
-    session_hspi[bus_id] = NULL; /* atomic path: no session, clear so release() won't give again */
-    give_bus_mutex(bus_id);
-
-    last_hal_status = status;
-    if (status == HAL_OK)
-        return SPI_DRIVER_SUCCESS;
-    if (status == HAL_TIMEOUT)
-        return SPI_DRIVER_TIMEOUT;
-    return SPI_DRIVER_ERROR;
-}
-
-spi_driver_status_E spi_driver_transmit(spi_driver_interface_E interface, const uint8_t* data,
-                                        uint16_t length)
-{
-    if (data == NULL)
-        return SPI_DRIVER_ERROR;
-    return spi_driver_transfer(interface, data, NULL, length);
-}
-
-spi_driver_status_E spi_driver_receive(spi_driver_interface_E interface, uint8_t* data,
-                                       uint16_t length)
-{
-    if (data == NULL)
-        return SPI_DRIVER_ERROR;
-    return spi_driver_transfer(interface, NULL, data, length);
-}
-
-/* Session-only: pass same interface as acquire(); uses per-bus session state. */
-spi_driver_status_E spi_driver_transfer_in_session(spi_driver_interface_E interface,
-                                                   const uint8_t* tx_data, uint8_t* rx_data,
-                                                   uint16_t length)
-{
-    uint8_t bus_id = get_bus_id(interface);
-    if (bus_id >= SPI_DRIVER_BUS_COUNT || session_hspi[bus_id] == NULL)
-        return SPI_DRIVER_ERROR;
-
-    SPI_HandleTypeDef* hspi = session_hspi[bus_id];
-    HAL_StatusTypeDef status;
     if (tx_data != NULL && rx_data != NULL)
-        status = HAL_SPI_TransmitReceive(hspi, (uint8_t*)tx_data, rx_data, length,
-                                        SPI_TIMEOUT_MS);
+        status = HAL_SPI_TransmitReceive(hspi, (uint8_t*)tx_data, rx_data, length, SPI_TIMEOUT_MS);
     else if (tx_data != NULL)
         status = HAL_SPI_Transmit(hspi, (uint8_t*)tx_data, length, SPI_TIMEOUT_MS);
     else if (rx_data != NULL)
@@ -229,42 +278,83 @@ spi_driver_status_E spi_driver_transfer_in_session(spi_driver_interface_E interf
     return SPI_DRIVER_ERROR;
 }
 
-spi_driver_status_E spi_driver_transmit_in_session(spi_driver_interface_E interface,
-                                                   const uint8_t* data, uint16_t length)
+STATIC bool use_dma_for_length(uint16_t length, SPI_HandleTypeDef* hspi)
+{
+    return length >= SPI_DMA_MIN_LENGTH && hspi_dma_capable(hspi);
+}
+
+spi_driver_status_E spi_driver_transfer(spi_driver_interface_E interface, const uint8_t* tx_data,
+                                        uint8_t* rx_data, uint16_t length)
 {
     uint8_t bus_id = get_bus_id(interface);
-    if (data == NULL || bus_id >= SPI_DRIVER_BUS_COUNT || session_hspi[bus_id] == NULL)
+    if (bus_id >= SPI_DRIVER_BUS_COUNT || length == 0U)
+        return SPI_DRIVER_ERROR;
+
+    spi_driver_status_E st = take_bus_mutex(bus_id);
+    if (st != SPI_DRIVER_SUCCESS)
+        return st;
+
+    cs_low(interface);
+
+    SPI_HandleTypeDef* hspi = cs_map[interface].hspi;
+    st = spi_run_transfer(bus_id, hspi, tx_data, rx_data, length, use_dma_for_length(length, hspi));
+
+    cs_high(interface);
+    session_hspi[bus_id] = NULL;
+    give_bus_mutex(bus_id);
+
+    return st;
+}
+
+spi_driver_status_E spi_driver_transmit(spi_driver_interface_E interface, const uint8_t* data,
+                                        uint16_t length)
+{
+    if (data == NULL)
+        return SPI_DRIVER_ERROR;
+    return spi_driver_transfer(interface, data, NULL, length);
+}
+
+spi_driver_status_E spi_driver_receive(spi_driver_interface_E interface, uint8_t* data, uint16_t length)
+{
+    if (data == NULL)
+        return SPI_DRIVER_ERROR;
+    return spi_driver_transfer(interface, NULL, data, length);
+}
+
+spi_driver_status_E spi_driver_transfer_in_session(spi_driver_interface_E interface, const uint8_t* tx_data,
+                                                   uint8_t* rx_data, uint16_t length)
+{
+    uint8_t bus_id = get_bus_id(interface);
+    if (bus_id >= SPI_DRIVER_BUS_COUNT || session_hspi[bus_id] == NULL || length == 0U)
+        return SPI_DRIVER_ERROR;
+
+    SPI_HandleTypeDef* hspi = session_hspi[bus_id];
+    return spi_run_transfer(bus_id, hspi, tx_data, rx_data, length, use_dma_for_length(length, hspi));
+}
+
+spi_driver_status_E spi_driver_transmit_in_session(spi_driver_interface_E interface, const uint8_t* data,
+                                                   uint16_t length)
+{
+    uint8_t bus_id = get_bus_id(interface);
+    if (data == NULL || bus_id >= SPI_DRIVER_BUS_COUNT || session_hspi[bus_id] == NULL || length == 0U)
         return SPI_DRIVER_ERROR;
     spi_transmit_count++;
-    HAL_StatusTypeDef status =
-        HAL_SPI_Transmit(session_hspi[bus_id], (uint8_t*)data, length, SPI_TIMEOUT_MS);
-    last_hal_status = status;
-    if (status == HAL_OK)
-        return SPI_DRIVER_SUCCESS;
-    if (status == HAL_TIMEOUT)
-        return SPI_DRIVER_TIMEOUT;
-    return SPI_DRIVER_ERROR;
+    return spi_run_transfer(bus_id, session_hspi[bus_id], data, NULL, length,
+                            use_dma_for_length(length, session_hspi[bus_id]));
 }
 
-spi_driver_status_E spi_driver_receive_in_session(spi_driver_interface_E interface,
-                                                  uint8_t* data, uint16_t length)
+spi_driver_status_E spi_driver_receive_in_session(spi_driver_interface_E interface, uint8_t* data,
+                                                  uint16_t length)
 {
     uint8_t bus_id = get_bus_id(interface);
-    if (data == NULL || bus_id >= SPI_DRIVER_BUS_COUNT || session_hspi[bus_id] == NULL)
+    if (data == NULL || bus_id >= SPI_DRIVER_BUS_COUNT || session_hspi[bus_id] == NULL || length == 0U)
         return SPI_DRIVER_ERROR;
     spi_receive_count++;
-    HAL_StatusTypeDef status =
-        HAL_SPI_Receive(session_hspi[bus_id], data, length, SPI_TIMEOUT_MS);
-    last_hal_status = status;
-    if (status == HAL_OK)
-        return SPI_DRIVER_SUCCESS;
-    if (status == HAL_TIMEOUT)
-        return SPI_DRIVER_TIMEOUT;
-    return SPI_DRIVER_ERROR;
+    return spi_run_transfer(bus_id, session_hspi[bus_id], NULL, data, length,
+                            use_dma_for_length(length, session_hspi[bus_id]));
 }
 
-spi_driver_status_E spi_driver_set_speed(spi_driver_interface_E interface,
-                                        spi_driver_speed_E speed)
+spi_driver_status_E spi_driver_set_speed(spi_driver_interface_E interface, spi_driver_speed_E speed)
 {
     uint8_t bus_id = get_bus_id(interface);
     if (bus_id >= SPI_DRIVER_BUS_COUNT || session_hspi[bus_id] == NULL)
@@ -275,4 +365,27 @@ spi_driver_status_E spi_driver_set_speed(spi_driver_interface_E interface,
     else
         hspi->Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
     return (HAL_SPI_Init(hspi) == HAL_OK) ? SPI_DRIVER_SUCCESS : SPI_DRIVER_ERROR;
+}
+
+/*---------------------------------------------------------------------------
+ * HAL weak callbacks — DMA completion (same idea as uart_driver)
+ *---------------------------------------------------------------------------*/
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef* hspi)
+{
+    dma_complete_from_isr(bus_id_from_hspi(hspi));
+}
+
+void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef* hspi)
+{
+    dma_complete_from_isr(bus_id_from_hspi(hspi));
+}
+
+void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef* hspi)
+{
+    dma_complete_from_isr(bus_id_from_hspi(hspi));
+}
+
+void HAL_SPI_ErrorCallback(SPI_HandleTypeDef* hspi)
+{
+    dma_complete_from_isr(bus_id_from_hspi(hspi));
 }
