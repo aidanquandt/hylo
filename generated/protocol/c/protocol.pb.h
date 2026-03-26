@@ -117,6 +117,20 @@ typedef struct _ImuStreamStopRequest {
     char dummy_field;
 } ImuStreamStopRequest;
 
+typedef struct _ImuCalibrateRequest {
+    uint32_t imu_index; /* 0-3 for specific IMU; any other value = all active */
+} ImuCalibrateRequest;
+
+typedef struct _ImuCalibrateResponse {
+    bool started; /* true = calibration task spawned successfully */
+    uint32_t imu_index;
+} ImuCalibrateResponse;
+
+typedef struct _ImuCalibrateCompleteEvent {
+    bool success;
+    uint32_t imu_index;
+} ImuCalibrateCompleteEvent;
+
 typedef struct _ImuStreamPayload {
     float accel_x;
     float accel_y;
@@ -857,6 +871,9 @@ extern "C" {
 
 
 
+
+
+
 #define UwbNodeSetTypeRequest_node_type_ENUMTYPE NodeType
 
 
@@ -1030,6 +1047,9 @@ extern "C" {
 #define ImuGetDataResponse_init_default          {0, 0, 0, 0, 0, 0, 0}
 #define ImuStreamStartRequest_init_default       {0}
 #define ImuStreamStopRequest_init_default        {0}
+#define ImuCalibrateRequest_init_default         {0}
+#define ImuCalibrateResponse_init_default        {0, 0}
+#define ImuCalibrateCompleteEvent_init_default   {0, 0}
 #define ImuStreamPayload_init_default            {0, 0, 0, 0, 0, 0, 0, 0}
 #define UwbNodeSetTypeRequest_init_default       {_NodeType_MIN}
 #define UwbNodeGetTypeRequest_init_default       {0}
@@ -1198,6 +1218,9 @@ extern "C" {
 #define ImuGetDataResponse_init_zero             {0, 0, 0, 0, 0, 0, 0}
 #define ImuStreamStartRequest_init_zero          {0}
 #define ImuStreamStopRequest_init_zero           {0}
+#define ImuCalibrateRequest_init_zero            {0}
+#define ImuCalibrateResponse_init_zero           {0, 0}
+#define ImuCalibrateCompleteEvent_init_zero      {0, 0}
 #define ImuStreamPayload_init_zero               {0, 0, 0, 0, 0, 0, 0, 0}
 #define UwbNodeSetTypeRequest_init_zero          {_NodeType_MIN}
 #define UwbNodeGetTypeRequest_init_zero          {0}
@@ -1374,6 +1397,11 @@ extern "C" {
 #define ImuGetDataResponse_gyro_z_tag            6
 #define ImuGetDataResponse_temp_c_tag            7
 #define ImuStreamStartRequest_mode_tag           1
+#define ImuCalibrateRequest_imu_index_tag        1
+#define ImuCalibrateResponse_started_tag         1
+#define ImuCalibrateResponse_imu_index_tag       2
+#define ImuCalibrateCompleteEvent_success_tag    1
+#define ImuCalibrateCompleteEvent_imu_index_tag  2
 #define ImuStreamPayload_accel_x_tag             1
 #define ImuStreamPayload_accel_y_tag             2
 #define ImuStreamPayload_accel_z_tag             3
@@ -1681,6 +1709,23 @@ X(a, STATIC,   SINGULAR, UINT32,   mode,              1)
 
 #define ImuStreamStopRequest_CALLBACK NULL
 #define ImuStreamStopRequest_DEFAULT NULL
+
+#define ImuCalibrateRequest_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   imu_index,         1)
+#define ImuCalibrateRequest_CALLBACK NULL
+#define ImuCalibrateRequest_DEFAULT NULL
+
+#define ImuCalibrateResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     started,           1) \
+X(a, STATIC,   SINGULAR, UINT32,   imu_index,         2)
+#define ImuCalibrateResponse_CALLBACK NULL
+#define ImuCalibrateResponse_DEFAULT NULL
+
+#define ImuCalibrateCompleteEvent_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     success,           1) \
+X(a, STATIC,   SINGULAR, UINT32,   imu_index,         2)
+#define ImuCalibrateCompleteEvent_CALLBACK NULL
+#define ImuCalibrateCompleteEvent_DEFAULT NULL
 
 #define ImuStreamPayload_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, FLOAT,    accel_x,           1) \
@@ -2537,6 +2582,9 @@ extern const pb_msgdesc_t ImuGetDataRequest_msg;
 extern const pb_msgdesc_t ImuGetDataResponse_msg;
 extern const pb_msgdesc_t ImuStreamStartRequest_msg;
 extern const pb_msgdesc_t ImuStreamStopRequest_msg;
+extern const pb_msgdesc_t ImuCalibrateRequest_msg;
+extern const pb_msgdesc_t ImuCalibrateResponse_msg;
+extern const pb_msgdesc_t ImuCalibrateCompleteEvent_msg;
 extern const pb_msgdesc_t ImuStreamPayload_msg;
 extern const pb_msgdesc_t UwbNodeSetTypeRequest_msg;
 extern const pb_msgdesc_t UwbNodeGetTypeRequest_msg;
@@ -2707,6 +2755,9 @@ extern const pb_msgdesc_t SystemFatalEvent_msg;
 #define ImuGetDataResponse_fields &ImuGetDataResponse_msg
 #define ImuStreamStartRequest_fields &ImuStreamStartRequest_msg
 #define ImuStreamStopRequest_fields &ImuStreamStopRequest_msg
+#define ImuCalibrateRequest_fields &ImuCalibrateRequest_msg
+#define ImuCalibrateResponse_fields &ImuCalibrateResponse_msg
+#define ImuCalibrateCompleteEvent_fields &ImuCalibrateCompleteEvent_msg
 #define ImuStreamPayload_fields &ImuStreamPayload_msg
 #define UwbNodeSetTypeRequest_fields &UwbNodeSetTypeRequest_msg
 #define UwbNodeGetTypeRequest_fields &UwbNodeGetTypeRequest_msg
@@ -2874,6 +2925,9 @@ extern const pb_msgdesc_t SystemFatalEvent_msg;
 #define GetConfigRequest_size                    0
 #define GetConfigResponse_size                   12
 #define ImuAccelConfigFailedEvent_size           6
+#define ImuCalibrateCompleteEvent_size           8
+#define ImuCalibrateRequest_size                 6
+#define ImuCalibrateResponse_size                8
 #define ImuFailedToPushEventToSensorFusionEvent_size 12
 #define ImuFaultEvent_size                       46
 #define ImuGetDataRequest_size                   0

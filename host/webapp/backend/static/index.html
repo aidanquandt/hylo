@@ -547,14 +547,7 @@
         } catch (err) { console.error(err); }
       });
 
-      // 2. Handle Visualization data
-      eventStreamSource.addEventListener("viz", (e) => {
-        try { 
-          handleVizEvent(JSON.parse(e.data)); 
-        } catch (err) { /* ignore */ }
-      });
-
-      // 3. Handle standard log lines
+      // 2. Handle standard log lines
       eventStreamSource.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
@@ -949,6 +942,15 @@
     function mapX(x, b, w, pad) { return pad + (x - b.minX) / (b.maxX - b.minX) * (w - 2 * pad); }
     function mapY(y, b, h, pad) { return h - pad - (y - b.minY) / (b.maxY - b.minY) * (h - 2 * pad); }
 
+    let _vizRafId = null;
+    function scheduleVizDraw() {
+      if (_vizRafId !== null) return;  // already one pending — coalesce
+      _vizRafId = requestAnimationFrame(() => {
+        _vizRafId = null;
+        if (document.getElementById("tabViz").classList.contains("active")) vizDraw();
+      });
+    }
+
     function vizDraw() {
       const dpr = window.devicePixelRatio || 1;
       const w = vizCanvas.width / dpr;
@@ -1106,7 +1108,7 @@
         : "";
       vizStatusEl.textContent = `0x${data.addr.toString(16).toUpperCase()}: ${data.distance_m.toFixed(2)}m${sfText}`;
       if (document.getElementById("tabViz").classList.contains("active")) {
-        requestAnimationFrame(vizDraw);
+        scheduleVizDraw();
       }
     }
 
@@ -1142,7 +1144,7 @@
         confEl.textContent = data.active ? "conf: 0% (no updates)" : "SF inactive";
       }
       if (document.getElementById("tabViz").classList.contains("active")) {
-        requestAnimationFrame(vizDraw);
+        scheduleVizDraw();
       }
     }
 
@@ -1264,8 +1266,9 @@
     }
 
     async function checkAnchorPosition(tr) {
-      const port = portEl.value;
-      if (!port) { alert("Select a port first."); return; }
+      const isUart = commRouteEl.value === "uart";
+      const port = isUart ? portEl.value : null;
+      if (isUart && !port) { alert("Select a port first."); return; }
       const addr = tr.querySelector("[data-field=addr]").value.trim();
       if (!addr) return;
       const addrStr = String(addr);
@@ -1278,7 +1281,7 @@
         const r = await fetch("/api/command", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ port, command: "TwrRangeRequest", args: [addr] })
+          body: JSON.stringify({ port, route: commRouteEl.value, command: "TwrRangeRequest", args: [addr] })
         });
         const data = await r.json().catch(() => ({}));
         if (!data.success) {
@@ -1331,15 +1334,15 @@
         sfLiveBtn.classList.remove("toggled");
         document.getElementById("sfConfidence").textContent = "";
       } else {
-        if (!portEl.value) { alert("Select a port first."); return; }
+        if (commRouteEl.value === "uart" && !portEl.value) { alert("Select a port first."); return; }
         sfLiveBtn.classList.add("toggled");
         const poll = async () => {
-          if (!portEl.value) return;
+          if (commRouteEl.value === "uart" && !portEl.value) return;
           try {
             await fetch("/api/command", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ port: portEl.value, command: "SensorFusionGetStatusRequest", args: [] })
+              body: JSON.stringify({ port: portEl.value || null, route: commRouteEl.value, command: "SensorFusionGetStatusRequest", args: [] })
             });
           } catch (e) { /* ignore */ }
         };
@@ -1372,7 +1375,7 @@
     trailBtn.addEventListener("click", () => {
       showTrail = !showTrail;
       trailBtn.classList.toggle("toggled", showTrail);
-      if (document.getElementById("tabViz").classList.contains("active")) requestAnimationFrame(vizDraw);
+      if (document.getElementById("tabViz").classList.contains("active")) scheduleVizDraw();
     });
 
     document.getElementById("vizClear").addEventListener("click", async () => {

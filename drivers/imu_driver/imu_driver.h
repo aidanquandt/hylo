@@ -94,3 +94,4 @@ imu_driver_status_t imu_driver_read_accel_and_gyro(imu_dev_t* dev, vec3_t* accel
 imu_driver_status_t imu_driver_configure_accel(imu_dev_t* dev, imu_accel_range_t range, imu_odr_t odr);
 imu_driver_status_t imu_driver_configure_gyro(imu_dev_t* dev, imu_gyro_range_t range, imu_odr_t odr);
 imu_driver_status_t imu_driver_soft_reset(imu_dev_t* dev);
+imu_driver_status_t imu_driver_calibrate(imu_dev_t* dev);
