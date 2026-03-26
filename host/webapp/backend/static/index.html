@@ -353,7 +353,7 @@
         <option value="">Loading…</option>
       </select>
       <button type="button" id="refreshPorts" class="btn-refresh" title="Refresh port list">⟳</button>
-      <button type="button" id="monitorBtn" class="btn-monitor" title="Start background monitoring so event log receives all device messages (e.g. TWR range, logs)">Start monitoring</button>
+      <button type="button" id="monitorBtn" class="btn-monitor" title="UART: opens the USB serial port (required for commands) and streams decoded events into the log. WiFi: device connects over TCP separately; this toggles whether events are written to the log.">Open serial & show events</button>
       <span id="monitorStatus" class="monitor-status" style="display: none;"></span>
       <label for="commRoute">Route via</label>
       <select id="commRoute" title="Select host communication route">
@@ -378,7 +378,7 @@
         <!-- Event Log tab -->
         <div class="tab-content active" id="tabEvents">
           <div class="event-log-header">
-            <span>Event log</span>
+            <span>Event log <span style="font-weight:400;color:var(--muted);font-size:0.78rem">(device events only)</span></span>
             <span>
               <button type="button" id="jumpToBottom" class="btn-jump" title="Scroll to latest">Jump to bottom</button>
               <button type="button" id="hideRangesBtn" class="btn-clear" title="Hide/show TWR range lines">Hide Ranges</button>
@@ -387,7 +387,7 @@
             </span>
           </div>
           <div id="eventLogContent" class="event-log-content">
-            <div id="eventLogEmpty" class="event-log-empty">Select a port to connect and see device events (e.g. TWR range, logs) here.</div>
+            <div id="eventLogEmpty" class="event-log-empty">UART: choose a port, then use “Open serial & show events” to connect—event-type messages from the firmware appear here (command replies stay in the list on the left). WiFi: the device connects to this PC over TCP; use “Record events in log” to append the same kind of events here.</div>
             <div id="eventLogLines"></div>
           </div>
         </div>
@@ -572,6 +572,37 @@
       }
     }
 
+    /** Labels for the link/log button: meaning differs for UART (open serial) vs WiFi (log capture only). */
+    function monitorLinkUi(route, active, portName) {
+      const r = (route || "uart").toLowerCase();
+      if (r === "wifi") {
+        if (active) {
+          return {
+            label: "Pause event log",
+            title: "Stops appending decoded firmware events to this log. The TCP server keeps running and the device can stay connected. Commands still work; visualization may still update from live traffic.",
+            status: "Logging device events over WiFi (TCP)"
+          };
+        }
+        return {
+          label: "Record events in log",
+          title: "When your device is connected via TCP, decoded event-type messages are appended to this log. The device connects outbound to this PC by itself—this button only controls the text log, not the connection.",
+          status: ""
+        };
+      }
+      if (active) {
+        return {
+          label: "Close serial",
+          title: "Closes the USB serial port and stops decoding traffic. UART commands need an open link—open again after selecting the correct port.",
+          status: "Serial open: " + (portName || "UART") + " · commands + event log active"
+        };
+      }
+      return {
+        label: "Open serial & show events",
+        title: "Opens the selected USB serial port (115200 baud) and decodes frames. Required for UART commands; firmware event-type messages also appear in the log on the right.",
+        status: ""
+      };
+    }
+
     async function updateMonitorStatus() {
       try {
         const r = await fetch("/api/monitor/status");
@@ -579,13 +610,13 @@
         const data = await r.json();
         const route = (data.route || "uart").toLowerCase();
         const active = !!data.active;
-        monitorBtn.textContent = active ? "Stop monitoring" : "Start monitoring";
+        const ui = monitorLinkUi(route, active, data.port);
+        monitorBtn.textContent = ui.label;
+        monitorBtn.title = ui.title;
         monitorBtn.classList.toggle("active", !!active);
         monitorBtn.disabled = route === "uart" ? (!portEl.value && !active) : false;
         if (active) {
-          monitorStatusEl.textContent = route === "wifi"
-            ? "Monitoring WiFi"
-            : ("Monitoring " + (data.port || "UART"));
+          monitorStatusEl.textContent = ui.status;
           monitorStatusEl.style.display = "inline";
         } else {
           monitorStatusEl.style.display = "none";
@@ -756,7 +787,7 @@
           const isUart = commRouteEl.value === "uart";
           if (isUart && !portEl.value) {
             const resp = btn.closest(".command").querySelector(".command-response");
-            resp.textContent = "Select a port first.";
+            resp.textContent = "Select a USB port, then open serial (toolbar).";
             resp.className = "command-response error";
             return;
           }
@@ -815,7 +846,7 @@
           });
           if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            alert(err.detail || "Failed to start monitoring");
+            alert(err.detail || "Could not open serial or start event logging");
             return;
           }
         }
@@ -1225,7 +1256,7 @@
       const isUart = commRouteEl.value === "uart";
       const route = isUart ? "uart" : "wifi";
       const port = isUart ? portEl.value : null;
-      if (isUart && !port) { alert("Select a port first."); return; }
+      if (isUart && !port) { alert("Select a USB port and open serial (toolbar) first."); return; }
       const addr = tr.querySelector("[data-field=addr]").value.trim();
       const x = tr.querySelector("[data-field=x]").value.trim();
       const y = tr.querySelector("[data-field=y]").value.trim();
@@ -1268,7 +1299,7 @@
     async function checkAnchorPosition(tr) {
       const isUart = commRouteEl.value === "uart";
       const port = isUart ? portEl.value : null;
-      if (isUart && !port) { alert("Select a port first."); return; }
+      if (isUart && !port) { alert("Select a USB port and open serial (toolbar) first."); return; }
       const addr = tr.querySelector("[data-field=addr]").value.trim();
       if (!addr) return;
       const addrStr = String(addr);
@@ -1334,7 +1365,7 @@
         sfLiveBtn.classList.remove("toggled");
         document.getElementById("sfConfidence").textContent = "";
       } else {
-        if (commRouteEl.value === "uart" && !portEl.value) { alert("Select a port first."); return; }
+        if (commRouteEl.value === "uart" && !portEl.value) { alert("Select a USB port and open serial (toolbar) first."); return; }
         sfLiveBtn.classList.add("toggled");
         const poll = async () => {
           if (commRouteEl.value === "uart" && !portEl.value) return;

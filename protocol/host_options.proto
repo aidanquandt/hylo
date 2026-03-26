@@ -23,6 +23,22 @@ enum HostUiModule {
   HOST_UI_MODULE_SENSOR_FUSION = 14;
 }
 
+// Host / tooling: how this message is used on the wire and in UIs (command list, log filters).
+enum HostMessageType {
+  HOST_MESSAGE_TYPE_UNSPECIFIED = 0;
+  HOST_MESSAGE_TYPE_REQUEST = 1;
+  HOST_MESSAGE_TYPE_RESPONSE = 2;
+  HOST_MESSAGE_TYPE_EVENT = 3;
+  HOST_MESSAGE_TYPE_STREAM = 4;
+}
+
 extend google.protobuf.MessageOptions {
   optional HostUiModule host_ui_module = 50000;
+  optional HostMessageType host_message_type = 50001;
+}
+
+// Default HostUiModule for all top-level messages in this file (overridable per message via
+// host_ui_module on MessageOptions).
+extend google.protobuf.FileOptions {
+  optional HostUiModule default_host_ui_module = 50010;
 }

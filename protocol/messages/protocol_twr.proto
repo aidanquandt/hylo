@@ -1,0 +1,176 @@
+syntax = "proto3";
+
+import "nanopb.proto";
+import "host_options.proto";
+
+option (host.default_host_ui_module) = HOST_UI_MODULE_TWR;
+
+message TwrGetStatusRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message TwrGetStatusResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  uint32 state = 1;
+  uint32 role = 2;
+  bool initiator_running = 3;
+  bool responder_running = 4;
+}
+
+message TwrGetResultRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message TwrGetResultResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  float distance_m = 1;
+  uint32 responder_addr = 2;
+  bool valid = 3;
+}
+
+message TwrRangeRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  uint32 target_addr = 1;
+}
+
+message TwrFailedToRegisterProtocolHandlerEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message TwrResponderAutoStartFailedEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message TwrModuleNotInitializedEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+
+message ResponderFailedToSendMessageEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  int32 message_type = 1;
+}
+message ResponderPollTooShortEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message ResponderFinalTooShortEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message ResponderFailedToSendFinalAckEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message ResponderUnexpectedMessageTypeEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  int32 message_type = 1;
+}
+message ResponderTimeoutWaitingForMessageEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  int32 message_type = 1;
+  uint32 initiator_addr = 2;
+}
+message ResponderFaultEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 fault_code = 1;
+  string description = 2 [(nanopb).max_length = 32];
+}
+message ResponderCompletedRangingEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 initiator_addr = 1;
+}
+
+message InitiatorFailedToSendMessageEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  int32 message_type = 1;
+}
+message InitiatorResponseTooShortEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message InitiatorFinalAckTooShortEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message InitiatorUnexpectedMessageTypeEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  int32 message_type = 1;
+}
+message InitiatorFaultEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 fault_code = 1;
+  string description = 2 [(nanopb).max_length = 32];
+}
+message InitiatorDistanceCalculationFailedEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  int32 error_code = 1;
+}
+message InitiatorUwbNotReadyEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+
+message TwrSmTxCompletionTimeoutEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message TwrSmTxCompleteWrongStateEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 state = 1;
+  uint32 expected = 2;
+}
+message TwrSmTxCompleteMsgIdMismatchEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 expected = 1;
+  uint32 got = 2;
+}
+message TwrSmRxMessageWrongStateEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 state = 1;
+  int32 msg_type = 2;
+  uint32 from_addr = 3;
+}
+message TwrSmTimeoutUnexpectedStateEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 state = 1;
+}
+
+message TwrSchedulerStrategyNotImplementedEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message TwrSchedulerTargetListFullEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message TwrSchedulerTargetAlreadyExistsEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 address = 1;
+}
+message TwrSchedulerAddedTargetEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 address = 1;
+  uint32 target_count = 2;
+}
+message TwrSchedulerRemovedTargetEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 address = 1;
+  uint32 remaining = 2;
+}
+message TwrSchedulerNullAddressesPointerEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message TwrSchedulerTargetCountExceedsMaximumEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 count = 1;
+  uint32 maximum = 2;
+}
+message TwrSchedulerSetTargetsEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 count = 1;
+}
+message TwrSchedulerClearedAllTargetsEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message TwrSchedulerTargetEnabledDisabledEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 address = 1;
+  bool enabled = 2;
+}
+message TwrSchedulerTargetBackingOffEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 address = 1;
+  uint32 backoff_ms = 2;
+  uint32 failures = 3;
+}
+message TwrSchedulerStrategySetEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  int32 strategy = 1;
+}

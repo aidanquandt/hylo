@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+import "host_options.proto";
+
+option (host.default_host_ui_module) = HOST_UI_MODULE_BEACON;
+
+message BeaconPingRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message BeaconPingResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  bool success = 1;
+}

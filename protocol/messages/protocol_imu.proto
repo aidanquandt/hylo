@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+import "nanopb.proto";
+import "host_options.proto";
+
+option (host.default_host_ui_module) = HOST_UI_MODULE_IMU;
+
+message ImuGetStatusRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message ImuGetStatusResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  bool active = 1;
+  uint32 fault_code = 2;
+  uint32 state = 3;
+}
+
+message ImuGetDataRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message ImuGetDataResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  float accel_x = 1;
+  float accel_y = 2;
+  float accel_z = 3;
+  float gyro_x = 4;
+  float gyro_y = 5;
+  float gyro_z = 6;
+  float temp_c = 7;
+}
+
+message ImuStreamStartRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  uint32 mode = 1;  // 0 = array, 1 = avg
+}
+message ImuStreamStopRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message ImuCalibrateRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  uint32 imu_index = 1;  // 0-3 for specific IMU; any other value = all active
+}
+message ImuCalibrateResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  bool started = 1;      // true = calibration task spawned successfully
+  uint32 imu_index = 2;
+}
+message ImuCalibrateCompleteEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  bool success = 1;
+  uint32 imu_index = 2;
+}
+message ImuStreamPayload {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_STREAM;
+  float accel_x = 1;
+  float accel_y = 2;
+  float accel_z = 3;
+  float gyro_x = 4;
+  float gyro_y = 5;
+  float gyro_z = 6;
+  float temp_c = 7;
+  uint32 imu_index = 8;
+}
+
+message ImuInitReturnedNullEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 imu_index = 1;
+}
+message ImuProbeInitFailedEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 imu_index = 1;
+}
+message ImuInvalidChipIdEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 imu_index = 1;
+  uint32 chip_id = 2;
+}
+message ImuAccelConfigFailedEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 imu_index = 1;
+}
+message ImuGyroConfigFailedEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 imu_index = 1;
+}
+message ImuFaultEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 imu_index = 1;
+  uint32 fault_code = 2;
+  string description = 3 [(nanopb).max_length = 32];
+}
+message ImuFailedToPushEventToSensorFusionEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 imu_index = 1;
+  uint32 sf_status = 2;
+}

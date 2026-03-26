@@ -1,4 +1,4 @@
-# Auto-generated from protocol.proto by tools/protocol_codegen/codegen_protocol.py
+# Auto-generated from protocol/protocol.proto barrel by tools/protocol_codegen/codegen_protocol.py
 
 MSG_ID_AckResponse = 0
 MSG_ID_TransportSetRequest = 1
@@ -173,7 +173,7 @@ MSG_ID_WatchdogTaskFailureEvent = 169
 MSG_ID_SystemFatalEvent = 170
 MSG_ID_COUNT = 171
 
-# Name list for dispatch
+# Name list for dispatch (sorted by wire id)
 MSG_NAMES = (
     "AckResponse",
     "TransportSetRequest",

@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+import "nanopb.proto";
+import "host_options.proto";
+
+option (host.default_host_ui_module) = HOST_UI_MODULE_SYSTEM;
+
+message SystemGetUuidRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message SystemGetUuidResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  uint32 uuid_word0 = 1;
+  uint32 uuid_word1 = 2;
+  uint32 uuid_word2 = 3;
+}
+
+message SystemGetInfoRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message SystemGetInfoResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  string info = 1 [(nanopb).max_length = 64];
+}
+
+message AppDeviceNotInMappingTableEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 uuid_word2 = 1;
+}
+message AppUsingDefaultAddressEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 address = 1;
+}
+message AppFailedToInitDeviceIdEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+
+message WatchdogTaskFailureEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 current_heartbeats = 1;
+  uint32 expected_heartbeats = 2;
+}
+
+message SystemFatalEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  string module = 1 [(nanopb).max_length = 16];
+  string message = 2 [(nanopb).max_length = 64];
+}

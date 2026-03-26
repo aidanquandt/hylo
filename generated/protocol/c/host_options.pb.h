@@ -29,8 +29,19 @@ typedef enum _host_HostUiModule {
     host_HostUiModule_HOST_UI_MODULE_SENSOR_FUSION = 14
 } host_HostUiModule;
 
+/* Host / tooling: how this message is used on the wire and in UIs (command list, log filters). */
+typedef enum _host_HostMessageType {
+    host_HostMessageType_HOST_MESSAGE_TYPE_UNSPECIFIED = 0,
+    host_HostMessageType_HOST_MESSAGE_TYPE_REQUEST = 1,
+    host_HostMessageType_HOST_MESSAGE_TYPE_RESPONSE = 2,
+    host_HostMessageType_HOST_MESSAGE_TYPE_EVENT = 3,
+    host_HostMessageType_HOST_MESSAGE_TYPE_STREAM = 4
+} host_HostMessageType;
+
 /* Extensions */
 extern const pb_extension_type_t host_host_ui_module; /* field type: host_HostUiModule host_ui_module; */
+extern const pb_extension_type_t host_host_message_type; /* field type: host_HostMessageType host_message_type; */
+extern const pb_extension_type_t host_default_host_ui_module; /* field type: host_HostUiModule default_host_ui_module; */
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,6 +51,10 @@ extern "C" {
 #define _host_HostUiModule_MIN host_HostUiModule_HOST_UI_MODULE_UNSPECIFIED
 #define _host_HostUiModule_MAX host_HostUiModule_HOST_UI_MODULE_SENSOR_FUSION
 #define _host_HostUiModule_ARRAYSIZE ((host_HostUiModule)(host_HostUiModule_HOST_UI_MODULE_SENSOR_FUSION+1))
+
+#define _host_HostMessageType_MIN host_HostMessageType_HOST_MESSAGE_TYPE_UNSPECIFIED
+#define _host_HostMessageType_MAX host_HostMessageType_HOST_MESSAGE_TYPE_STREAM
+#define _host_HostMessageType_ARRAYSIZE ((host_HostMessageType)(host_HostMessageType_HOST_MESSAGE_TYPE_STREAM+1))
 
 
 #ifdef __cplusplus

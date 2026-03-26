@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+import "host_options.proto";
+
+option (host.default_host_ui_module) = HOST_UI_MODULE_UWB_NODE_CONFIG;
+
+message SetAddressRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  uint32 address = 1;
+  uint32 pan_id = 2;
+}
+message SetAddressResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  bool success = 1;
+}
+
+message GetConfigRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message GetConfigResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  uint32 pan_id = 1;
+  uint32 short_addr = 2;
+}

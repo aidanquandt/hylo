@@ -1,4 +1,4 @@
-/* Auto-generated from protocol.proto by tools/protocol_codegen/codegen_protocol.py */
+/* Auto-generated from protocol/protocol.proto barrel by tools/protocol_codegen/codegen_protocol.py */
 #ifndef PROTOCOL_IDS_H
 #define PROTOCOL_IDS_H
 #include <stdint.h>
@@ -175,7 +175,7 @@ typedef enum {
   MSG_ID_AppFailedToInitDeviceIdEvent = 168,
   MSG_ID_WatchdogTaskFailureEvent = 169,
   MSG_ID_SystemFatalEvent = 170,
-  MSG_ID_COUNT
+  MSG_ID_COUNT = 171
 } protocol_msg_id_t;
 
 #endif /* PROTOCOL_IDS_H */

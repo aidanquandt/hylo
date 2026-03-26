@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+import "nanopb.proto";
+import "host_options.proto";
+
+option (host.default_host_ui_module) = HOST_UI_MODULE_UWB;
+
+message UwbGetStatusRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message UwbGetStatusResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  bool initialized = 1;
+  uint32 fault_code = 2;
+}
+
+message UwbGetStatsRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message UwbGetStatsResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  uint32 tx_ok = 1;
+  uint32 tx_fail = 2;
+  uint32 rx_ok = 3;
+}
+
+message UwbStartRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message UwbStopRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message UwbResetStatsRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+
+message UwbFrameTooSmallEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 length = 1;
+}
+message UwbPayloadTooLargeEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 payload_len = 1;
+}
+message UwbRetryAttemptEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 current = 1;
+  uint32 max = 2;
+}
+message UwbFaultManualStopRequiredEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  string fault_str = 1 [(nanopb).max_length = 32];
+  uint32 fault_code = 2;
+}
+message UwbInvalidProtocolMessageEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message UwbInvalidProtocolTypeEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  uint32 protocol_type = 1;
+}
+message UwbTxQueueFullEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}
+message UwbProtocolHandlerTableFullEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+}

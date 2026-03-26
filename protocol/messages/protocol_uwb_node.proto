@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+import "nanopb.proto";
+import "host_options.proto";
+import "messages/protocol_common.proto";
+
+option (host.default_host_ui_module) = HOST_UI_MODULE_UWB_NODE;
+
+message UwbNodeSetTypeRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  NodeType node_type = 1;
+}
+message UwbNodeGetTypeRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message UwbNodeGetTypeResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  NodeType node_type = 1;
+}
+
+message UwbNodeSetPositionRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+message UwbNodeGetPositionRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message UwbNodeGetPositionResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  float x = 1;
+  float y = 2;
+  float z = 3;
+  bool position_known = 4;
+}
+
+message UwbNodeGetStatusRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message UwbNodeGetStatusResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  NodeType node_type = 1;
+  float pos_x = 2;
+  float pos_y = 3;
+  float pos_z = 4;
+  bool position_known = 5;
+  uint32 address = 6;
+  uint32 pan_id = 7;
+}
+
+message UwbNodeInvalidTypeEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  int32 node_type = 1;
+}
+message UwbNodeTypeSetEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  string type_str = 1 [(nanopb).max_length = 16];
+}
+message UwbNodePositionSetEvent {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}

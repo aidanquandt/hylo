@@ -1,4 +1,4 @@
-/* Auto-generated from protocol.proto by tools/protocol_codegen/codegen_protocol.py */
+/* Auto-generated from protocol/protocol.proto barrel by tools/protocol_codegen/codegen_protocol.py */
 #include "protocol_dispatch.h"
 #include "protocol.pb.h"
 #include "protocol_ids.h"

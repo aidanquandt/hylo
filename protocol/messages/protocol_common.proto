@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+import "host_options.proto";
+
+option (host.default_host_ui_module) = HOST_UI_MODULE_COMMON;
+
+enum NodeType {
+  NODE_TYPE_TAG = 0;
+  NODE_TYPE_ANCHOR = 1;
+  NODE_TYPE_HYBRID = 2;
+}
+
+enum TransportType {
+  TRANSPORT_TYPE_UART = 0;
+  TRANSPORT_TYPE_WIFI = 1;
+}
+
+message AckResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  bool success = 1;
+  uint32 error_code = 2;
+}
+
+message TransportSetRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+  TransportType transport = 1;
+}
+
+message TransportGetRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+
+message TransportGetResponse {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_RESPONSE;
+  TransportType active_transport = 1;
+  bool wifi_ready = 2;
+}
