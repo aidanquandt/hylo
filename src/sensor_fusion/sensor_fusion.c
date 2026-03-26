@@ -37,11 +37,8 @@ STATIC void sensor_fusion_10Hz_task(void* pvParameters);
 STATIC void sensor_fusion_process_10Hz(void);
 STATIC void sensor_fusion_update_position_estimate(void);
 
-// Telemetry helpers (WIFI + SD card) — only used on HWREV 1
+// Telemetry helpers (SD card) — only used on HWREV 1
 #if (HWREV == 1)
-STATIC void send_ranging_telemetry(const sensor_ranging_data_t* ranging, uint32_t timestamp_ms);
-STATIC void send_imu_telemetry(const sensor_event_t* event);
-STATIC void send_position_telemetry(const sensor_fusion_position_t* position);
 STATIC void sdcard_log_ranging(const sensor_ranging_data_t* ranging, uint32_t timestamp_ms);
 STATIC void sdcard_log_imu(const sensor_event_t* event);
 STATIC void sdcard_log_position(const sensor_fusion_position_t* position);
@@ -201,12 +198,10 @@ STATIC void sensor_fusion_task(void* pvParameters)
             #if (HWREV == 1)
             if (event.type == SENSOR_EVENT_IMU)
             {
-                send_imu_telemetry(&event);
                 sdcard_log_imu(&event);
             }
             else if (event.type == SENSOR_EVENT_RANGING)
             {
-                send_ranging_telemetry(&event.data.ranging, event.timestamp_ms);
                 sdcard_log_ranging(&event.data.ranging, event.timestamp_ms);
             }
             #endif
@@ -308,42 +303,15 @@ STATIC void sensor_fusion_update_position_estimate(void)
     position_estimate.imu_enable = imu_enabled;
 
     #if (HWREV == 1)
-        // Send position estimate to WiFi telemetry
-        send_position_telemetry(&position_estimate);
         // Log position estimate to SD card
         sdcard_log_position(&position_estimate);
     #endif
 }
 
 /*---------------------------------------------------------------------------
- * Telemetry Helper Functions (HWREV 1 only: WiFi + SD card)
+ * Telemetry Helper Functions (HWREV 1 only: SD card)
  *---------------------------------------------------------------------------*/
 #if (HWREV == 1)
-
-/**
- * @brief Send ranging telemetry to WiFi (non-blocking)
- */
-STATIC void send_ranging_telemetry(const sensor_ranging_data_t* ranging, uint32_t timestamp_ms)
-{
-    (void)ranging;
-    (void)timestamp_ms;
-}
-
-/**
- * @brief Send IMU telemetry to WiFi (decimated to 10Hz)
- */
-STATIC void send_imu_telemetry(const sensor_event_t* event)
-{
-    (void)event;
-}
-
-/**
- * @brief Send position estimate telemetry to WiFi (throttled to 10Hz)
- */
-STATIC void send_position_telemetry(const sensor_fusion_position_t* position)
-{
-    (void)position;
-}
 
 /**
  * @brief Log ranging event to SD card (non-blocking)
