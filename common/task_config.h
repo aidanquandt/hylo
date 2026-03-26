@@ -6,8 +6,9 @@
  * FreeRTOS priorities: 0 (lowest/idle) to configMAX_PRIORITIES-1 (highest)
  *
  * Priority Assignment Strategy:
- *   6: Critical ISR deferred work (UWB radio timing-sensitive RX)
- *   5: Time-critical transmission (UWB TX serialization)
+ *   8: UWB IRQ deferred handler (dwt_isr in task context)
+ *   7: UWB TX worker (serialized frame transmission)
+ *   6: UWB RX worker (deliver received frames to stack)
  *   4: High-rate sensor sampling (IMU at 1kHz)
  *   3: Normal I/O and communication (UART)
  *   2: Background computation (sensor fusion, ranging)
@@ -18,9 +19,10 @@
  * executes if higher priority tasks yield, proving they're not starving.
  *---------------------------------------------------------------------------*/
 
-// Critical real-time tasks (timing-sensitive)
-#define TASK_PRIORITY_UWB_RX 7 // Deferred interrupt processing
-#define TASK_PRIORITY_UWB_TX 6 // Frame transmission timing
+// Critical real-time tasks (timing-sensitive) — see drivers/uwb_driver
+#define TASK_PRIORITY_UWB_IRQ 8 // GPIO IRQ -> dwt_isr() (highest UWB)
+#define TASK_PRIORITY_UWB_TX 7  // TX queue worker
+#define TASK_PRIORITY_UWB_RX 6  // RX queue worker
 
 // High-rate processing
 #define TASK_PRIORITY_IMU_PERIODIC 5 // 1kHz sensor sampling

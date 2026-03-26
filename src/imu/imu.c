@@ -56,6 +56,13 @@ typedef struct
     state_machine_s    state_machine;
 } imu_ctx_t;
 
+/* Async calibration task: pauses 1kHz reads, runs BMI323 HW calibration,
+ * then sends ImuCalibrateCompleteEvent and deletes itself. */
+ typedef struct 
+ { 
+    uint32_t imu_index; 
+} imu_cal_task_arg_t;
+
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
@@ -530,10 +537,6 @@ bool imu_soft_reset(void)
     return any_ok;
 }
 
-/* Async calibration task: pauses 1kHz reads, runs BMI323 HW calibration,
- * then sends ImuCalibrateCompleteEvent and deletes itself. */
-typedef struct { uint32_t imu_index; } imu_cal_task_arg_t;
-
 static void imu_cal_task_fn(void* arg)
 {
     imu_cal_task_arg_t* a = (imu_cal_task_arg_t*)arg;
@@ -555,9 +558,6 @@ static void imu_cal_task_fn(void* arg)
     vTaskDelete(NULL);
 }
 
-/* Spawns a calibration task for the given IMU index.
- * Returns true if the task was created successfully.
- * ImuCalibrateCompleteEvent is sent by the task when done. */
 bool imu_calibrate_start(uint32_t imu_index)
 {
     if (imu_index >= (uint32_t)IMU_NUM_DEVICES || IMU_NUM_DEVICES == 0U)

@@ -35,6 +35,7 @@ _monitor_serial = None
 _monitor_port: str | None = None
 _monitor_thread: threading.Thread | None = None
 _monitor_stop_event = threading.Event()
+_monitor_enabled = False
 _response_queue: queue.Queue = queue.Queue()
 _pending_expected_id: int | None = None
 _pending_transport: str | None = None
@@ -45,6 +46,7 @@ _recent_rx_frames = deque(maxlen=32)   # (seq, source, msg_id, payload_len)
 _response_mailbox = deque(maxlen=256)  # (seq, t_monotonic, msg_id, payload, source)
 _rx_seq = 0
 _WAIT_DIAG_REV = "wait-v2"
+_wifi_silent_resp_counts: dict[int, int] = {}
 
 _wifi_server_host = os.getenv("HYLO_WIFI_SERVER_HOST", "0.0.0.0")
 _wifi_server_port = int(os.getenv("HYLO_WIFI_SERVER_PORT", "5000"))
@@ -133,7 +135,7 @@ class CommandRequest(BaseModel):
 
 
 class MonitorStartRequest(BaseModel):
-    port: str
+    port: str | None = None
 
 
 class RouteSelectRequest(BaseModel):
@@ -216,6 +218,37 @@ def _publish_rx_message(msg_id: int, payload: bytes, source: str) -> None:
     if _protocol_tool is None:
         return
 
+    with _serial_lock:
+        matched_pending_response = (
+            _pending_expected_id is not None
+            and msg_id == _pending_expected_id
+            and (_pending_transport is None or _pending_transport == source)
+        )
+        matched_silent_wifi_response = False
+        if source == "wifi":
+            pending_silent = _wifi_silent_resp_counts.get(msg_id, 0)
+            if pending_silent > 0:
+                matched_silent_wifi_response = True
+                if pending_silent == 1:
+                    _wifi_silent_resp_counts.pop(msg_id, None)
+                else:
+                    _wifi_silent_resp_counts[msg_id] = pending_silent - 1
+
+        global _rx_seq
+        _rx_seq += 1
+        seq = _rx_seq
+        _response_mailbox.append((seq, time.monotonic(), msg_id, bytes(payload), source))
+        _recent_rx_frames.append((seq, source, msg_id, len(payload)))
+        if matched_pending_response:
+            _response_queue.put((msg_id, payload))
+
+    # Match UART behavior for command/response UX: don't show WiFi command responses in Event Log.
+    if source == "wifi" and (matched_pending_response or matched_silent_wifi_response):
+        return
+
+    if not _monitor_enabled:
+        return
+
     high_freq = _is_high_frequency_msg(msg_id)
     viz_event = _try_extract_viz_data(msg_id, payload)
     fusion_event = _try_extract_fusion_data(msg_id, payload)
@@ -241,19 +274,6 @@ def _publish_rx_message(msg_id: int, payload: bytes, source: str) -> None:
                     except queue.Full:
                         pass
 
-    with _serial_lock:
-        global _rx_seq
-        _rx_seq += 1
-        seq = _rx_seq
-        _response_mailbox.append((seq, time.monotonic(), msg_id, bytes(payload), source))
-        _recent_rx_frames.append((seq, source, msg_id, len(payload)))
-        if (
-            _pending_expected_id is not None
-            and msg_id == _pending_expected_id
-            and (_pending_transport is None or _pending_transport == source)
-        ):
-            _response_queue.put((msg_id, payload))
-
 
 def _take_response_from_mailbox(expected_msg_id: int, min_seq: int):
     with _serial_lock:
@@ -275,6 +295,8 @@ def _delayed_discard_mailbox_msg_id(expected_msg_id: int, delay_s: float) -> Non
     try:
         time.sleep(delay_s)
         _discard_mailbox_msg_id(expected_msg_id)
+        with _serial_lock:
+            _wifi_silent_resp_counts.pop(expected_msg_id, None)
     except Exception:
         pass
 
@@ -292,12 +314,16 @@ def _send_wifi_warmup_request(conn: socket.socket) -> None:
         msg_id_req = _protocol_tool.get_msg_id_for_type(warmup_command)
         if msg_id_req is None:
             return
-        frame = _protocol_tool.build_frame(msg_id_req, payload)
-        conn.sendall(frame)
-
         resp_msg_id = _protocol_tool.get_expected_response_msg_id(warmup_command)
         if resp_msg_id is not None:
             _discard_mailbox_msg_id(resp_msg_id)
+            with _serial_lock:
+                _wifi_silent_resp_counts[resp_msg_id] = _wifi_silent_resp_counts.get(resp_msg_id, 0) + 1
+
+        frame = _protocol_tool.build_frame(msg_id_req, payload)
+        conn.sendall(frame)
+
+        if resp_msg_id is not None:
             threading.Thread(
                 target=_delayed_discard_mailbox_msg_id,
                 args=(resp_msg_id, 1.0),
@@ -327,6 +353,8 @@ def _mailbox_diag(expected_msg_id: int) -> tuple[int, str]:
 
 def _publish_tx_event(command: str, source: str) -> None:
     global _event_log
+    if not _monitor_enabled:
+        return
     line = "[tx:%s] %s" % (source, command)
     with _event_log_lock:
         _event_log = (_event_log + [line])[-EVENT_LOG_MAX:]
@@ -340,12 +368,23 @@ def _publish_tx_event(command: str, source: str) -> None:
 
 def _publish_debug_event(line: str) -> None:
     global _event_log
+    if not _monitor_enabled:
+        return
     with _event_log_lock:
         _event_log = (_event_log + [line])[-EVENT_LOG_MAX:]
     with _sse_queues_lock:
         for q in _sse_queues:
             try:
                 q.put({"line": line, "viz": None}, block=False)
+            except queue.Full:
+                pass
+
+
+def _publish_status_update_event() -> None:
+    with _sse_queues_lock:
+        for q in _sse_queues:
+            try:
+                q.put({"event": "status_update"}, block=False)
             except queue.Full:
                 pass
 
@@ -385,6 +424,7 @@ def _wifi_server_loop(stop_event: threading.Event) -> None:
                         _wifi_client_socket = conn
                         _wifi_client_addr = f"{addr[0]}:{addr[1]}"
                     _publish_debug_event(f"[wifi-host] New connection from {_wifi_client_addr}")
+                    _publish_status_update_event()
                     _send_wifi_warmup_request(conn)
                 except socket.timeout:
                     continue
@@ -412,6 +452,7 @@ def _wifi_server_loop(stop_event: threading.Event) -> None:
                     with _wifi_lock:
                         _wifi_close_client_locked()
                     rx_buf.clear()
+                    _publish_status_update_event()
         except Exception as e:
             now = time.monotonic()
             if now - _wifi_last_loop_error_log_t >= 2.0:
@@ -464,8 +505,6 @@ def _run_send_command(port: str | None, command: str, args: List[str], route_ove
 
     active_route = route_override or _active_route
     if active_route == "wifi":
-        with _event_log_lock:
-            prev_len = len(_event_log)
         try:
             req = _protocol_tool.build_request(command, args)
             payload = req.SerializeToString()
@@ -526,9 +565,8 @@ def _run_send_command(port: str | None, command: str, args: List[str], route_ove
             resp = resp_cls()
             resp.ParseFromString(resp_payload)
             response_text = _protocol_tool.format_message(resp_type, resp) + f" [src:{str(resp_source).upper()}]"
-            with _event_log_lock:
-                new_events = list(_event_log[prev_len:])
-            return True, response_text, new_events
+            # Don't return per-command events: SSE already handles event log updates.
+            return True, response_text, []
         except Exception as e:
             with _serial_lock:
                 _pending_expected_id = None
@@ -676,6 +714,10 @@ def _event_stream_generator():
                 yield ": keepalive\n\n"
                 continue
             if isinstance(item, dict):
+                event_name = item.get("event")
+                if event_name == "status_update":
+                    yield "event: status_update\ndata: {}\n\n"
+                    continue
                 yield f"data: {json.dumps({'line': item.get('line', '')})}\n\n"
                 viz = item.get("viz")
                 if viz:
@@ -717,7 +759,7 @@ def api_monitor_status() -> dict:
         wifi_connected = _wifi_client_socket is not None
         wifi_client = _wifi_client_addr
     return {
-        "active": _monitor_serial is not None,
+        "active": _monitor_enabled,
         "port": _monitor_port,
         "route": _active_route,
         "wifi_server": {
@@ -739,6 +781,7 @@ def api_route_select(req: RouteSelectRequest) -> dict:
         raise HTTPException(status_code=400, detail="route must be 'uart' or 'wifi'")
 
     _active_route = route
+    _publish_status_update_event()
     return {
         "ok": True,
         "active_route": _active_route,
@@ -751,56 +794,72 @@ def api_route_select(req: RouteSelectRequest) -> dict:
 @app.post("/api/monitor/start")
 def api_monitor_start(req: MonitorStartRequest) -> dict:
     """Start background serial monitoring on the given port. All received frames are appended to the event log."""
-    global _monitor_serial, _monitor_port, _monitor_thread, _monitor_stop_event
-    if serial is None:
-        raise HTTPException(status_code=503, detail="pyserial not installed")
-    if _protocol_tool is None:
-        raise HTTPException(status_code=503, detail="Protocol module not available")
-    with _serial_lock:
-        if _monitor_serial is not None:
-            if _monitor_port == req.port:
-                return {"ok": True, "message": "Already monitoring this port"}
-            _monitor_stop_event.set()
-            if _monitor_thread is not None:
-                _monitor_thread.join(timeout=2.0)
-            try:
-                _monitor_serial.close()
-            except Exception:
-                pass
-            _monitor_serial = None
-            _monitor_port = None
-            _monitor_thread = None
-    try:
-        ser = serial.Serial(req.port, 115200, timeout=0.01)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Serial open failed: {e}")
-    _monitor_stop_event = threading.Event()
-    _monitor_serial = ser
-    _monitor_port = req.port
-    _monitor_thread = threading.Thread(target=_monitor_reader_loop, args=(ser, _monitor_stop_event), daemon=True)
-    _monitor_thread.start()
-    return {"ok": True, "port": req.port}
+    global _monitor_serial, _monitor_port, _monitor_thread, _monitor_stop_event, _monitor_enabled
+    route = (_active_route or "uart").lower()
+
+    if route == "uart":
+        if serial is None:
+            raise HTTPException(status_code=503, detail="pyserial not installed")
+        if _protocol_tool is None:
+            raise HTTPException(status_code=503, detail="Protocol module not available")
+        if not req.port:
+            raise HTTPException(status_code=400, detail="Select a serial port for UART monitoring")
+        with _serial_lock:
+            if _monitor_serial is not None:
+                if _monitor_port == req.port:
+                    _monitor_enabled = True
+                    _publish_status_update_event()
+                    return {"ok": True, "port": req.port, "route": route}
+                _monitor_stop_event.set()
+                if _monitor_thread is not None:
+                    _monitor_thread.join(timeout=2.0)
+                try:
+                    _monitor_serial.close()
+                except Exception:
+                    pass
+                _monitor_serial = None
+                _monitor_port = None
+                _monitor_thread = None
+        try:
+            ser = serial.Serial(req.port, 115200, timeout=0.01)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Serial open failed: {e}")
+        _monitor_stop_event = threading.Event()
+        _monitor_serial = ser
+        _monitor_port = req.port
+        _monitor_thread = threading.Thread(target=_monitor_reader_loop, args=(ser, _monitor_stop_event), daemon=True)
+        _monitor_thread.start()
+        _monitor_enabled = True
+        _publish_status_update_event()
+        return {"ok": True, "port": req.port, "route": route}
+
+    _monitor_enabled = True
+    _publish_status_update_event()
+    return {"ok": True, "port": None, "route": route}
 
 
 @app.post("/api/monitor/stop")
 def api_monitor_stop() -> dict:
     """Stop background serial monitoring and close the port."""
-    global _monitor_serial, _monitor_port, _monitor_thread
+    global _monitor_serial, _monitor_port, _monitor_thread, _monitor_enabled
+    _monitor_enabled = False
     with _serial_lock:
-        if _monitor_serial is None:
-            return {"ok": True, "message": "Not monitoring"}
-        _monitor_stop_event.set()
-    if _monitor_thread is not None:
+        has_serial_monitor = _monitor_serial is not None
+        if has_serial_monitor:
+            _monitor_stop_event.set()
+    if has_serial_monitor and _monitor_thread is not None:
         _monitor_thread.join(timeout=2.0)
         _monitor_thread = None
-    with _serial_lock:
-        try:
-            if _monitor_serial is not None:
-                _monitor_serial.close()
-        except Exception:
-            pass
-        _monitor_serial = None
-        _monitor_port = None
+    if has_serial_monitor:
+        with _serial_lock:
+            try:
+                if _monitor_serial is not None:
+                    _monitor_serial.close()
+            except Exception:
+                pass
+            _monitor_serial = None
+            _monitor_port = None
+    _publish_status_update_event()
     return {"ok": True}
 
 
