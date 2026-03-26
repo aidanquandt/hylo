@@ -49,11 +49,19 @@ typedef struct
 {
     imu_dev_t*         dev;
     bool               active;
+    volatile bool      paused;   /* true while calibration task holds exclusive SPI access */
     imu_data_t         raw_data;
     uint8_t            chip_id;
     imu_fault_code_e   fault_code;
     state_machine_s    state_machine;
 } imu_ctx_t;
+
+/* Async calibration task: pauses 1kHz reads, runs BMI323 HW calibration,
+ * then sends ImuCalibrateCompleteEvent and deletes itself. */
+ typedef struct 
+ { 
+    uint32_t imu_index; 
+} imu_cal_task_arg_t;
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -433,6 +441,10 @@ STATIC void imu_process_1kHz(void)
 
         for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
         {
+            if (imu_ctxs[i].paused)
+            {
+                continue;  /* calibration task owns SPI for this IMU */
+            }
             imu_ctx_current_index = i;
             state_machine_periodic(&imu_ctxs[i].state_machine);
         }
@@ -480,7 +492,7 @@ STATIC void imu_process_1kHz(void)
             for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
             {
                 imu_ctx_t* c = &imu_ctxs[i];
-                if (!c->active || c->dev == NULL)
+                if (!c->active || c->dev == NULL || c->paused)
                 {
                     continue;
                 }
@@ -523,6 +535,56 @@ bool imu_soft_reset(void)
         }
     }
     return any_ok;
+}
+
+static void imu_cal_task_fn(void* arg)
+{
+    imu_cal_task_arg_t* a = (imu_cal_task_arg_t*)arg;
+    uint32_t idx = a->imu_index;
+    vPortFree(arg);
+
+    imu_ctx_t* ctx = &imu_ctxs[idx];
+    ctx->paused = true;
+    vTaskDelay(pdMS_TO_TICKS(5));   /* drain any in-flight SPI transfer */
+
+    bool ok = (imu_driver_calibrate(ctx->dev) == IMU_DRIVER_SUCCESS);
+    ctx->paused = false;
+
+    ImuCalibrateCompleteEvent ev = ImuCalibrateCompleteEvent_init_zero;
+    ev.imu_index = idx;
+    ev.success   = ok;
+    protocol_tx_ImuCalibrateCompleteEvent(&ev);
+
+    vTaskDelete(NULL);
+}
+
+bool imu_calibrate_start(uint32_t imu_index)
+{
+    if (imu_index >= (uint32_t)IMU_NUM_DEVICES || IMU_NUM_DEVICES == 0U)
+    {
+        return false;
+    }
+    imu_ctx_t* ctx = &imu_ctxs[imu_index];
+    if (!ctx->active || ctx->dev == NULL)
+    {
+        return false;
+    }
+
+    imu_cal_task_arg_t* arg = pvPortMalloc(sizeof(imu_cal_task_arg_t));
+    if (arg == NULL)
+    {
+        return false;
+    }
+    arg->imu_index = imu_index;
+
+    BaseType_t ok = xTaskCreate(imu_cal_task_fn, "imu_cal", 512U, arg,
+                                tskIDLE_PRIORITY + 1, NULL);
+    if (ok != pdPASS)
+    {
+        vPortFree(arg);
+        return false;
+    }
+    return true;
 }
 
 imu_state_e imu_get_state(imu_device_e device)

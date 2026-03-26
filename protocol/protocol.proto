@@ -126,6 +126,18 @@ message ImuStreamStartRequest {
 message ImuStreamStopRequest {
   option (host.host_ui_module) = HOST_UI_MODULE_IMU;
 }
+message ImuCalibrateRequest {
+  option (host.host_ui_module) = HOST_UI_MODULE_IMU;
+  uint32 imu_index = 1;  // 0-3 for specific IMU; any other value = all active
+}
+message ImuCalibrateResponse {
+  bool started = 1;      // true = calibration task spawned successfully
+  uint32 imu_index = 2;
+}
+message ImuCalibrateCompleteEvent {
+  bool success = 1;
+  uint32 imu_index = 2;
+}
 message ImuStreamPayload {
   float accel_x = 1;
   float accel_y = 2;
