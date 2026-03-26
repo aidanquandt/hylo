@@ -172,7 +172,7 @@ static void sdcard_write_event(const sdcard_driver_event_t* event)
         case SDCARD_DRIVER_EVENT_POSITION: {
             const sdcard_driver_position_event_t* p = &event->data.position;
             len = snprintf(row, sizeof(row), 
-                "POSITION,%lu,,,,,,,,,,,,,,,,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%d,%d\n",
+                "POSITION,%lu,,,,,,,,,,,,,,,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%d,%d\n",
                 (unsigned long)event->timestamp_ms, p->x, p->y, p->z, p->vx, p->vy, p->vz, p->confidence, (int)p->valid, p->imu_enable);
             break;
         }
