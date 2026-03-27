@@ -71,6 +71,22 @@ typedef struct _SensorFusionSetConfigRequest {
     pb_callback_t config;
 } SensorFusionSetConfigRequest;
 
+typedef struct _SensorFusionStreamStartRequest {
+    char dummy_field;
+} SensorFusionStreamStartRequest;
+
+typedef struct _SensorFusionStreamStopRequest {
+    char dummy_field;
+} SensorFusionStreamStopRequest;
+
+typedef struct _SensorFusionStreamPayload {
+    bool active;
+    float pos_x;
+    float pos_y;
+    float pos_z;
+    float confidence;
+} SensorFusionStreamPayload;
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -90,6 +106,9 @@ extern "C" {
 #define SensorFusionGetNoiseResponse_init_default {0, 0, 0}
 #define SensorFusionGetConfigRequest_init_default {0}
 #define SensorFusionSetConfigRequest_init_default {{{NULL}, NULL}}
+#define SensorFusionStreamStartRequest_init_default {0}
+#define SensorFusionStreamStopRequest_init_default {0}
+#define SensorFusionStreamPayload_init_default   {0, 0, 0, 0, 0}
 #define SensorFusionGetDebugRequest_init_zero    {0}
 #define SensorFusionSetDebugRequest_init_zero    {0}
 #define SensorFusionGetStatusRequest_init_zero   {0}
@@ -103,6 +122,9 @@ extern "C" {
 #define SensorFusionGetNoiseResponse_init_zero   {0, 0, 0}
 #define SensorFusionGetConfigRequest_init_zero   {0}
 #define SensorFusionSetConfigRequest_init_zero   {{{NULL}, NULL}}
+#define SensorFusionStreamStartRequest_init_zero {0}
+#define SensorFusionStreamStopRequest_init_zero  {0}
+#define SensorFusionStreamPayload_init_zero      {0, 0, 0, 0, 0}
 
 /* Field tags (for use in manual encoding/decoding) */
 #define SensorFusionSetDebugRequest_debug_flags_tag 1
@@ -121,6 +143,11 @@ extern "C" {
 #define SensorFusionGetNoiseResponse_vel_tag     2
 #define SensorFusionGetNoiseResponse_att_tag     3
 #define SensorFusionSetConfigRequest_config_tag  1
+#define SensorFusionStreamPayload_active_tag     1
+#define SensorFusionStreamPayload_pos_x_tag      2
+#define SensorFusionStreamPayload_pos_y_tag      3
+#define SensorFusionStreamPayload_pos_z_tag      4
+#define SensorFusionStreamPayload_confidence_tag 5
 
 /* Struct field encoding specification for nanopb */
 #define SensorFusionGetDebugRequest_FIELDLIST(X, a) \
@@ -196,6 +223,25 @@ X(a, CALLBACK, SINGULAR, BYTES,    config,            1)
 #define SensorFusionSetConfigRequest_CALLBACK pb_default_field_callback
 #define SensorFusionSetConfigRequest_DEFAULT NULL
 
+#define SensorFusionStreamStartRequest_FIELDLIST(X, a) \
+
+#define SensorFusionStreamStartRequest_CALLBACK NULL
+#define SensorFusionStreamStartRequest_DEFAULT NULL
+
+#define SensorFusionStreamStopRequest_FIELDLIST(X, a) \
+
+#define SensorFusionStreamStopRequest_CALLBACK NULL
+#define SensorFusionStreamStopRequest_DEFAULT NULL
+
+#define SensorFusionStreamPayload_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     active,            1) \
+X(a, STATIC,   SINGULAR, FLOAT,    pos_x,             2) \
+X(a, STATIC,   SINGULAR, FLOAT,    pos_y,             3) \
+X(a, STATIC,   SINGULAR, FLOAT,    pos_z,             4) \
+X(a, STATIC,   SINGULAR, FLOAT,    confidence,        5)
+#define SensorFusionStreamPayload_CALLBACK NULL
+#define SensorFusionStreamPayload_DEFAULT NULL
+
 extern const pb_msgdesc_t SensorFusionGetDebugRequest_msg;
 extern const pb_msgdesc_t SensorFusionSetDebugRequest_msg;
 extern const pb_msgdesc_t SensorFusionGetStatusRequest_msg;
@@ -209,6 +255,9 @@ extern const pb_msgdesc_t SensorFusionGetNoiseRequest_msg;
 extern const pb_msgdesc_t SensorFusionGetNoiseResponse_msg;
 extern const pb_msgdesc_t SensorFusionGetConfigRequest_msg;
 extern const pb_msgdesc_t SensorFusionSetConfigRequest_msg;
+extern const pb_msgdesc_t SensorFusionStreamStartRequest_msg;
+extern const pb_msgdesc_t SensorFusionStreamStopRequest_msg;
+extern const pb_msgdesc_t SensorFusionStreamPayload_msg;
 
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
 #define SensorFusionGetDebugRequest_fields &SensorFusionGetDebugRequest_msg
@@ -224,6 +273,9 @@ extern const pb_msgdesc_t SensorFusionSetConfigRequest_msg;
 #define SensorFusionGetNoiseResponse_fields &SensorFusionGetNoiseResponse_msg
 #define SensorFusionGetConfigRequest_fields &SensorFusionGetConfigRequest_msg
 #define SensorFusionSetConfigRequest_fields &SensorFusionSetConfigRequest_msg
+#define SensorFusionStreamStartRequest_fields &SensorFusionStreamStartRequest_msg
+#define SensorFusionStreamStopRequest_fields &SensorFusionStreamStopRequest_msg
+#define SensorFusionStreamPayload_fields &SensorFusionStreamPayload_msg
 
 /* Maximum encoded size of messages (where known) */
 /* SensorFusionSetConfigRequest_size depends on runtime parameters */
@@ -240,6 +292,9 @@ extern const pb_msgdesc_t SensorFusionSetConfigRequest_msg;
 #define SensorFusionSetDebugRequest_size         6
 #define SensorFusionSetImuEnabledRequest_size    2
 #define SensorFusionSetNoiseRequest_size         15
+#define SensorFusionStreamPayload_size           22
+#define SensorFusionStreamStartRequest_size      0
+#define SensorFusionStreamStopRequest_size       0
 
 #ifdef __cplusplus
 } /* extern "C" */

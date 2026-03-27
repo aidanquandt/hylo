@@ -179,4 +179,7 @@ enum WireMessageId {
   AppFailedToInitDeviceIdEvent = 168;
   WatchdogTaskFailureEvent = 169;
   SystemFatalEvent = 170;
+  SensorFusionStreamStartRequest = 171;
+  SensorFusionStreamStopRequest = 172;
+  SensorFusionStreamPayload = 173;
 }

@@ -60,3 +60,18 @@ message SensorFusionSetConfigRequest {
   option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
   bytes config = 1 [(nanopb).max_length = 32];
 }
+
+message SensorFusionStreamStartRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message SensorFusionStreamStopRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message SensorFusionStreamPayload {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_STREAM;
+  bool active = 1;
+  float pos_x = 2;
+  float pos_y = 3;
+  float pos_z = 4;
+  float confidence = 5;
+}
