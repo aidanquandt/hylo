@@ -45,20 +45,20 @@ void kalmanCoreDefaultParams(kalmanCoreParams_t* params)
     params->stdDevInitialPosition_z         = 1.0f;   /* Smaller uncertainty in Z */
     params->stdDevInitialVelocity           = 0.01f;  /* Know we start stationary */
     params->stdDevInitialAttitude_rollpitch = 0.01f;  /* Roughly flat */
-    params->stdDevInitialAttitude_yaw       = 0.01f;  /* Unknown heading */
+    params->stdDevInitialAttitude_yaw       = 0.4f;   /* Unknown heading (less overconfident) */
 
     /* Process noise - tune based on IMU quality */
     /* These values model the uncertainty in IMU measurements and allow the filter */
     /* to appropriately weight IMU predictions vs UWB measurements */
-    params->procNoiseAcc_xy = 0.5f;    /* Accelerometer noise XY (m/s^2) */
-    params->procNoiseAcc_z  = 1.0f;    /* Accelerometer noise Z (m/s^2) */
-    params->procNoiseVel    = 0.1f;    /* Velocity random walk (m/s) - tuned for human walking pace */
-    params->procNoisePos    = 0.01f;   /* Position random walk (m) - tuned for human walking pace */
-    params->procNoiseAtt    = 0.0001f; /* Attitude drift (rad) - Small but non-zero */
+    params->procNoiseAcc_xy = 0.35f;  /* Accelerometer noise XY (m/s^2) */
+    params->procNoiseAcc_z  = 0.60f;  /* Accelerometer noise Z (m/s^2) */
+    params->procNoiseVel    = 0.05f;  /* Velocity random walk (m/s) */
+    params->procNoisePos    = 0.005f; /* Position random walk (m) */
+    params->procNoiseAtt    = 0.005f; /* Attitude process noise (rad) */
 
     /* Measurement noise */
-    params->measNoiseGyro_rollpitch = 0.1f; /* rad/s */
-    params->measNoiseGyro_yaw       = 0.1f; /* rad/s */
+    params->measNoiseGyro_rollpitch = 0.03f; /* rad/s */
+    params->measNoiseGyro_yaw       = 0.03f; /* rad/s */
 
     /* Initial state */
     params->initialX   = 1.44f;
@@ -941,17 +941,14 @@ static void addProcessNoiseDt(kalmanCoreData_t* kf, const kalmanCoreParams_t* pa
     kf->P[KC_STATE_PY][KC_STATE_PY] += vel_noise_xy;
     kf->P[KC_STATE_PZ][KC_STATE_PZ] += vel_noise_z;
 
-    /* Attitude process noise - CORRECTED */
-    float gyro_contrib_rp  = params->measNoiseGyro_rollpitch * dt;
-    float gyro_contrib_yaw = params->measNoiseGyro_yaw * dt;
-    float att_noise_rp =
-        gyro_contrib_rp * gyro_contrib_rp + params->procNoiseAtt * params->procNoiseAtt;
-    float att_noise_yaw =
-        gyro_contrib_yaw * gyro_contrib_yaw + params->procNoiseAtt * params->procNoiseAtt;
+    /* Attitude process noise:
+     * Use process-noise parameters here (not measurement-noise params). */
+    float att_contrib = params->procNoiseAtt * dt;
+    float att_noise   = att_contrib * att_contrib + params->procNoiseAtt * params->procNoiseAtt;
 
-    kf->P[KC_STATE_D0][KC_STATE_D0] += att_noise_rp;
-    kf->P[KC_STATE_D1][KC_STATE_D1] += att_noise_rp;
-    kf->P[KC_STATE_D2][KC_STATE_D2] += att_noise_yaw;
+    kf->P[KC_STATE_D0][KC_STATE_D0] += att_noise;
+    kf->P[KC_STATE_D1][KC_STATE_D1] += att_noise;
+    kf->P[KC_STATE_D2][KC_STATE_D2] += att_noise;
 
     enforceSymmetryAndBounds(kf);
 }
