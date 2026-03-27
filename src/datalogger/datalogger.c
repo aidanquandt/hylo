@@ -10,6 +10,7 @@
 #include "task_config.h"
 #include "protocol.pb.h"
 #include <string.h>
+#include "stopwatch.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -43,7 +44,23 @@ STATIC void datalogger_monitor_rtos_usage(void)
     STATIC TaskHandle_t prev_task_handles[DATALOGGER_MAX_TASKS] = {NULL};
 
     uint32_t total_runtime = 0U;
-    num_tracked_tasks      = uxTaskGetSystemState(task_status_array, DATALOGGER_MAX_TASKS, &total_runtime);
+    /* uxTaskGetSystemState -> vTaskSuspendAll: no task runs until it returns, regardless of
+     * priority — only ISRs keep going — so ticks can advance and short-deadline work trips. */
+
+    static uint32_t aidan_counter = 0U;
+    aidan_counter++;
+    if (aidan_counter == 1U)
+    {
+    stopwatch_start(8);
+    }
+
+    num_tracked_tasks = uxTaskGetSystemState(task_status_array, DATALOGGER_MAX_TASKS, &total_runtime);
+
+    if (aidan_counter == 1U)
+    {
+        stopwatch_stop(8);
+    }
+
     if ((num_tracked_tasks == 0U) || (total_runtime == 0U))
     {
         return;

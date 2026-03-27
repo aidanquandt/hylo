@@ -7,6 +7,7 @@
 #include "protocol_tx.h"
 #include "system_halt.h"
 #include "protocol.pb.h"
+#include <stdbool.h>
 #include "task_config.h"
 #include "watchdog_driver.h"
 #include "task.h"
@@ -14,15 +15,15 @@
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define WATCHDOG_CHECK_RATE_MS 1000U // Check heartbeats every 1 second
-
-#define HEARTBEAT_1KHZ_BIT (1U << 0)
-#define HEARTBEAT_ALL_BITS HEARTBEAT_1KHZ_BIT
+#define WATCHDOG_CHECK_RATE_MS 1000U // How often supervisor refreshes IWDG / reports
 
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-STATIC volatile uint32_t task_heartbeats = 0; // Bitmask of which tasks have run since last check
+/** Set if tick count jumped by more than 1 between canary runs (missed scheduling / long mask). */
+STATIC volatile uint32_t heartbeat_tick_gap_fault = 0U;
+/** Observed tick delta on failure (for WatchdogTaskFailureEvent). */
+STATIC volatile uint32_t heartbeat_last_bad_elapsed = 0U;
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -38,6 +39,7 @@ STATIC void watchdog_task(void* argument)
     (void)argument;
 
     TickType_t lastWake = xTaskGetTickCount();
+    bool       failure_reported = false;
 
 #if FEATURE_WATCHDOG_ENABLE_IWDG
     watchdog_driver_refresh();
@@ -47,24 +49,20 @@ STATIC void watchdog_task(void* argument)
     {
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(WATCHDOG_CHECK_RATE_MS));
 
-        uint32_t current_heartbeats = task_heartbeats;
-        task_heartbeats             = 0; // Clear for next check
-
-        // Only refresh if all tasks are alive
-        if (current_heartbeats == HEARTBEAT_ALL_BITS)
+        if (heartbeat_tick_gap_fault == 0U)
         {
 #if FEATURE_WATCHDOG_ENABLE_IWDG
             watchdog_driver_refresh();
 #endif
         }
-        else
+        else if (!failure_reported)
         {
-            // Task failure - send event, DON'T refresh; system will reset in ~8s via IWDG
+            /* One shot: repeated TX competes with the canary at low priority and hides the real delta. */
             WatchdogTaskFailureEvent ev = WatchdogTaskFailureEvent_init_zero;
-            ev.current_heartbeats  = current_heartbeats;
-            ev.expected_heartbeats = HEARTBEAT_ALL_BITS;
+            ev.current_heartbeats  = heartbeat_last_bad_elapsed;
+            ev.expected_heartbeats = 1U;
             protocol_tx_WatchdogTaskFailureEvent(&ev);
-            // Stay in loop without refreshing until IWDG resets system
+            failure_reported = true;
         }
     }
 }
@@ -73,10 +71,29 @@ STATIC void watchdog_1khz_task(void* pvParameters)
 {
     (void)pvParameters;
     TickType_t lastWake = xTaskGetTickCount();
+    bool       have_prev = false;
+    TickType_t prevTick  = 0;
+
     for (;;)
     {
-        task_heartbeats |= HEARTBEAT_1KHZ_BIT;
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(1));
+        TickType_t now = xTaskGetTickCount();
+
+        if (have_prev)
+        {
+            TickType_t elapsed = (TickType_t)(now - prevTick);
+            /* Only "too many ticks" is a fault. elapsed == 0 is normal: vTaskDelayUntil does
+             * not sleep when the wake time is already past; it advances lastWake and returns,
+             * so several loop bodies can run with the same xTaskGetTickCount() (catch-up). */
+            if (elapsed > (TickType_t)1)
+            {
+                heartbeat_last_bad_elapsed = (uint32_t)elapsed;
+                heartbeat_tick_gap_fault   = 1U;
+            }
+        }
+
+        have_prev = true;
+        prevTick  = now;
     }
 }
 
@@ -95,7 +112,7 @@ void watchdog_init(void)
     }
 
     result = xTaskCreate(watchdog_1khz_task, "wdog_1khz", TASK_STACK_1KB, NULL,
-                         TASK_PRIORITY_WATCHDOG, NULL);
+                         TASK_PRIORITY_WATCHDOG_CANARY, NULL);
     if (result != pdPASS)
     {
         system_halt("watchdog", "Failed to create 1kHz task");
