@@ -106,6 +106,9 @@ class HostSession:
 
         if self.codec.is_stream(msg_id):
             await self.fanout.push(msg_id, payload)
+            fusion = self.codec.to_fusion_payload(pf)
+            if fusion:
+                await self._broadcast_sse_event("fusion", fusion)
             return
 
         if self._pending_cmd and not self._pending_cmd[1].done():

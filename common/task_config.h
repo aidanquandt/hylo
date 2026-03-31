@@ -12,11 +12,12 @@
  *   4: High-rate sensor sampling (IMU at 1kHz)
  *   3: Normal I/O and communication (UART)
  *   2: Background computation (sensor fusion, ranging)
- *   1: Monitoring and logging (datalogger)
- *   0: Watchdog (intentionally lowest - verifies all others can run)
+ *   1: Monitoring and logging (datalogger); watchdog 1 kHz tick canary
+ *   0: Watchdog supervisor only (IWDG refresh / failure path)
  *
- * Design Note: Watchdog runs at lowest priority as a "canary" - it only
- * executes if higher priority tasks yield, proving they're not starving.
+ * Design Note: Watchdog supervisor is lowest so it only runs when higher work
+ * yields. The 1 kHz canary is one step higher so UART/reporting in the
+ * supervisor cannot stretch tick gaps and false-trip the tick-delta check.
  *---------------------------------------------------------------------------*/
 
 // Critical real-time tasks (timing-sensitive) — see drivers/uwb_driver
@@ -39,8 +40,9 @@
 #define TASK_PRIORITY_WIFI 2              // WiFi state machine (10 Hz)
 
 // Low priority / monitoring
-#define TASK_PRIORITY_DATALOGGER 1 // Statistics logging
-#define TASK_PRIORITY_WATCHDOG 0   // System health monitor (lowest)
+#define TASK_PRIORITY_DATALOGGER 1           // Statistics logging
+#define TASK_PRIORITY_WATCHDOG_CANARY 9        // 1 kHz tick-gap check (same band as datalogger)
+#define TASK_PRIORITY_WATCHDOG 0               // IWDG supervisor (lowest)
 
 /*---------------------------------------------------------------------------
  * Task Stack Sizes

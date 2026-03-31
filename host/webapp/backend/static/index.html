@@ -399,7 +399,8 @@
             </div>
             <div class="viz-toolbar">
               <button type="button" id="vizClear" title="Clear trail & ranges">Clear</button>
-              <button type="button" id="sfLiveBtn" title="Poll SensorFusionGetStatusRequest every 500ms to stream tag position">SF Live</button>
+              <button type="button" id="sfStreamStart" title="Device sends SensorFusionStreamPayload at 10 Hz">SF stream on</button>
+              <button type="button" id="sfStreamStop" title="Stop sensor fusion position stream">SF stream off</button>
               <button type="button" id="trailBtn" class="toggled" title="Show/hide position trail">Trail</button>
               <span id="sfConfidence" class="sf-confidence"></span>
               <label>Bounds X:</label>
@@ -1355,31 +1356,32 @@
       saveAnchors();
     });
 
-    // ===================== SF Live toggle =====================
-    let sfLiveInterval = null;
-    const sfLiveBtn = document.getElementById("sfLiveBtn");
-    sfLiveBtn.addEventListener("click", () => {
-      if (sfLiveInterval) {
-        clearInterval(sfLiveInterval);
-        sfLiveInterval = null;
-        sfLiveBtn.classList.remove("toggled");
-        document.getElementById("sfConfidence").textContent = "";
-      } else {
-        if (commRouteEl.value === "uart" && !portEl.value) { alert("Select a USB port and open serial (toolbar) first."); return; }
-        sfLiveBtn.classList.add("toggled");
-        const poll = async () => {
-          if (commRouteEl.value === "uart" && !portEl.value) return;
-          try {
-            await fetch("/api/command", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ port: portEl.value || null, route: commRouteEl.value, command: "SensorFusionGetStatusRequest", args: [] })
-            });
-          } catch (e) { /* ignore */ }
-        };
-        poll(); // immediate first poll
-        sfLiveInterval = setInterval(poll, 100);
+    // ===================== Sensor fusion position stream (device → host, 10 Hz) =====================
+    let sfStreamRunning = false;
+    async function sendSfStreamCommand(command) {
+      if (commRouteEl.value === "uart" && !portEl.value) {
+        alert("Select a USB port and open serial (toolbar) first.");
+        return;
       }
+      try {
+        await fetch("/api/command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ port: portEl.value || null, route: commRouteEl.value, command, args: [] })
+        });
+      } catch (e) { /* ignore */ }
+    }
+    document.getElementById("sfStreamStart").addEventListener("click", async () => {
+      await sendSfStreamCommand("SensorFusionStreamStartRequest");
+      sfStreamRunning = true;
+      document.getElementById("sfStreamStart").classList.add("toggled");
+      document.getElementById("sfStreamStop").classList.remove("toggled");
+    });
+    document.getElementById("sfStreamStop").addEventListener("click", async () => {
+      await sendSfStreamCommand("SensorFusionStreamStopRequest");
+      sfStreamRunning = false;
+      document.getElementById("sfStreamStart").classList.remove("toggled");
+      document.getElementById("sfConfidence").textContent = "";
     });
 
     // ===================== Hide Ranges toggle =====================
@@ -1413,7 +1415,7 @@
       vizState.trail = [];
       vizState.ranges = {};
       vizState.positionKnown = false;
-      document.getElementById("sfConfidence").textContent = sfLiveInterval ? "conf: 0%" : "";
+      document.getElementById("sfConfidence").textContent = sfStreamRunning ? "conf: 0%" : "";
       vizStatusEl.textContent = "No data";
       try { await fetch("/api/viz/clear", { method: "POST" }); } catch (e) { /* ignore */ }
       vizDraw();

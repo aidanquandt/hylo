@@ -20,7 +20,7 @@
 #include "state_machine.h"
 #include "task.h"
 #include <string.h>
-
+#include "stopwatch.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -122,9 +122,23 @@ STATIC bool imu_read_single(imu_ctx_t* ctx)
     vec3_t raw_accel = {0.0f, 0.0f, 0.0f};
     vec3_t raw_gyro  = {0.0f, 0.0f, 0.0f};
 
+    
+    static uint32_t counter1 = 0U;
+    counter1++;
+
+    if (counter1 == 10000U)
+    {
+        stopwatch_start(7);
+    }
+
     if (imu_driver_read_accel_and_gyro(ctx->dev, &raw_accel, &raw_gyro) != IMU_DRIVER_SUCCESS)
     {
         return false;
+    }
+
+    if (counter1 == 10000U)
+    {
+        stopwatch_stop(7);
     }
 
     imu_transform_accel(&raw_accel, &ctx->raw_data.accel);

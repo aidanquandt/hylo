@@ -15,14 +15,14 @@
  * Defines
  *---------------------------------------------------------------------------*/
 #define HEAP_LOW_MEMORY_THRESHOLD_BYTES 1024U
-#define DATALOGGER_RATE_MS              1000U // 1 Hz
+#define DATALOGGER_RATE_MS              1000U // Heap / low-memory check interval
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
 STATIC void datalogger_task(void* pvParameters);
-STATIC void datalogger_monitor_rtos_usage(void);
 STATIC void datalogger_monitor_heap_usage(void);
+STATIC void datalogger_refresh_rtos_stats(void);
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -36,14 +36,16 @@ STATIC uint32_t minimum_ever_free_heap = 0U;
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
-STATIC void datalogger_monitor_rtos_usage(void)
+STATIC void datalogger_refresh_rtos_stats(void)
 {
-    STATIC uint32_t prev_total_runtime                   = 0U;
-    STATIC uint32_t prev_task_runtime[DATALOGGER_MAX_TASKS]     = {0};
+    STATIC uint32_t prev_total_runtime                        = 0U;
+    STATIC uint32_t prev_task_runtime[DATALOGGER_MAX_TASKS]   = {0};
     STATIC TaskHandle_t prev_task_handles[DATALOGGER_MAX_TASKS] = {NULL};
 
     uint32_t total_runtime = 0U;
-    num_tracked_tasks      = uxTaskGetSystemState(task_status_array, DATALOGGER_MAX_TASKS, &total_runtime);
+    /* uxTaskGetSystemState -> vTaskSuspendAll: keep out of periodic paths. */
+    num_tracked_tasks = uxTaskGetSystemState(task_status_array, DATALOGGER_MAX_TASKS, &total_runtime);
+
     if ((num_tracked_tasks == 0U) || (total_runtime == 0U))
     {
         return;
@@ -104,7 +106,6 @@ STATIC void datalogger_monitor_rtos_usage(void)
     prev_total_runtime = total_runtime;
 }
 
-
 STATIC void datalogger_monitor_heap_usage(void)
 {
     current_free_heap      = xPortGetFreeHeapSize();
@@ -125,7 +126,6 @@ STATIC void datalogger_task(void* pvParameters)
     TickType_t lastWake = xTaskGetTickCount();
     for (;;)
     {
-        datalogger_monitor_rtos_usage();
         datalogger_monitor_heap_usage();
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(DATALOGGER_RATE_MS));
     }
@@ -152,6 +152,8 @@ uint32_t datalogger_get_task_usage(task_cpu_info_t* tasks, uint32_t max_tasks)
         return 0;
     }
 
+    datalogger_refresh_rtos_stats();
+
     uint32_t count = (num_tracked_tasks < max_tasks) ? num_tracked_tasks : max_tasks;
     for (uint32_t i = 0; i < count; i++)
     {
@@ -170,10 +172,14 @@ void datalogger_get_system_stats(system_stats_t* stats, task_cpu_info_t* task_bu
         return;
     }
 
-    stats->current_free_heap      = current_free_heap;
-    stats->minimum_ever_free_heap = minimum_ever_free_heap;
-    stats->total_heap_size        = configTOTAL_HEAP_SIZE;
-    stats->task_info              = task_buffer;
+    /* Fresh heap on poll; minimum_ever is global from heap allocator. */
+    uint32_t live_free               = xPortGetFreeHeapSize();
+    stats->current_free_heap         = live_free;
+    stats->minimum_ever_free_heap    = xPortGetMinimumEverFreeHeapSize();
+    stats->total_heap_size           = configTOTAL_HEAP_SIZE;
+    stats->task_info                 = task_buffer;
+    current_free_heap                = live_free;
+    minimum_ever_free_heap           = stats->minimum_ever_free_heap;
 
     if (task_buffer != NULL && max_tasks > 0)
     {

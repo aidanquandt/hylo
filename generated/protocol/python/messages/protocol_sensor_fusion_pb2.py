@@ -15,7 +15,7 @@ import nanopb_pb2 as nanopb__pb2
 import host_options_pb2 as host__options__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n%messages/protocol_sensor_fusion.proto\x1a\x0cnanopb.proto\x1a\x12host_options.proto\"#\n\x1bSensorFusionGetDebugRequest:\x04\x88\xb5\x18\x01\"8\n\x1bSensorFusionSetDebugRequest\x12\x13\n\x0b\x64\x65\x62ug_flags\x18\x01 \x01(\r:\x04\x88\xb5\x18\x01\"$\n\x1cSensorFusionGetStatusRequest:\x04\x88\xb5\x18\x01\"v\n\x1dSensorFusionGetStatusResponse\x12\x0e\n\x06\x61\x63tive\x18\x01 \x01(\x08\x12\r\n\x05pos_x\x18\x02 \x01(\x02\x12\r\n\x05pos_y\x18\x03 \x01(\x02\x12\r\n\x05pos_z\x18\x04 \x01(\x02\x12\x12\n\nconfidence\x18\x05 \x01(\x02:\x04\x88\xb5\x18\x02\"4\n\x1cSensorFusionSetActiveRequest\x12\x0e\n\x06\x61\x63tive\x18\x01 \x01(\x08:\x04\x88\xb5\x18\x01\"(\n SensorFusionGetImuEnabledRequest:\x04\x88\xb5\x18\x01\">\n!SensorFusionGetImuEnabledResponse\x12\x13\n\x0bimu_enabled\x18\x01 \x01(\x08:\x04\x88\xb5\x18\x02\"=\n SensorFusionSetImuEnabledRequest\x12\x13\n\x0bimu_enabled\x18\x01 \x01(\x08:\x04\x88\xb5\x18\x01\"J\n\x1bSensorFusionSetNoiseRequest\x12\x0b\n\x03pos\x18\x01 \x01(\x02\x12\x0b\n\x03vel\x18\x02 \x01(\x02\x12\x0b\n\x03\x61tt\x18\x03 \x01(\x02:\x04\x88\xb5\x18\x01\"#\n\x1bSensorFusionGetNoiseRequest:\x04\x88\xb5\x18\x01\"K\n\x1cSensorFusionGetNoiseResponse\x12\x0b\n\x03pos\x18\x01 \x01(\x02\x12\x0b\n\x03vel\x18\x02 \x01(\x02\x12\x0b\n\x03\x61tt\x18\x03 \x01(\x02:\x04\x88\xb5\x18\x02\"$\n\x1cSensorFusionGetConfigRequest:\x04\x88\xb5\x18\x01\";\n\x1cSensorFusionSetConfigRequest\x12\x15\n\x06\x63onfig\x18\x01 \x01(\x0c\x42\x05\x92?\x02p :\x04\x88\xb5\x18\x01\x42\x04\xd0\xb5\x18\x0e\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n%messages/protocol_sensor_fusion.proto\x1a\x0cnanopb.proto\x1a\x12host_options.proto\"#\n\x1bSensorFusionGetDebugRequest:\x04\x88\xb5\x18\x01\"8\n\x1bSensorFusionSetDebugRequest\x12\x13\n\x0b\x64\x65\x62ug_flags\x18\x01 \x01(\r:\x04\x88\xb5\x18\x01\"$\n\x1cSensorFusionGetStatusRequest:\x04\x88\xb5\x18\x01\"v\n\x1dSensorFusionGetStatusResponse\x12\x0e\n\x06\x61\x63tive\x18\x01 \x01(\x08\x12\r\n\x05pos_x\x18\x02 \x01(\x02\x12\r\n\x05pos_y\x18\x03 \x01(\x02\x12\r\n\x05pos_z\x18\x04 \x01(\x02\x12\x12\n\nconfidence\x18\x05 \x01(\x02:\x04\x88\xb5\x18\x02\"4\n\x1cSensorFusionSetActiveRequest\x12\x0e\n\x06\x61\x63tive\x18\x01 \x01(\x08:\x04\x88\xb5\x18\x01\"(\n SensorFusionGetImuEnabledRequest:\x04\x88\xb5\x18\x01\">\n!SensorFusionGetImuEnabledResponse\x12\x13\n\x0bimu_enabled\x18\x01 \x01(\x08:\x04\x88\xb5\x18\x02\"=\n SensorFusionSetImuEnabledRequest\x12\x13\n\x0bimu_enabled\x18\x01 \x01(\x08:\x04\x88\xb5\x18\x01\"J\n\x1bSensorFusionSetNoiseRequest\x12\x0b\n\x03pos\x18\x01 \x01(\x02\x12\x0b\n\x03vel\x18\x02 \x01(\x02\x12\x0b\n\x03\x61tt\x18\x03 \x01(\x02:\x04\x88\xb5\x18\x01\"#\n\x1bSensorFusionGetNoiseRequest:\x04\x88\xb5\x18\x01\"K\n\x1cSensorFusionGetNoiseResponse\x12\x0b\n\x03pos\x18\x01 \x01(\x02\x12\x0b\n\x03vel\x18\x02 \x01(\x02\x12\x0b\n\x03\x61tt\x18\x03 \x01(\x02:\x04\x88\xb5\x18\x02\"$\n\x1cSensorFusionGetConfigRequest:\x04\x88\xb5\x18\x01\";\n\x1cSensorFusionSetConfigRequest\x12\x15\n\x06\x63onfig\x18\x01 \x01(\x0c\x42\x05\x92?\x02p :\x04\x88\xb5\x18\x01\"&\n\x1eSensorFusionStreamStartRequest:\x04\x88\xb5\x18\x01\"%\n\x1dSensorFusionStreamStopRequest:\x04\x88\xb5\x18\x01\"r\n\x19SensorFusionStreamPayload\x12\x0e\n\x06\x61\x63tive\x18\x01 \x01(\x08\x12\r\n\x05pos_x\x18\x02 \x01(\x02\x12\r\n\x05pos_y\x18\x03 \x01(\x02\x12\r\n\x05pos_z\x18\x04 \x01(\x02\x12\x12\n\nconfidence\x18\x05 \x01(\x02:\x04\x88\xb5\x18\x04\x42\x04\xd0\xb5\x18\x0e\x62\x06proto3')
 
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'messages.protocol_sensor_fusion_pb2', globals())
@@ -51,6 +51,12 @@ if _descriptor._USE_C_DESCRIPTORS == False:
   _SENSORFUSIONSETCONFIGREQUEST.fields_by_name['config']._serialized_options = b'\222?\002p '
   _SENSORFUSIONSETCONFIGREQUEST._options = None
   _SENSORFUSIONSETCONFIGREQUEST._serialized_options = b'\210\265\030\001'
+  _SENSORFUSIONSTREAMSTARTREQUEST._options = None
+  _SENSORFUSIONSTREAMSTARTREQUEST._serialized_options = b'\210\265\030\001'
+  _SENSORFUSIONSTREAMSTOPREQUEST._options = None
+  _SENSORFUSIONSTREAMSTOPREQUEST._serialized_options = b'\210\265\030\001'
+  _SENSORFUSIONSTREAMPAYLOAD._options = None
+  _SENSORFUSIONSTREAMPAYLOAD._serialized_options = b'\210\265\030\004'
   _SENSORFUSIONGETDEBUGREQUEST._serialized_start=75
   _SENSORFUSIONGETDEBUGREQUEST._serialized_end=110
   _SENSORFUSIONSETDEBUGREQUEST._serialized_start=112
@@ -77,4 +83,10 @@ if _descriptor._USE_C_DESCRIPTORS == False:
   _SENSORFUSIONGETCONFIGREQUEST._serialized_end=777
   _SENSORFUSIONSETCONFIGREQUEST._serialized_start=779
   _SENSORFUSIONSETCONFIGREQUEST._serialized_end=838
+  _SENSORFUSIONSTREAMSTARTREQUEST._serialized_start=840
+  _SENSORFUSIONSTREAMSTARTREQUEST._serialized_end=878
+  _SENSORFUSIONSTREAMSTOPREQUEST._serialized_start=880
+  _SENSORFUSIONSTREAMSTOPREQUEST._serialized_end=917
+  _SENSORFUSIONSTREAMPAYLOAD._serialized_start=919
+  _SENSORFUSIONSTREAMPAYLOAD._serialized_end=1033
 # @@protoc_insertion_point(module_scope)

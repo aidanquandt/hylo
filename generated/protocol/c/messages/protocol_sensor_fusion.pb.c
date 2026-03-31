@@ -45,4 +45,13 @@ PB_BIND(SensorFusionGetConfigRequest, SensorFusionGetConfigRequest, AUTO)
 PB_BIND(SensorFusionSetConfigRequest, SensorFusionSetConfigRequest, AUTO)
 
 
+PB_BIND(SensorFusionStreamStartRequest, SensorFusionStreamStartRequest, AUTO)
+
+
+PB_BIND(SensorFusionStreamStopRequest, SensorFusionStreamStopRequest, AUTO)
+
+
+PB_BIND(SensorFusionStreamPayload, SensorFusionStreamPayload, AUTO)
+
+
 

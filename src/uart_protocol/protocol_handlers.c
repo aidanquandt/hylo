@@ -50,6 +50,17 @@ static void imu_stream_task_fn(void *arg);
 static void imu_stream_send_payload(uint32_t imu_index, float accel_x, float accel_y, float accel_z,
                                     float gyro_x, float gyro_y, float gyro_z, float temp_c);
 
+/* Sensor fusion position stream: 10 Hz (same period as IMU stream task) */
+#define SF_STREAM_TASK_STACK     384
+#define SF_STREAM_TASK_PRIORITY  (tskIDLE_PRIORITY + 1)
+#define SF_STREAM_PERIOD_MS      100
+
+static volatile bool s_sf_stream_running;
+static TaskHandle_t s_sf_stream_task_handle;
+
+static void sf_stream_task_fn(void *arg);
+static void sf_stream_send_payload(void);
+
 /*---------------------------------------------------------------------------
  * Helpers: NodeType <-> uwb_node_type_e (same numeric values)
  *---------------------------------------------------------------------------*/
@@ -254,6 +265,33 @@ void protocol_rx_ImuStreamStopRequest(const ImuStreamStopRequest *msg)
     AckResponse ack = AckResponse_init_zero;
     ack.success = true;
     protocol_tx_AckResponse(&ack);
+}
+
+static void sf_stream_send_payload(void)
+{
+    SensorFusionStreamPayload p = SensorFusionStreamPayload_init_zero;
+    p.active = sensor_fusion_is_active();
+    sensor_fusion_position_t pos;
+    if (sensor_fusion_get_position(&pos))
+    {
+        p.pos_x      = pos.x;
+        p.pos_y      = pos.y;
+        p.pos_z      = pos.z;
+        p.confidence = pos.confidence;
+    }
+    protocol_tx_SensorFusionStreamPayload(&p);
+}
+
+static void sf_stream_task_fn(void *arg)
+{
+    (void)arg;
+    for (;;)
+    {
+        vTaskDelay(pdMS_TO_TICKS(SF_STREAM_PERIOD_MS));
+        if (!s_sf_stream_running)
+            continue;
+        sf_stream_send_payload();
+    }
 }
 
 void protocol_rx_ImuCalibrateRequest(const ImuCalibrateRequest *msg)
@@ -568,28 +606,32 @@ void protocol_rx_TwrMgrGetRangingRateRequest(const TwrMgrGetRangingRateRequest *
  *---------------------------------------------------------------------------*/
 void protocol_rx_StopwatchGetRequest(const StopwatchGetRequest *msg)
 {
-    (void)msg;
     StopwatchGetResponse r = StopwatchGetResponse_init_zero;
-    r.elapsed_ms = stopwatch_elapsed_us(0) / 1000;
-    r.running    = stopwatch_is_running(0);
+    if (msg->stopwatch_num < STOPWATCH_MAX_INSTANCES) {
+        uint8_t id = (uint8_t)msg->stopwatch_num;
+        r.elapsed_us = stopwatch_elapsed_us(id);
+        r.running    = stopwatch_is_running(id);
+    }
     protocol_tx_StopwatchGetResponse(&r);
 }
 
 void protocol_rx_StopwatchStartRequest(const StopwatchStartRequest *msg)
 {
-    (void)msg;
-    stopwatch_start(0);
     AckResponse ack = AckResponse_init_zero;
-    ack.success = true;
+    if (msg->stopwatch_num < STOPWATCH_MAX_INSTANCES) {
+        stopwatch_start((uint8_t)msg->stopwatch_num);
+        ack.success = true;
+    }
     protocol_tx_AckResponse(&ack);
 }
 
 void protocol_rx_StopwatchStopRequest(const StopwatchStopRequest *msg)
 {
-    (void)msg;
-    stopwatch_stop(0);
     AckResponse ack = AckResponse_init_zero;
-    ack.success = true;
+    if (msg->stopwatch_num < STOPWATCH_MAX_INSTANCES) {
+        stopwatch_stop((uint8_t)msg->stopwatch_num);
+        ack.success = true;
+    }
     protocol_tx_AckResponse(&ack);
 }
 
@@ -700,6 +742,30 @@ void protocol_rx_SensorFusionSetActiveRequest(const SensorFusionSetActiveRequest
         sensor_fusion_start();
     else
         sensor_fusion_stop();
+    AckResponse ack = AckResponse_init_zero;
+    ack.success = true;
+    protocol_tx_AckResponse(&ack);
+}
+
+void protocol_rx_SensorFusionStreamStartRequest(const SensorFusionStreamStartRequest *msg)
+{
+    (void)msg;
+    s_sf_stream_running = true;
+    if (s_sf_stream_task_handle == NULL)
+    {
+        BaseType_t ok = xTaskCreate(sf_stream_task_fn, "sf_str", SF_STREAM_TASK_STACK, NULL,
+                                    SF_STREAM_TASK_PRIORITY, &s_sf_stream_task_handle);
+        (void)ok;
+    }
+    AckResponse ack = AckResponse_init_zero;
+    ack.success = true;
+    protocol_tx_AckResponse(&ack);
+}
+
+void protocol_rx_SensorFusionStreamStopRequest(const SensorFusionStreamStopRequest *msg)
+{
+    (void)msg;
+    s_sf_stream_running = false;
     AckResponse ack = AckResponse_init_zero;
     ack.success = true;
     protocol_tx_AckResponse(&ack);

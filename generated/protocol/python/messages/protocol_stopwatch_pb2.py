@@ -14,7 +14,7 @@ _sym_db = _symbol_database.Default()
 import host_options_pb2 as host__options__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n!messages/protocol_stopwatch.proto\x1a\x12host_options.proto\"\x1b\n\x13StopwatchGetRequest:\x04\x88\xb5\x18\x01\"A\n\x14StopwatchGetResponse\x12\x12\n\nelapsed_ms\x18\x01 \x01(\r\x12\x0f\n\x07running\x18\x02 \x01(\x08:\x04\x88\xb5\x18\x02\"\x1d\n\x15StopwatchStartRequest:\x04\x88\xb5\x18\x01\"\x1c\n\x14StopwatchStopRequest:\x04\x88\xb5\x18\x01\x42\x04\xd0\xb5\x18\x0c\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n!messages/protocol_stopwatch.proto\x1a\x12host_options.proto\"2\n\x13StopwatchGetRequest\x12\x15\n\rstopwatch_num\x18\x01 \x01(\r:\x04\x88\xb5\x18\x01\"A\n\x14StopwatchGetResponse\x12\x12\n\nelapsed_us\x18\x01 \x01(\r\x12\x0f\n\x07running\x18\x02 \x01(\x08:\x04\x88\xb5\x18\x02\"4\n\x15StopwatchStartRequest\x12\x15\n\rstopwatch_num\x18\x01 \x01(\r:\x04\x88\xb5\x18\x01\"3\n\x14StopwatchStopRequest\x12\x15\n\rstopwatch_num\x18\x01 \x01(\r:\x04\x88\xb5\x18\x01\x42\x04\xd0\xb5\x18\x0c\x62\x06proto3')
 
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'messages.protocol_stopwatch_pb2', globals())
@@ -31,11 +31,11 @@ if _descriptor._USE_C_DESCRIPTORS == False:
   _STOPWATCHSTOPREQUEST._options = None
   _STOPWATCHSTOPREQUEST._serialized_options = b'\210\265\030\001'
   _STOPWATCHGETREQUEST._serialized_start=57
-  _STOPWATCHGETREQUEST._serialized_end=84
-  _STOPWATCHGETRESPONSE._serialized_start=86
-  _STOPWATCHGETRESPONSE._serialized_end=151
-  _STOPWATCHSTARTREQUEST._serialized_start=153
-  _STOPWATCHSTARTREQUEST._serialized_end=182
-  _STOPWATCHSTOPREQUEST._serialized_start=184
-  _STOPWATCHSTOPREQUEST._serialized_end=212
+  _STOPWATCHGETREQUEST._serialized_end=107
+  _STOPWATCHGETRESPONSE._serialized_start=109
+  _STOPWATCHGETRESPONSE._serialized_end=174
+  _STOPWATCHSTARTREQUEST._serialized_start=176
+  _STOPWATCHSTARTREQUEST._serialized_end=228
+  _STOPWATCHSTOPREQUEST._serialized_start=230
+  _STOPWATCHSTOPREQUEST._serialized_end=281
 # @@protoc_insertion_point(module_scope)

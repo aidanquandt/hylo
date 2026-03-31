@@ -41,6 +41,12 @@ STATIC bool validate_odr(imu_odr_t odr);
  *---------------------------------------------------------------------------*/
 STATIC struct imu_dev_s imu_devices[IMU_MAX_DEVICES];
 
+/* Full-duplex SPI staging in DMA-accessible RAM; only one IMU transaction uses the SPI bus at a time. */
+__attribute__((section(".dma_buffer"))) __attribute__((aligned(32)))
+STATIC uint8_t imu_spi_txstaging[IMU_DRIVER_SPI_BUF_LEN];
+__attribute__((section(".dma_buffer"))) __attribute__((aligned(32)))
+STATIC uint8_t imu_spi_rxstaging[IMU_DRIVER_SPI_BUF_LEN];
+
 /*---------------------------------------------------------------------------
  * Public Function Implementations
  *---------------------------------------------------------------------------*/
@@ -425,13 +431,11 @@ STATIC int8_t imu_spi_read(uint8_t reg_addr, uint8_t* reg_data, uint32_t len, vo
         return BMI3_E_COM_FAIL;
     }
 
-    uint8_t tx_buf[IMU_DRIVER_SPI_BUF_LEN];
-    uint8_t rx_buf[IMU_DRIVER_SPI_BUF_LEN];
+    memset(imu_spi_txstaging, 0, IMU_DRIVER_SPI_BUF_LEN);
+    imu_spi_txstaging[0] = reg_addr;
 
-    memset(tx_buf, 0, IMU_DRIVER_SPI_BUF_LEN);
-    tx_buf[0] = reg_addr;
-
-    if (spi_driver_transfer_in_session(iface, tx_buf, rx_buf, len + 1) != SPI_DRIVER_SUCCESS)
+    if (spi_driver_transfer_in_session(iface, imu_spi_txstaging, imu_spi_rxstaging, len + 1)
+        != SPI_DRIVER_SUCCESS)
     {
         spi_driver_release(iface);
         return BMI3_E_COM_FAIL;
@@ -439,7 +443,7 @@ STATIC int8_t imu_spi_read(uint8_t reg_addr, uint8_t* reg_data, uint32_t len, vo
 
     for (uint32_t i = 0; i < len; i++)
     {
-        reg_data[i] = rx_buf[i + 1];
+        reg_data[i] = imu_spi_rxstaging[i + 1];
     }
 
     spi_driver_release(iface);

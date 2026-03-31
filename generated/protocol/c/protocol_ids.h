@@ -175,7 +175,10 @@ typedef enum {
   MSG_ID_AppFailedToInitDeviceIdEvent = 168,
   MSG_ID_WatchdogTaskFailureEvent = 169,
   MSG_ID_SystemFatalEvent = 170,
-  MSG_ID_COUNT = 171
+  MSG_ID_SensorFusionStreamStartRequest = 171,
+  MSG_ID_SensorFusionStreamStopRequest = 172,
+  MSG_ID_SensorFusionStreamPayload = 173,
+  MSG_ID_COUNT = 174
 } protocol_msg_id_t;
 
 #endif /* PROTOCOL_IDS_H */
