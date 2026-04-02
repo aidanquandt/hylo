@@ -175,5 +175,7 @@ void protocol_tx_AppUsingDefaultAddressEvent(const AppUsingDefaultAddressEvent *
 void protocol_tx_AppFailedToInitDeviceIdEvent(const AppFailedToInitDeviceIdEvent *msg);
 void protocol_tx_WatchdogTaskFailureEvent(const WatchdogTaskFailureEvent *msg);
 void protocol_tx_SystemFatalEvent(const SystemFatalEvent *msg);
+void protocol_tx_DataloggerGetIdleCpuRequest(const DataloggerGetIdleCpuRequest *msg);
+void protocol_tx_DataloggerGetIdleCpuResponse(const DataloggerGetIdleCpuResponse *msg);
 
 #endif /* PROTOCOL_TX_H */

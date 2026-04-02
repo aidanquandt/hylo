@@ -432,11 +432,20 @@ void protocol_rx_DataloggerGetStatsRequest(const DataloggerGetStatsRequest *msg)
 {
     (void)msg;
     system_stats_t st;
-    datalogger_get_system_stats(&st, NULL, 0);
+    task_cpu_info_t buf[16];
+    datalogger_get_system_stats(&st, buf, 16);
     DataloggerGetStatsResponse r = DataloggerGetStatsResponse_init_zero;
     r.task_count = st.num_tasks;
     r.free_heap  = st.current_free_heap;
     protocol_tx_DataloggerGetStatsResponse(&r);
+}
+
+void protocol_rx_DataloggerGetIdleCpuRequest(const DataloggerGetIdleCpuRequest *msg)
+{
+    (void)msg;
+    DataloggerGetIdleCpuResponse r = DataloggerGetIdleCpuResponse_init_zero;
+    r.idle_cpu_percent = datalogger_sample_idle_cpu_percent();
+    protocol_tx_DataloggerGetIdleCpuResponse(&r);
 }
 
 /*---------------------------------------------------------------------------

@@ -18,6 +18,12 @@ PB_BIND(DataloggerGetStatsRequest, DataloggerGetStatsRequest, AUTO)
 PB_BIND(DataloggerGetStatsResponse, DataloggerGetStatsResponse, AUTO)
 
 
+PB_BIND(DataloggerGetIdleCpuRequest, DataloggerGetIdleCpuRequest, AUTO)
+
+
+PB_BIND(DataloggerGetIdleCpuResponse, DataloggerGetIdleCpuResponse, AUTO)
+
+
 PB_BIND(DataloggerTimingMissesEvent, DataloggerTimingMissesEvent, AUTO)
 
 

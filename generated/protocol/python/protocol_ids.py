@@ -171,7 +171,9 @@ MSG_ID_AppUsingDefaultAddressEvent = 167
 MSG_ID_AppFailedToInitDeviceIdEvent = 168
 MSG_ID_WatchdogTaskFailureEvent = 169
 MSG_ID_SystemFatalEvent = 170
-MSG_ID_COUNT = 171
+MSG_ID_DataloggerGetIdleCpuRequest = 171
+MSG_ID_DataloggerGetIdleCpuResponse = 172
+MSG_ID_COUNT = 173
 
 # Name list for dispatch (sorted by wire id)
 MSG_NAMES = (
@@ -346,4 +348,6 @@ MSG_NAMES = (
     "AppFailedToInitDeviceIdEvent",
     "WatchdogTaskFailureEvent",
     "SystemFatalEvent",
+    "DataloggerGetIdleCpuRequest",
+    "DataloggerGetIdleCpuResponse",
 )

@@ -29,6 +29,15 @@ typedef struct _DataloggerGetStatsResponse {
     uint32_t free_heap;
 } DataloggerGetStatsResponse;
 
+typedef struct _DataloggerGetIdleCpuRequest {
+    char dummy_field;
+} DataloggerGetIdleCpuRequest;
+
+typedef struct _DataloggerGetIdleCpuResponse {
+    /* Percent of CPU time spent in the idle task over the interval since the last sample (0–100). */
+    float idle_cpu_percent;
+} DataloggerGetIdleCpuResponse;
+
 typedef struct _DataloggerTimingMissesEvent {
     char task_name[25];
     uint32_t miss_count;
@@ -50,12 +59,16 @@ extern "C" {
 #define DataloggerGetTasksResponse_init_default  {0, {"", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""}}
 #define DataloggerGetStatsRequest_init_default   {0}
 #define DataloggerGetStatsResponse_init_default  {0, 0}
+#define DataloggerGetIdleCpuRequest_init_default {0}
+#define DataloggerGetIdleCpuResponse_init_default {0}
 #define DataloggerTimingMissesEvent_init_default {"", 0, 0, 0}
 #define DataloggerLowMemoryEvent_init_default    {0}
 #define DataloggerGetTasksRequest_init_zero      {0}
 #define DataloggerGetTasksResponse_init_zero     {0, {"", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""}}
 #define DataloggerGetStatsRequest_init_zero      {0}
 #define DataloggerGetStatsResponse_init_zero     {0, 0}
+#define DataloggerGetIdleCpuRequest_init_zero    {0}
+#define DataloggerGetIdleCpuResponse_init_zero   {0}
 #define DataloggerTimingMissesEvent_init_zero    {"", 0, 0, 0}
 #define DataloggerLowMemoryEvent_init_zero       {0}
 
@@ -63,6 +76,7 @@ extern "C" {
 #define DataloggerGetTasksResponse_task_names_tag 1
 #define DataloggerGetStatsResponse_task_count_tag 1
 #define DataloggerGetStatsResponse_free_heap_tag 2
+#define DataloggerGetIdleCpuResponse_idle_cpu_percent_tag 1
 #define DataloggerTimingMissesEvent_task_name_tag 1
 #define DataloggerTimingMissesEvent_miss_count_tag 2
 #define DataloggerTimingMissesEvent_deadline_ms_tag 3
@@ -91,6 +105,16 @@ X(a, STATIC,   SINGULAR, UINT32,   free_heap,         2)
 #define DataloggerGetStatsResponse_CALLBACK NULL
 #define DataloggerGetStatsResponse_DEFAULT NULL
 
+#define DataloggerGetIdleCpuRequest_FIELDLIST(X, a) \
+
+#define DataloggerGetIdleCpuRequest_CALLBACK NULL
+#define DataloggerGetIdleCpuRequest_DEFAULT NULL
+
+#define DataloggerGetIdleCpuResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, FLOAT,    idle_cpu_percent,   1)
+#define DataloggerGetIdleCpuResponse_CALLBACK NULL
+#define DataloggerGetIdleCpuResponse_DEFAULT NULL
+
 #define DataloggerTimingMissesEvent_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, STRING,   task_name,         1) \
 X(a, STATIC,   SINGULAR, UINT32,   miss_count,        2) \
@@ -108,6 +132,8 @@ extern const pb_msgdesc_t DataloggerGetTasksRequest_msg;
 extern const pb_msgdesc_t DataloggerGetTasksResponse_msg;
 extern const pb_msgdesc_t DataloggerGetStatsRequest_msg;
 extern const pb_msgdesc_t DataloggerGetStatsResponse_msg;
+extern const pb_msgdesc_t DataloggerGetIdleCpuRequest_msg;
+extern const pb_msgdesc_t DataloggerGetIdleCpuResponse_msg;
 extern const pb_msgdesc_t DataloggerTimingMissesEvent_msg;
 extern const pb_msgdesc_t DataloggerLowMemoryEvent_msg;
 
@@ -116,10 +142,14 @@ extern const pb_msgdesc_t DataloggerLowMemoryEvent_msg;
 #define DataloggerGetTasksResponse_fields &DataloggerGetTasksResponse_msg
 #define DataloggerGetStatsRequest_fields &DataloggerGetStatsRequest_msg
 #define DataloggerGetStatsResponse_fields &DataloggerGetStatsResponse_msg
+#define DataloggerGetIdleCpuRequest_fields &DataloggerGetIdleCpuRequest_msg
+#define DataloggerGetIdleCpuResponse_fields &DataloggerGetIdleCpuResponse_msg
 #define DataloggerTimingMissesEvent_fields &DataloggerTimingMissesEvent_msg
 #define DataloggerLowMemoryEvent_fields &DataloggerLowMemoryEvent_msg
 
 /* Maximum encoded size of messages (where known) */
+#define DataloggerGetIdleCpuRequest_size         0
+#define DataloggerGetIdleCpuResponse_size        5
 #define DataloggerGetStatsRequest_size           0
 #define DataloggerGetStatsResponse_size          12
 #define DataloggerGetTasksRequest_size           0

@@ -179,4 +179,6 @@ enum WireMessageId {
   AppFailedToInitDeviceIdEvent = 168;
   WatchdogTaskFailureEvent = 169;
   SystemFatalEvent = 170;
+  DataloggerGetIdleCpuRequest = 171;
+  DataloggerGetIdleCpuResponse = 172;
 }

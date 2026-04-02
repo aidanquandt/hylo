@@ -20,13 +20,19 @@
  *---------------------------------------------------------------------------*/
 
 /* Task priorities: highest number first (ties: alphabetical by macro name). */
+
+#define TASK_PRIORITY_UART_RX           10 // Console RX: stream drain, framing, protocol dispatch
+#define TASK_PRIORITY_UART_TX           10 // UART TX DMA drain; outbound protocol / telemetry
+#define TASK_PRIORITY_WIFI              10 // WiFi state machine (10 Hz)
+
+
 #define TASK_PRIORITY_UWB_IRQ           8 // GPIO IRQ -> dwt_isr() (highest UWB)
 #define TASK_PRIORITY_UWB_TX            7 // TX queue worker
 #define TASK_PRIORITY_UWB_RX            6 // RX queue worker
 #define TASK_PRIORITY_IMU_PERIODIC      5 // 1kHz sensor sampling
-#define TASK_PRIORITY_UART_RX           4 // Console RX: stream drain, framing, protocol dispatch
-#define TASK_PRIORITY_UART_TX           4 // UART TX DMA drain; outbound protocol / telemetry
-#define TASK_PRIORITY_WIFI              4 // WiFi state machine (10 Hz)
+// #define TASK_PRIORITY_UART_RX           4 // Console RX: stream drain, framing, protocol dispatch
+// #define TASK_PRIORITY_UART_TX           4 // UART TX DMA drain; outbound protocol / telemetry
+// #define TASK_PRIORITY_WIFI              4 // WiFi state machine (10 Hz)
 #define TASK_PRIORITY_UWB_STATE_MACHINE 3 // UWB chip state machine (100 Hz)
 #define TASK_PRIORITY_SDCARD            2 // SD card logging
 #define TASK_PRIORITY_SENSOR_FUSION     2 // Kalman filter updates

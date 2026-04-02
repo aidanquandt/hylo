@@ -176,6 +176,8 @@ __attribute__((weak)) void protocol_rx_AppUsingDefaultAddressEvent(const AppUsin
 __attribute__((weak)) void protocol_rx_AppFailedToInitDeviceIdEvent(const AppFailedToInitDeviceIdEvent *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_WatchdogTaskFailureEvent(const WatchdogTaskFailureEvent *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_SystemFatalEvent(const SystemFatalEvent *msg) { (void)msg; }
+__attribute__((weak)) void protocol_rx_DataloggerGetIdleCpuRequest(const DataloggerGetIdleCpuRequest *msg) { (void)msg; }
+__attribute__((weak)) void protocol_rx_DataloggerGetIdleCpuResponse(const DataloggerGetIdleCpuResponse *msg) { (void)msg; }
 
 void protocol_dispatch(uint16_t msg_id, const uint8_t *payload, size_t len)
 {
@@ -1205,6 +1207,18 @@ void protocol_dispatch(uint16_t msg_id, const uint8_t *payload, size_t len)
       SystemFatalEvent decoded = SystemFatalEvent_init_zero;
       if (pb_decode(&stream, SystemFatalEvent_fields, &decoded))
         protocol_rx_SystemFatalEvent(&decoded);
+      break;
+    }
+    case MSG_ID_DataloggerGetIdleCpuRequest: {
+      DataloggerGetIdleCpuRequest decoded = DataloggerGetIdleCpuRequest_init_zero;
+      if (pb_decode(&stream, DataloggerGetIdleCpuRequest_fields, &decoded))
+        protocol_rx_DataloggerGetIdleCpuRequest(&decoded);
+      break;
+    }
+    case MSG_ID_DataloggerGetIdleCpuResponse: {
+      DataloggerGetIdleCpuResponse decoded = DataloggerGetIdleCpuResponse_init_zero;
+      if (pb_decode(&stream, DataloggerGetIdleCpuResponse_fields, &decoded))
+        protocol_rx_DataloggerGetIdleCpuResponse(&decoded);
       break;
     }
     default:
