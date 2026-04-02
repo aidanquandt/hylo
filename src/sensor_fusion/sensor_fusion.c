@@ -4,7 +4,6 @@
 #include "sensor_fusion.h"
 #include "FreeRTOS.h"
 #include "common.h"
-#include "counter.h"
 #include "feature_config.h"
 #include "system_halt.h"
 #include "kalman_core.h"
@@ -367,28 +366,24 @@ STATIC void sdcard_log_ranging(const sensor_ranging_data_t* ranging, uint32_t ti
 }
 
 /**
- * @brief Log IMU event to SD card (decimated - every 20th sample = ~10Hz at 200Hz input)
+ * @brief Log every IMU event to SD card
  */
 STATIC void sdcard_log_imu(const sensor_event_t* event)
 {
-    static uint8_t imu_sd_counter = 0;
-    if (counter_uint8_t(&imu_sd_counter, 5)) // log every 5th sample to get ~40Hz (200Hz / 5) - adjust as needed for desired logging rate
-    {
-        sdcard_driver_event_t entry = {
-            .type         = SDCARD_DRIVER_EVENT_IMU,
-            .timestamp_ms = event->timestamp_ms,
-            .data.imu = {
-                .accel_x = event->data.imu.accel_x,
-                .accel_y = event->data.imu.accel_y,
-                .accel_z = event->data.imu.accel_z,
-                .gyro_x = event->data.imu.gyro_x,
-                .gyro_y = event->data.imu.gyro_y,
-                .gyro_z = event->data.imu.gyro_z,
-                .temp_c = event->data.imu.temp_c,
-            },
-        };
-        (void)sdcard_driver_push_event(&entry);
-    }
+    sdcard_driver_event_t entry = {
+        .type         = SDCARD_DRIVER_EVENT_IMU,
+        .timestamp_ms = event->timestamp_ms,
+        .data.imu = {
+            .accel_x = event->data.imu.accel_x,
+            .accel_y = event->data.imu.accel_y,
+            .accel_z = event->data.imu.accel_z,
+            .gyro_x = event->data.imu.gyro_x,
+            .gyro_y = event->data.imu.gyro_y,
+            .gyro_z = event->data.imu.gyro_z,
+            .temp_c = event->data.imu.temp_c,
+        },
+    };
+    (void)sdcard_driver_push_event(&entry);
 }
 
 /**
