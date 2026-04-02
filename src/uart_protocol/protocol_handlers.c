@@ -261,6 +261,7 @@ void protocol_rx_ImuCalibrateRequest(const ImuCalibrateRequest *msg)
     ImuCalibrateResponse r = ImuCalibrateResponse_init_zero;
     r.imu_index = msg->imu_index;
 
+#if IMU_NUM_DEVICES > 0
     if (msg->imu_index < (uint32_t)IMU_NUM_DEVICES)
     {
         r.started = imu_calibrate_start(msg->imu_index);
@@ -277,6 +278,9 @@ void protocol_rx_ImuCalibrateRequest(const ImuCalibrateRequest *msg)
             }
         }
     }
+#else
+    r.started = false;
+#endif
     protocol_tx_ImuCalibrateResponse(&r);
 }
 
@@ -429,8 +433,7 @@ void protocol_rx_DataloggerGetStatsRequest(const DataloggerGetStatsRequest *msg)
 {
     (void)msg;
     system_stats_t st;
-    task_cpu_info_t buf[16];
-    datalogger_get_system_stats(&st, buf, 16);
+    datalogger_get_system_stats(&st, NULL, 0);
     DataloggerGetStatsResponse r = DataloggerGetStatsResponse_init_zero;
     r.task_count = st.num_tasks;
     r.free_heap  = st.current_free_heap;
