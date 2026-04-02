@@ -14,9 +14,9 @@ ensure-protocol-codegen:
 	@if [ ! -f generated/protocol/c/messages/protocol_common.pb.c ] || [ ! -f generated/protocol/c/host_options.pb.c ]; then \
 		echo "Protocol codegen missing or out of date, regenerating..."; \
 		$(MAKE) protocol-codegen; \
-	elif find protocol -name '*.proto' -newer generated/protocol/c/messages/protocol_common.pb.c | grep -q .; then \
-		echo "Protocol .proto newer than generated C, regenerating..."; \
-		$(MAKE) protocol-codegen; \
+	else \
+		$(PYTHON) -c "import glob, os, sys; protos = glob.glob('protocol/*.proto') + glob.glob('protocol/messages/*.proto'); outs = ['generated/protocol/c/messages/protocol_common.pb.c', 'generated/protocol/c/host_options.pb.c']; sys.exit(0 if (not protos or min(os.path.getmtime(o) for o in outs) >= max(os.path.getmtime(p) for p in protos)) else 1)" \
+		|| { echo "Protocol .proto newer than generated C, regenerating..."; $(MAKE) protocol-codegen; }; \
 	fi
 
 all build debug: ensure-protocol-codegen

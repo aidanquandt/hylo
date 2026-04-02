@@ -117,7 +117,12 @@ class ProtobufCodec:
         }
 
     def to_fusion_payload(self, pf: ParsedFrame) -> Optional[dict[str, Any]]:
-        if pf.name != "SensorFusionGetStatusResponse" or pf.message is None:
+        if pf.message is None:
+            return None
+        if pf.name not in (
+            "SensorFusionGetStatusResponse",
+            "SensorFusionStreamPayload",
+        ):
             return None
         m = pf.message
         return {
@@ -126,6 +131,7 @@ class ProtobufCodec:
             "x": m.pos_x,
             "y": m.pos_y,
             "z": m.pos_z,
+            "yaw": getattr(m, "yaw_rad", 0.0),
         }
 
 codec = ProtobufCodec()

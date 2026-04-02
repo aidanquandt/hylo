@@ -25,8 +25,6 @@
  *---------------------------------------------------------------------------*/
 #define STARTUP_DELAY_MS            (4000U)  // ESP8266 boot time
 #define AT_COMMAND_TIMEOUT_MS       (2000U)  // AT command response timeout
-#define WIFI_TASK_STACK_SIZE        (1024U)
-#define WIFI_TASK_PRIORITY          (2U)
 #define WIFI_TASK_PERIOD_MS         (100U)
 
 STATIC inline StreamBufferHandle_t wifi_rx_stream(void)
@@ -100,7 +98,7 @@ STATIC void wifi_check_response(const char *expected_token, uint32_t timeout_ms)
 #if FEATURE_WIFI_MODULE
 STATIC void wifi_task(void* argument);
 STATIC StaticTask_t wifi_task_tcb;
-STATIC StackType_t wifi_task_stack[WIFI_TASK_STACK_SIZE];
+STATIC StackType_t wifi_task_stack[TASK_STACK_4KB];
 #endif
 
 /*---------------------------------------------------------------------------
@@ -162,9 +160,9 @@ void wifi_init(void)
     (void)xTaskCreateStatic(
         wifi_task,
         "WIFI",
-        WIFI_TASK_STACK_SIZE,
+        TASK_STACK_4KB,
         NULL,
-        WIFI_TASK_PRIORITY,
+        TASK_PRIORITY_WIFI,
         wifi_task_stack,
         &wifi_task_tcb);
 }

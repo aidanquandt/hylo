@@ -96,8 +96,8 @@ def main():
         "HostUiModule",
         "HostMessageType",
         "host_ui_module",
-        "default_host_ui_module",
         "host_message_type",
+        "host_options.proto",
     ):
         sys.exit(1)
 

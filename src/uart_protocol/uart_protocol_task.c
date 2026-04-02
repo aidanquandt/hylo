@@ -4,15 +4,14 @@
  */
 #include "uart_framing.h"
 #include "uart_driver.h"
+#include "task_config.h"
 #include "FreeRTOS.h"
 #include "stream_buffer.h"
 #include "task.h"
 #include <stddef.h>
 #include <string.h>
 
-#define RX_CHUNK_SIZE  64
-#define TASK_STACK     1024 /* 4KB: deep tx chain (protocol_send_frame=245B + uart_driver_transmit=130B + protocol_dispatch 170+ cases) */
-#define TASK_PRIORITY  (tskIDLE_PRIORITY + 1)
+#define RX_CHUNK_SIZE 64
 
 static void uart_protocol_task_fn(void *arg)
 {
@@ -32,5 +31,5 @@ void uart_protocol_task_start(void)
 {
     StreamBufferHandle_t stream = uart_driver_get_rx_stream(UART_CONSOLE);
     if (stream != NULL)
-        xTaskCreate(uart_protocol_task_fn, "uart_proto", TASK_STACK, NULL, TASK_PRIORITY, NULL);
+        xTaskCreate(uart_protocol_task_fn, "uart_proto", TASK_STACK_4KB, NULL, TASK_PRIORITY_UART_RX, NULL);
 }
