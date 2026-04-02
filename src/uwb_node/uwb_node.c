@@ -2,14 +2,9 @@
  * Includes
  *---------------------------------------------------------------------------*/
 #include "uwb_node.h"
-#include "FreeRTOS.h"
-#include "task.h"
 #include "common.h"
-#include "system_halt.h"
-#include "task_config.h"
 #include "protocol_tx.h"
 #include "protocol.pb.h"
-#include "uwb.h"
 #include <string.h>
 
 /*---------------------------------------------------------------------------
@@ -22,30 +17,9 @@ STATIC uwb_node_config_t uwb_node_config = {
     .position_z     = 0.0f,
     .position_known = false,
     .capabilities   = {.supports_twr = true, .supports_tdoa = false},
-    .uptime_seconds = 0,
     .configured     = false};
 
 STATIC bool module_initialized = false;
-
-/*---------------------------------------------------------------------------
- * Private Function Prototypes
- *---------------------------------------------------------------------------*/
-STATIC void uwb_node_process_1Hz(void);
-STATIC void uwb_node_1Hz_task(void* pvParameters);
-
-/*---------------------------------------------------------------------------
- * Private Function Implementations
- *---------------------------------------------------------------------------*/
-STATIC void uwb_node_1Hz_task(void* pvParameters)
-{
-    (void)pvParameters;
-    TickType_t lastWake = xTaskGetTickCount();
-    for (;;)
-    {
-        uwb_node_process_1Hz();
-        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(1000));
-    }
-}
 
 void uwb_node_init(void)
 {
@@ -56,21 +30,6 @@ void uwb_node_init(void)
 
     uwb_node_config.configured = true;
     module_initialized         = true;
-
-    BaseType_t result = xTaskCreate(uwb_node_1Hz_task, "uwb_node_1hz", TASK_STACK_2KB,
-                                    NULL, TASK_PRIORITY_UWB_NODE, NULL);
-    if (result != pdPASS)
-    {
-        system_halt("uwb_node", "Failed to create 1Hz task");
-    }
-}
-
-STATIC void uwb_node_process_1Hz(void)
-{
-    if (module_initialized)
-    {
-        uwb_node_config.uptime_seconds++;
-    }
 }
 
 /*---------------------------------------------------------------------------

@@ -34,8 +34,6 @@ typedef struct
     // Capabilities
     uwb_node_capabilities_t capabilities;
 
-    // Statistics
-    uint32_t uptime_seconds;
     bool configured;
 } uwb_node_config_t;
 
