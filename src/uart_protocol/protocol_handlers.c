@@ -27,6 +27,7 @@
 #include "uart_driver.h"
 #include "wifi.h"
 #include "FreeRTOS.h"
+#include "task_config.h"
 #include "task.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -38,9 +39,7 @@
 static uint32_t s_ping_seq;
 
 /* IMU stream: 10 Hz task sends ImuStreamPayload; mode 0 = array (per-IMU), 1 = avg */
-#define IMU_STREAM_TASK_STACK  512 /* 2KB: calls protocol_send_frame (245B) + uart_driver_transmit (130B) */
-#define IMU_STREAM_TASK_PRIORITY (tskIDLE_PRIORITY + 1)
-#define IMU_STREAM_PERIOD_MS    100
+#define IMU_STREAM_PERIOD_MS 100
 
 static volatile bool s_imu_stream_running;
 static volatile uint32_t s_imu_stream_mode; /* 0 = array, 1 = avg */
@@ -238,8 +237,8 @@ void protocol_rx_ImuStreamStartRequest(const ImuStreamStartRequest *msg)
     s_imu_stream_running = true;
     if (s_imu_stream_task_handle == NULL)
     {
-        BaseType_t ok = xTaskCreate(imu_stream_task_fn, "imu_str", IMU_STREAM_TASK_STACK, NULL,
-                                    IMU_STREAM_TASK_PRIORITY, &s_imu_stream_task_handle);
+        BaseType_t ok = xTaskCreate(imu_stream_task_fn, "imu_str", TASK_STACK_2KB, NULL,
+                                    TASK_PRIORITY_UART_TX, &s_imu_stream_task_handle);
         (void)ok;
     }
     AckResponse ack = AckResponse_init_zero;

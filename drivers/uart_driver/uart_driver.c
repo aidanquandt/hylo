@@ -1,6 +1,7 @@
 #include "uart_driver.h"
 #include "FreeRTOS.h"
 #include "main.h"
+#include "task_config.h"
 #include "queue.h"
 #include "semphr.h"
 #include "stream_buffer.h"
@@ -184,7 +185,7 @@ void uart_driver_init(void)
         configASSERT(uart_hal_receive_dma(id));
 
         xTaskCreate(uart_driver_drain_task, id == UART_CONSOLE ? "UART_tx_console" : "UART_tx_wifi",
-                    256, (void *)(uintptr_t)id, tskIDLE_PRIORITY + 2, NULL);
+                    TASK_STACK_1KB, (void *)(uintptr_t)id, TASK_PRIORITY_UART_TX, NULL);
     }
 }
 

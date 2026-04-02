@@ -22,8 +22,6 @@
 #define RANGING_DEFAULT_STDDEV_M 0.2f
 #define MAX_VALID_POSITION_M 1000.0f
 #define CONFIDENCE_RAMP_UPDATES 100
-#define SENSOR_FUSION_TASK_PRIORITY (tskIDLE_PRIORITY + 2)
-#define SENSOR_FUSION_STACK_SIZE 2048
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -156,8 +154,8 @@ void sensor_fusion_init(void)
     update_count       = 0;
     fusion_initialized = true;
 
-    BaseType_t result = xTaskCreate(sensor_fusion_task, "sensor_fusion", SENSOR_FUSION_STACK_SIZE,
-                                    NULL, SENSOR_FUSION_TASK_PRIORITY, &sensor_fusion_task_handle);
+    BaseType_t result = xTaskCreate(sensor_fusion_task, "sensor_fusion", TASK_STACK_8KB,
+                                    NULL, TASK_PRIORITY_SENSOR_FUSION, &sensor_fusion_task_handle);
 
     if (result != pdPASS)
     {

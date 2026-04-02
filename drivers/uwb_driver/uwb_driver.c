@@ -74,9 +74,6 @@ STATIC uint32_t uwb_driver_read_status_register_high(void);
 #define UWB_DRIVER_RX_QUEUE_LENGTH (20U)
 #define UWB_DRIVER_TX_QUEUE_LENGTH (16U)
 #define UWB_DRIVER_TX_TIMEOUT_MS (3U)
-#define UWB_DRIVER_IRQ_TASK_STACK_SIZE (1024U)
-#define UWB_DRIVER_RX_TASK_STACK_SIZE (768U)
-#define UWB_DRIVER_TX_TASK_STACK_SIZE (512U)
 
 typedef struct
 {
@@ -643,11 +640,11 @@ void uwb_driver_register_isr_callbacks(uwb_dev_t* dev)
     {
         rx_queue = xQueueCreate(UWB_DRIVER_RX_QUEUE_LENGTH, sizeof(uwb_driver_rx_event_t));
         tx_queue = xQueueCreate(UWB_DRIVER_TX_QUEUE_LENGTH, sizeof(uwb_driver_tx_item_t));
-        (void)xTaskCreate(uwb_driver_irq_task, "uwb_irq", UWB_DRIVER_IRQ_TASK_STACK_SIZE, NULL,
+        (void)xTaskCreate(uwb_driver_irq_task, "uwb_irq", TASK_STACK_4KB, NULL,
                           TASK_PRIORITY_UWB_IRQ, &irq_task_handle);
-        (void)xTaskCreate(uwb_driver_rx_task, "uwb_rx", UWB_DRIVER_RX_TASK_STACK_SIZE, NULL,
+        (void)xTaskCreate(uwb_driver_rx_task, "uwb_rx", TASK_STACK_3KB, NULL,
                           TASK_PRIORITY_UWB_RX, NULL);
-        (void)xTaskCreate(uwb_driver_tx_task, "uwb_tx", UWB_DRIVER_TX_TASK_STACK_SIZE, NULL,
+        (void)xTaskCreate(uwb_driver_tx_task, "uwb_tx", TASK_STACK_2KB, NULL,
                           TASK_PRIORITY_UWB_TX, &tx_task_handle);
     }
 

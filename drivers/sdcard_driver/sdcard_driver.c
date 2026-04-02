@@ -10,6 +10,7 @@
 #include "FreeRTOS.h"
 #include "queue.h"
 #include "task.h"
+#include "task_config.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -20,8 +21,6 @@
 #define SDCARD_REMOUNT_DELAY_MS  (1000U)
 #define SDCARD_MAX_LOG_FILES     (1000U)
 #define SDCARD_ROW_BUF_SIZE      (320U)
-#define SDCARD_TASK_STACK_SIZE   (1024U)
-#define SDCARD_TASK_PRIORITY     (2U)
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -29,7 +28,7 @@
 #if (HWREV == 1)
 static QueueHandle_t sdcard_queue = NULL;
 static StaticTask_t  sdcard_task_tcb;
-static StackType_t   sdcard_task_stack[SDCARD_TASK_STACK_SIZE];
+static StackType_t   sdcard_task_stack[TASK_STACK_4KB];
 
 static bool     sdcard_mounted = false;
 static bool     file_open = false;
@@ -61,9 +60,9 @@ void sdcard_driver_init(void)
     (void)xTaskCreateStatic(
         sdcard_driver_task,
         "SD_LOG",
-        SDCARD_TASK_STACK_SIZE,
+        TASK_STACK_4KB,
         NULL,
-        SDCARD_TASK_PRIORITY,
+        TASK_PRIORITY_SDCARD,
         sdcard_task_stack,
         &sdcard_task_tcb);
 #endif

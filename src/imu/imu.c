@@ -578,8 +578,8 @@ bool imu_calibrate_start(uint32_t imu_index)
     }
     arg->imu_index = imu_index;
 
-    BaseType_t ok = xTaskCreate(imu_cal_task_fn, "imu_cal", 512U, arg,
-                                tskIDLE_PRIORITY + 1, NULL);
+    BaseType_t ok = xTaskCreate(imu_cal_task_fn, "imu_cal", TASK_STACK_2KB, arg,
+                                TASK_PRIORITY_IMU_CALIBRATION, NULL);
     if (ok != pdPASS)
     {
         vPortFree(arg);
