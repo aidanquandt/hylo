@@ -50,11 +50,11 @@ void kalmanCoreDefaultParams(kalmanCoreParams_t* params)
     /* Process noise - tune based on IMU quality */
     /* These values model the uncertainty in IMU measurements and allow the filter */
     /* to appropriately weight IMU predictions vs UWB measurements */
-    params->procNoiseAcc_xy = 0.35f;  /* Accelerometer noise XY (m/s^2) */
-    params->procNoiseAcc_z  = 0.60f;  /* Accelerometer noise Z (m/s^2) */
-    params->procNoiseVel    = 0.05f;  /* Velocity random walk (m/s) */
-    params->procNoisePos    = 0.005f; /* Position random walk (m) */
-    params->procNoiseAtt    = 0.005f; /* Attitude process noise (rad) */
+    params->procNoiseAcc_xy = 0.40f;   /* Accelerometer noise XY (m/s^2) */
+    params->procNoiseAcc_z  = 0.70f;   /* Accelerometer noise Z (m/s^2) */
+    params->procNoiseVel    = 0.058f;  /* Velocity random walk (m/s) */
+    params->procNoisePos    = 0.0058f; /* Position random walk (m) */
+    params->procNoiseAtt    = 0.0058f; /* Attitude process noise (rad) */
 
     /* Measurement noise */
     params->measNoiseGyro_rollpitch = 0.03f; /* rad/s */
@@ -595,30 +595,28 @@ void kalmanCoreUpdateWithGravity(kalmanCoreData_t* kf, Axis3f* acc, float accelN
     float deviation_from_gravity = fabsf(acc_norm - GRAVITY_MAGNITUDE) / GRAVITY_MAGNITUDE;
     float noise_std              = 0.1f * (1.0f + 5.0f * deviation_from_gravity) * accelNoiseFactor;
 
-    /* Update with X component of normalized gravity */
+    /* Jacobian for gravity direction wrt small attitude error:
+     * d(g_b)/d(delta_theta) = [g_b]_x, where g_b is expected_normalized. */
+    float gx = expected_normalized[0];
+    float gy = expected_normalized[1];
+    float gz = expected_normalized[2];
+    float Hg[3][3] = {
+        {0.0f, -gz, gy},
+        {gz, 0.0f, -gx},
+        {-gy, gx, 0.0f},
+    };
+
+    /* Update with X and Y components (yaw remains weakly observable by gravity alone). */
+    for (int axis = 0; axis < 2; axis++)
     {
         float h[KC_STATE_DIM]     = {0};
         arm_matrix_instance_f32 H = {1, KC_STATE_DIM, h};
 
-        /* Jacobian: d(acc_x/|acc|) / d(attitude_error) */
-        /* Approximation: treat as -R[2][0] affected by D1 and D2 */
-        h[KC_STATE_D1] = kf->R[2][2];  /* Pitch affects X gravity */
-        h[KC_STATE_D2] = -kf->R[2][1]; /* Yaw affects X gravity */
+        h[KC_STATE_D0] = Hg[axis][0];
+        h[KC_STATE_D1] = Hg[axis][1];
+        h[KC_STATE_D2] = Hg[axis][2];
 
-        float error = acc_normalized[0] - expected_normalized[0];
-        kalmanCoreScalarUpdate(kf, &H, error, noise_std);
-    }
-
-    /* Update with Y component of normalized gravity */
-    {
-        float h[KC_STATE_DIM]     = {0};
-        arm_matrix_instance_f32 H = {1, KC_STATE_DIM, h};
-
-        /* Jacobian: d(acc_y/|acc|) / d(attitude_error) */
-        h[KC_STATE_D0] = -kf->R[2][2]; /* Roll affects Y gravity */
-        h[KC_STATE_D2] = kf->R[2][0];  /* Yaw affects Y gravity */
-
-        float error = acc_normalized[1] - expected_normalized[1];
+        float error = acc_normalized[axis] - expected_normalized[axis];
         kalmanCoreScalarUpdate(kf, &H, error, noise_std);
     }
 }
