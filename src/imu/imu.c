@@ -29,9 +29,9 @@
 #define IMU_EXPECTED_CHIP_ID_2 (0x44U)
 #define STARTUP_DELAY_MS (2000U)
 #define IMU_PROCESS_FREQ_HZ (1000U)
-#define IMU_ACCEL_GYRO_READ_FREQ_HZ (200U)
 #define IMU_TEMPERATURE_READ_FREQ_HZ (1U)
-#define IMU_ACCEL_GYRO_PRESCALER (IMU_PROCESS_FREQ_HZ / IMU_ACCEL_GYRO_READ_FREQ_HZ)
+/* One IMU sampled per tick; each device sees IMU_PROCESS_FREQ_HZ / IMU_NUM_DEVICES Hz.
+ * After the last device in a round, we aggregate and push to sensor fusion (same rate). */
 #define IMU_TEMPERATURE_PRESCALER (IMU_PROCESS_FREQ_HZ / IMU_TEMPERATURE_READ_FREQ_HZ)
 
 /*---------------------------------------------------------------------------
@@ -432,29 +432,25 @@ STATIC void imu_process_1kHz(void)
         return;
     }
 
-    if (IMU_NUM_DEVICES > 0U)
+    if (g_startup_delay_ticks < STARTUP_DELAY_MS)
     {
-        if (g_startup_delay_ticks < STARTUP_DELAY_MS)
-        {
-            g_startup_delay_ticks++;
-        }
-
-        for (uint8_t i = 0; i < (uint8_t)IMU_NUM_DEVICES; i++)
-        {
-            if (imu_ctxs[i].paused)
-            {
-                continue;  /* calibration task owns SPI for this IMU */
-            }
-            imu_ctx_current_index = i;
-            state_machine_periodic(&imu_ctxs[i].state_machine);
-        }
+        g_startup_delay_ticks++;
     }
 
-    /* Aggregate and push at 200 Hz; read temperatures at 1 Hz */
-    static uint8_t  prescaler_avg  = 0;
-    static uint16_t prescaler_temp = 0;
+    static uint8_t imu_round_robin_index = 0U;
+    uint8_t        i                    = imu_round_robin_index;
 
-    if (counter_uint8_t(&prescaler_avg, IMU_ACCEL_GYRO_PRESCALER))
+    if (!imu_ctxs[i].paused)
+    {
+        imu_ctx_current_index = i;
+        state_machine_periodic(&imu_ctxs[i].state_machine);
+    }
+
+    bool     cycle_complete = (i == (uint8_t)(IMU_NUM_DEVICES - 1U));
+    uint32_t next           = (uint32_t)i + 1U;
+    imu_round_robin_index   = (uint8_t)(next % (uint32_t)IMU_NUM_DEVICES);
+
+    if (cycle_complete)
     {
         imu_aggregate_and_push();
         if (imu_get_overall_state() == IMU_STATE_ACTIVE)
@@ -484,6 +480,9 @@ STATIC void imu_process_1kHz(void)
             aggregate_sample_count++;
         }
     }
+
+    /* Read temperatures at 1 Hz */
+    static uint16_t prescaler_temp = 0;
 
     if (counter_uint16_t(&prescaler_temp, IMU_TEMPERATURE_PRESCALER))
     {

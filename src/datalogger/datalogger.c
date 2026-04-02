@@ -21,7 +21,7 @@
  * Private Function Prototypes
  *---------------------------------------------------------------------------*/
 STATIC void datalogger_task(void* pvParameters);
-STATIC void datalogger_monitor_rtos_usage(void);
+STATIC void datalogger_refresh_task_cpu_usage(void);
 STATIC void datalogger_monitor_heap_usage(void);
 
 /*---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ STATIC uint32_t minimum_ever_free_heap = 0U;
 /*---------------------------------------------------------------------------
  * Private Function Implementations
  *---------------------------------------------------------------------------*/
-STATIC void datalogger_monitor_rtos_usage(void)
+STATIC void datalogger_refresh_task_cpu_usage(void)
 {
     STATIC uint32_t prev_total_runtime                   = 0U;
     STATIC uint32_t prev_task_runtime[DATALOGGER_MAX_TASKS]     = {0};
@@ -125,7 +125,6 @@ STATIC void datalogger_task(void* pvParameters)
     TickType_t lastWake = xTaskGetTickCount();
     for (;;)
     {
-        datalogger_monitor_rtos_usage();
         datalogger_monitor_heap_usage();
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(DATALOGGER_RATE_MS));
     }
@@ -151,6 +150,8 @@ uint32_t datalogger_get_task_usage(task_cpu_info_t* tasks, uint32_t max_tasks)
     {
         return 0;
     }
+
+    datalogger_refresh_task_cpu_usage();
 
     uint32_t count = (num_tracked_tasks < max_tasks) ? num_tracked_tasks : max_tasks;
     for (uint32_t i = 0; i < count; i++)
@@ -181,6 +182,6 @@ void datalogger_get_system_stats(system_stats_t* stats, task_cpu_info_t* task_bu
     }
     else
     {
-        stats->num_tasks = 0;
+        stats->num_tasks = (uint32_t)uxTaskGetNumberOfTasks();
     }
 }

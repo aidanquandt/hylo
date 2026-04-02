@@ -429,8 +429,7 @@ void protocol_rx_DataloggerGetStatsRequest(const DataloggerGetStatsRequest *msg)
 {
     (void)msg;
     system_stats_t st;
-    task_cpu_info_t buf[16];
-    datalogger_get_system_stats(&st, buf, 16);
+    datalogger_get_system_stats(&st, NULL, 0);
     DataloggerGetStatsResponse r = DataloggerGetStatsResponse_init_zero;
     r.task_count = st.num_tasks;
     r.free_heap  = st.current_free_heap;
