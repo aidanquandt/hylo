@@ -14,7 +14,7 @@
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define SDCARD_QUEUE_SIZE         (256U)
+#define SDCARD_QUEUE_SIZE         (512U)
 #define SDCARD_SYNC_INTERVAL_MS  (5000U)
 #define SDCARD_POLL_MS            (100U)   /* queue receive timeout so task can run sync check */
 #define SDCARD_REMOUNT_DELAY_MS  (1000U)
