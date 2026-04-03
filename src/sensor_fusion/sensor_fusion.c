@@ -24,7 +24,7 @@
 #define MAX_VALID_POSITION_M 1000.0f
 #define CONFIDENCE_RAMP_UPDATES 100
 /** Run the full EKF predict step every N-th IMU event (200 Hz / 4 = 50 Hz). */
-#define IMU_PREDICT_DECIMATION 2U
+#define IMU_PREDICT_DECIMATION 4U
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -136,9 +136,9 @@ STATIC void process_imu_event(const sensor_event_t* event)
     Axis3f acc  = {.x = imu_accum_acc.x * inv_n,
                    .y = imu_accum_acc.y * inv_n,
                    .z = imu_accum_acc.z * inv_n};
-    Axis3f gyro = {.x = imu_accum_gyro.x * inv_n,
-                   .y = imu_accum_gyro.y * inv_n,
-                   .z = imu_accum_gyro.z * inv_n};
+    Axis3f gyro = {.x = imu_accum_gyro.x * inv_n * 0.5f,
+                   .y = imu_accum_gyro.y * inv_n * 0.5f,
+                   .z = imu_accum_gyro.z * inv_n * 0.5f};
 
     /* Reset accumulators */
     imu_accum_acc  = (Axis3f){0};
@@ -426,7 +426,7 @@ STATIC void sdcard_log_position(const sensor_fusion_position_t* position)
     static uint32_t last_sd_position_send = 0;
     uint32_t now = timer_driver_get_time_ms();
 
-    if ((now - last_sd_position_send) >= 100U) // Throttle to max 10 Hz CHANGE IF WANT MORE FREQUENT LOGGING!!!
+    if ((now - last_sd_position_send) >= 20U) // Throttle to max 50 Hz
     {
         if (position->valid)
         {

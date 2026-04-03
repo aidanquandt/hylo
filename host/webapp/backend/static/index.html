@@ -1109,8 +1109,8 @@
         ctx.fillStyle = "#e0af68";
         ctx.beginPath();
         ctx.moveTo(ax, ay);
-        ctx.lineTo(ax - headLen * Math.cos(a1), ay + headLen * Math.sin(a1));
-        ctx.lineTo(ax - headLen * Math.cos(a2), ay + headLen * Math.sin(a2));
+        ctx.lineTo(ax + headLen * Math.cos(a1), ay - headLen * Math.sin(a1));
+        ctx.lineTo(ax + headLen * Math.cos(a2), ay - headLen * Math.sin(a2));
         ctx.closePath(); ctx.fill();
       }
 
@@ -1180,8 +1180,12 @@
     // Sensor fusion event: actual tag position from EKF
     function handleFusionEvent(data) {
       const confEl = document.getElementById("sfConfidence");
+      // Always update yaw when active — IMU tracks attitude independently of position confidence
+      if (data.active && data.yaw != null) {
+        vizState.position.yaw = data.yaw;
+      }
       if (data.active && data.confidence > 0) {
-        vizState.position = { x: data.x, y: data.y, z: data.z, yaw: data.yaw ?? 0 };
+        vizState.position = { x: data.x, y: data.y, z: data.z, yaw: data.yaw ?? vizState.position.yaw };
         vizState.positionKnown = true;
         vizState.trail.push({ x: data.x, y: data.y });
         if (vizState.trail.length > 200) vizState.trail.shift();
