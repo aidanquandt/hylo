@@ -36,6 +36,7 @@ message SensorFusionStreamPayload {
   float pos_y = 3;
   float pos_z = 4;
   float confidence = 5;
+  float yaw_rad = 6;
 }
 message SensorFusionSetActiveRequest {
   option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;

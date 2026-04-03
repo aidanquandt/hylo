@@ -45,6 +45,7 @@ typedef struct _SensorFusionStreamPayload {
     float pos_y;
     float pos_z;
     float confidence;
+    float yaw_rad;
 } SensorFusionStreamPayload;
 
 typedef struct _SensorFusionSetActiveRequest {
@@ -99,7 +100,7 @@ extern "C" {
 #define SensorFusionGetStatusResponse_init_default {0, 0, 0, 0, 0}
 #define SensorFusionStreamStartRequest_init_default {0}
 #define SensorFusionStreamStopRequest_init_default {0}
-#define SensorFusionStreamPayload_init_default   {0, 0, 0, 0, 0}
+#define SensorFusionStreamPayload_init_default   {0, 0, 0, 0, 0, 0}
 #define SensorFusionSetActiveRequest_init_default {0}
 #define SensorFusionGetImuEnabledRequest_init_default {0}
 #define SensorFusionGetImuEnabledResponse_init_default {0}
@@ -115,7 +116,7 @@ extern "C" {
 #define SensorFusionGetStatusResponse_init_zero  {0, 0, 0, 0, 0}
 #define SensorFusionStreamStartRequest_init_zero {0}
 #define SensorFusionStreamStopRequest_init_zero  {0}
-#define SensorFusionStreamPayload_init_zero      {0, 0, 0, 0, 0}
+#define SensorFusionStreamPayload_init_zero      {0, 0, 0, 0, 0, 0}
 #define SensorFusionSetActiveRequest_init_zero   {0}
 #define SensorFusionGetImuEnabledRequest_init_zero {0}
 #define SensorFusionGetImuEnabledResponse_init_zero {0}
@@ -138,6 +139,7 @@ extern "C" {
 #define SensorFusionStreamPayload_pos_y_tag      3
 #define SensorFusionStreamPayload_pos_z_tag      4
 #define SensorFusionStreamPayload_confidence_tag 5
+#define SensorFusionStreamPayload_yaw_rad_tag    6
 #define SensorFusionSetActiveRequest_active_tag  1
 #define SensorFusionGetImuEnabledResponse_imu_enabled_tag 1
 #define SensorFusionSetImuEnabledRequest_imu_enabled_tag 1
@@ -189,7 +191,8 @@ X(a, STATIC,   SINGULAR, BOOL,     active,            1) \
 X(a, STATIC,   SINGULAR, FLOAT,    pos_x,             2) \
 X(a, STATIC,   SINGULAR, FLOAT,    pos_y,             3) \
 X(a, STATIC,   SINGULAR, FLOAT,    pos_z,             4) \
-X(a, STATIC,   SINGULAR, FLOAT,    confidence,        5)
+X(a, STATIC,   SINGULAR, FLOAT,    confidence,        5) \
+X(a, STATIC,   SINGULAR, FLOAT,    yaw_rad,           6)
 #define SensorFusionStreamPayload_CALLBACK NULL
 #define SensorFusionStreamPayload_DEFAULT NULL
 
@@ -279,7 +282,7 @@ extern const pb_msgdesc_t SensorFusionSetConfigRequest_msg;
 
 /* Maximum encoded size of messages (where known) */
 /* SensorFusionSetConfigRequest_size depends on runtime parameters */
-#define MESSAGES_PROTOCOL_SENSOR_FUSION_PB_H_MAX_SIZE SensorFusionGetStatusResponse_size
+#define MESSAGES_PROTOCOL_SENSOR_FUSION_PB_H_MAX_SIZE SensorFusionStreamPayload_size
 #define SensorFusionGetConfigRequest_size        0
 #define SensorFusionGetDebugRequest_size         0
 #define SensorFusionGetImuEnabledRequest_size    0
@@ -292,7 +295,7 @@ extern const pb_msgdesc_t SensorFusionSetConfigRequest_msg;
 #define SensorFusionSetDebugRequest_size         6
 #define SensorFusionSetImuEnabledRequest_size    2
 #define SensorFusionSetNoiseRequest_size         15
-#define SensorFusionStreamPayload_size           22
+#define SensorFusionStreamPayload_size           27
 #define SensorFusionStreamStartRequest_size      0
 #define SensorFusionStreamStopRequest_size       0
 

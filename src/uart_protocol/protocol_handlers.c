@@ -209,6 +209,9 @@ static void sf_stream_send_payload(void)
         p.pos_z      = pos.z;
         p.confidence = pos.confidence;
     }
+    float roll, pitch, yaw;
+    sensor_fusion_get_attitude(&roll, &pitch, &yaw);
+    p.yaw_rad = yaw;
     protocol_tx_SensorFusionStreamPayload(&p);
 }
 

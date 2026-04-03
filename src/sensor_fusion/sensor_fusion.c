@@ -24,7 +24,7 @@
 #define MAX_VALID_POSITION_M 1000.0f
 #define CONFIDENCE_RAMP_UPDATES 100
 /** Run the full EKF predict step every N-th IMU event (200 Hz / 4 = 50 Hz). */
-#define IMU_PREDICT_DECIMATION 4U
+#define IMU_PREDICT_DECIMATION 2U
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -430,6 +430,8 @@ STATIC void sdcard_log_position(const sensor_fusion_position_t* position)
     {
         if (position->valid)
         {
+            float roll, pitch, yaw;
+            kalmanCoreGetAttitude(&kf_data, &roll, &pitch, &yaw);
             sdcard_driver_event_t entry = {
                 .type             = SDCARD_DRIVER_EVENT_POSITION,
                 .timestamp_ms     = position->timestamp_ms,
@@ -443,6 +445,9 @@ STATIC void sdcard_log_position(const sensor_fusion_position_t* position)
                     .confidence = position->confidence,
                     .valid = position->valid,
                     .imu_enable = imu_enabled,
+                    .roll = roll,
+                    .pitch = pitch,
+                    .yaw = yaw,
                 },
             };
             (void)sdcard_driver_push_event(&entry);

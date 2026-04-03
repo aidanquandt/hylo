@@ -131,6 +131,7 @@ class ProtobufCodec:
             "x": m.pos_x,
             "y": m.pos_y,
             "z": m.pos_z,
+            "yaw": getattr(m, "yaw_rad", 0.0),
         }
 
 codec = ProtobufCodec()

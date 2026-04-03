@@ -86,3 +86,4 @@ set(MODULE_SOURCES
     wifi/wifi.c
 )
 add_component_module(modules "${MODULE_SOURCES}")
+target_link_libraries(modules PUBLIC m)
