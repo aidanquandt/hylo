@@ -558,69 +558,6 @@ void kalmanCoreRobustUpdateWithDistance(kalmanCoreData_t* kf, distanceMeasuremen
     kalmanCoreUpdateWithPKE(kf, &H, &Kwm, &P_w_m, error_check);
 }
 
-void kalmanCoreUpdateWithGravity(kalmanCoreData_t* kf, Axis3f* acc, float accelNoiseFactor)
-{
-    /* Normalize accelerometer measurement */
-    float acc_norm = arm_sqrt(acc->x * acc->x + acc->y * acc->y + acc->z * acc->z);
-
-    if (acc_norm < 0.1f * GRAVITY_MAGNITUDE || acc_norm > 3.0f * GRAVITY_MAGNITUDE)
-    {
-        /* Accelerometer reading is too far from gravity - likely accelerating */
-        /* Skip this update to avoid corrupting attitude estimate */
-        return;
-    }
-
-    float inv_norm          = 1.0f / acc_norm;
-    float acc_normalized[3] = {acc->x * inv_norm, acc->y * inv_norm, acc->z * inv_norm};
-
-    /* Expected gravity in body frame = R' * [0, 0, -g] */
-    /* This gives us what the accelerometer should read if only gravity is present */
-    float expected_acc[3] = {-kf->R[2][0] * GRAVITY_MAGNITUDE, -kf->R[2][1] * GRAVITY_MAGNITUDE,
-                             -kf->R[2][2] * GRAVITY_MAGNITUDE};
-
-    /* Normalize expected measurement */
-    float expected_norm =
-        arm_sqrt(expected_acc[0] * expected_acc[0] + expected_acc[1] * expected_acc[1] +
-                 expected_acc[2] * expected_acc[2]);
-    if (expected_norm < EPS)
-    {
-        return; /* Numerical issue */
-    }
-
-    float inv_exp_norm           = 1.0f / expected_norm;
-    float expected_normalized[3] = {expected_acc[0] * inv_exp_norm, expected_acc[1] * inv_exp_norm,
-                                    expected_acc[2] * inv_exp_norm};
-
-    /* Measurement noise - scale based on how much we're accelerating */
-    float deviation_from_gravity = fabsf(acc_norm - GRAVITY_MAGNITUDE) / GRAVITY_MAGNITUDE;
-    float noise_std              = 0.1f * (1.0f + 5.0f * deviation_from_gravity) * accelNoiseFactor;
-
-    /* Jacobian for gravity direction wrt small attitude error:
-     * d(g_b)/d(delta_theta) = [g_b]_x, where g_b is expected_normalized. */
-    float gx = expected_normalized[0];
-    float gy = expected_normalized[1];
-    float gz = expected_normalized[2];
-    float Hg[3][3] = {
-        {0.0f, -gz, gy},
-        {gz, 0.0f, -gx},
-        {-gy, gx, 0.0f},
-    };
-
-    /* Update with X and Y components (yaw remains weakly observable by gravity alone). */
-    for (int axis = 0; axis < 2; axis++)
-    {
-        float h[KC_STATE_DIM]     = {0};
-        arm_matrix_instance_f32 H = {1, KC_STATE_DIM, h};
-
-        h[KC_STATE_D0] = Hg[axis][0];
-        h[KC_STATE_D1] = Hg[axis][1];
-        h[KC_STATE_D2] = Hg[axis][2];
-
-        float error = acc_normalized[axis] - expected_normalized[axis];
-        kalmanCoreScalarUpdate(kf, &H, error, noise_std);
-    }
-}
-
 bool kalmanCoreFinalize(kalmanCoreData_t* kf)
 {
     if (!kf->isUpdated)

@@ -21,9 +21,6 @@
 #define SENSOR_FUSION_QUEUE_SIZE 32U
 #define MIN_UPDATES_FOR_VALID 10
 #define RANGING_DEFAULT_STDDEV_M 0.25f
-#define GRAVITY_GATE_ACCEL_NORM_TOL 0.10f   /* relative |a|-g tolerance */
-#define GRAVITY_GATE_GYRO_NORM_RAD_S 0.30f  /* max gyro norm for gravity update */
-#define GRAVITY_UPDATE_NOISE_FACTOR 2.0f    /* extra conservatism indoors */
 #define MAX_VALID_POSITION_M 1000.0f
 #define CONFIDENCE_RAMP_UPDATES 100
 #define SENSOR_FUSION_TASK_PRIORITY (tskIDLE_PRIORITY + 2)
@@ -121,17 +118,6 @@ STATIC void process_imu_event(const sensor_event_t* event)
 
     kalmanCorePredict(&kf_data, &kf_params, &acc, &gyro, event->timestamp_ms);
     kalmanCoreAddProcessNoise(&kf_data, &kf_params, event->timestamp_ms);
-
-    /* Gravity constraint with gating:
-     * apply only when acceleration norm is near g and angular rate is low. */
-    float acc_norm = sqrtf(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
-    float gyro_norm = sqrtf(gyro.x * gyro.x + gyro.y * gyro.y + gyro.z * gyro.z);
-    float rel_g_err = fabsf(acc_norm - GRAVITY_MAGNITUDE) / GRAVITY_MAGNITUDE;
-
-    if (rel_g_err <= GRAVITY_GATE_ACCEL_NORM_TOL && gyro_norm <= GRAVITY_GATE_GYRO_NORM_RAD_S)
-    {
-        kalmanCoreUpdateWithGravity(&kf_data, &acc, GRAVITY_UPDATE_NOISE_FACTOR);
-    }
 
     kalmanCoreFinalize(&kf_data);
     
