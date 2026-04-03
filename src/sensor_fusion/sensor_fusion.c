@@ -17,11 +17,14 @@
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
-#define SENSOR_FUSION_QUEUE_SIZE 32U
+#define SENSOR_FUSION_IMU_QUEUE_SIZE 32U
+#define SENSOR_FUSION_UWB_QUEUE_SIZE 16U
 #define MIN_UPDATES_FOR_VALID 10
 #define RANGING_DEFAULT_STDDEV_M 0.2f
 #define MAX_VALID_POSITION_M 1000.0f
 #define CONFIDENCE_RAMP_UPDATES 100
+/** Run the full EKF predict step every N-th IMU event (200 Hz / 4 = 50 Hz). */
+#define IMU_PREDICT_DECIMATION 4U
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -49,7 +52,8 @@ STATIC void sdcard_log_position(const sensor_fusion_position_t* position);
  * Private Variables
  *---------------------------------------------------------------------------*/
 
-STATIC QueueHandle_t sensor_queue                 = NULL;
+STATIC QueueHandle_t sensor_queue                 = NULL; /* IMU events */
+STATIC QueueHandle_t uwb_queue                    = NULL; /* UWB ranging events (higher priority) */
 STATIC sensor_fusion_position_t position_estimate = {0};
 STATIC bool fusion_initialized                    = false;
 STATIC bool fusion_active                         = false;
@@ -107,29 +111,67 @@ STATIC void process_ranging_event(const sensor_event_t* event)
 
 STATIC void process_imu_event(const sensor_event_t* event)
 {
+    static Axis3f imu_accum_acc  = {0};
+    static Axis3f imu_accum_gyro = {0};
+    static uint8_t imu_accum_count = 0;
+
     const sensor_imu_data_t* imu = &event->data.imu;
 
-    Axis3f acc = {.x = imu->accel_x, .y = imu->accel_y, .z = imu->accel_z};
+    /* Accumulate accel and gyro readings for averaging */
+    imu_accum_acc.x  += imu->accel_x;
+    imu_accum_acc.y  += imu->accel_y;
+    imu_accum_acc.z  += imu->accel_z;
+    imu_accum_gyro.x += imu->gyro_x;
+    imu_accum_gyro.y += imu->gyro_y;
+    imu_accum_gyro.z += imu->gyro_z;
+    imu_accum_count++;
 
-    Axis3f gyro = {.x = imu->gyro_x, .y = imu->gyro_y, .z = imu->gyro_z};
+    if (imu_accum_count < IMU_PREDICT_DECIMATION)
+    {
+        return; /* Wait for more samples before running the expensive predict step */
+    }
 
+    /* Compute averaged IMU data over the decimation window */
+    float inv_n = 1.0f / (float)imu_accum_count;
+    Axis3f acc  = {.x = imu_accum_acc.x * inv_n,
+                   .y = imu_accum_acc.y * inv_n,
+                   .z = imu_accum_acc.z * inv_n};
+    Axis3f gyro = {.x = imu_accum_gyro.x * inv_n,
+                   .y = imu_accum_gyro.y * inv_n,
+                   .z = imu_accum_gyro.z * inv_n};
+
+    /* Reset accumulators */
+    imu_accum_acc  = (Axis3f){0};
+    imu_accum_gyro = (Axis3f){0};
+    imu_accum_count = 0;
+
+    /* Run full EKF predict at decimated rate (~50 Hz) */
     kalmanCorePredict(&kf_data, &kf_params, &acc, &gyro, event->timestamp_ms);
     kalmanCoreAddProcessNoise(&kf_data, &kf_params, event->timestamp_ms);
 
-    /* DISABLED: Gravity constraint - causing divergence issues */
-    /* TODO: Debug and re-enable after fixing Jacobian */
-    // kalmanCoreUpdateWithGravity(&kf_data, &acc, 1.0f);
+    /* Gravity constraint: correct roll/pitch from accelerometer when approximately stationary */
+    float acc_mag_sq = acc.x * acc.x + acc.y * acc.y + acc.z * acc.z;
+    float g_sq       = GRAVITY_MAGNITUDE * GRAVITY_MAGNITUDE;
+    if (fabsf(acc_mag_sq - g_sq) < 1.0f * GRAVITY_MAGNITUDE)
+    {
+        kalmanCoreUpdateWithGravity(&kf_data, &acc, 1.0f);
+    }
 
     kalmanCoreFinalize(&kf_data);
-    
 }
 
 void sensor_fusion_init(void)
 {
-    sensor_queue = xQueueCreate(SENSOR_FUSION_QUEUE_SIZE, sizeof(sensor_event_t));
+    sensor_queue = xQueueCreate(SENSOR_FUSION_IMU_QUEUE_SIZE, sizeof(sensor_event_t));
     if (sensor_queue == NULL)
     {
-        system_halt("sensor_fusion", "Failed to create event queue");
+        system_halt("sensor_fusion", "Failed to create IMU queue");
+    }
+
+    uwb_queue = xQueueCreate(SENSOR_FUSION_UWB_QUEUE_SIZE, sizeof(sensor_event_t));
+    if (uwb_queue == NULL)
+    {
+        system_halt("sensor_fusion", "Failed to create UWB queue");
     }
 
     stats.events_pushed = 0;
@@ -185,55 +227,47 @@ STATIC void sensor_fusion_task(void* pvParameters)
 {
     (void)pvParameters;
     sensor_event_t event;
+    bool got_event;
 
     while (1)
     {
-        // Block indefinitely waiting for sensor event (no timeout)
-        // Task sleeps here consuming zero CPU until event arrives
-        if (xQueueReceive(sensor_queue, &event, portMAX_DELAY) == pdPASS)
+        got_event = false;
+
+        /* ---- UWB first: drain all pending ranging events before touching IMU ---- */
+        while (xQueueReceive(uwb_queue, &event, 0) == pdPASS)
+        {
+            got_event = true;
+            stats.events_popped++;
+
+            #if (HWREV == 1)
+            send_ranging_telemetry(&event.data.ranging, event.timestamp_ms);
+            sdcard_log_ranging(&event.data.ranging, event.timestamp_ms);
+            #endif
+
+            if (fusion_active)
+            {
+                process_ranging_event(&event);
+                sensor_fusion_update_position_estimate();
+            }
+        }
+
+        /* ---- Then process one IMU event (block briefly if nothing available) ----
+         * Use a short timeout (1 ms) so we loop back to check the UWB queue quickly
+         * if a ranging event arrives while we are waiting for IMU data. */
+        if (xQueueReceive(sensor_queue, &event, got_event ? 0 : pdMS_TO_TICKS(1)) == pdPASS)
         {
             stats.events_popped++;
 
-            // Send telemetry over WIFI even when fusion is inactive (for monitoring raw data)
             #if (HWREV == 1)
-            if (event.type == SENSOR_EVENT_IMU)
-            {
-                send_imu_telemetry(&event);
-                sdcard_log_imu(&event);
-            }
-            else if (event.type == SENSOR_EVENT_RANGING)
-            {
-                send_ranging_telemetry(&event.data.ranging, event.timestamp_ms);
-                sdcard_log_ranging(&event.data.ranging, event.timestamp_ms);
-            }
+            send_imu_telemetry(&event);
+            sdcard_log_imu(&event);
             #endif
 
-            // Discard events when sensor fusion is not active
-            if (!fusion_active)
+            if (fusion_active && imu_enabled)
             {
-                continue;
+                process_imu_event(&event);
+                sensor_fusion_update_position_estimate();
             }
-
-            switch (event.type)
-            {
-                case SENSOR_EVENT_RANGING:
-                    process_ranging_event(&event);
-                    break;
-
-                case SENSOR_EVENT_IMU:
-                    if (imu_enabled)
-                    {
-                        process_imu_event(&event);
-                    }
-                    break;
-
-                default:
-                    // Unknown event type - should never happen due to validation
-                    break;
-            }
-
-            // Update position estimate after each event
-            sensor_fusion_update_position_estimate();
         }
     }
 }
@@ -447,13 +481,17 @@ sensor_fusion_status_e sensor_fusion_push_event(const sensor_event_t* event)
     queued_event.sequence = stats.sequence++;
     taskEXIT_CRITICAL();
 
-    BaseType_t result = xQueueSend(sensor_queue, &queued_event, 0);
+    /* Route ranging events to dedicated UWB queue so they are never starved by IMU traffic */
+    QueueHandle_t target_queue =
+        (event->type == SENSOR_EVENT_RANGING) ? uwb_queue : sensor_queue;
+
+    BaseType_t result = xQueueSend(target_queue, &queued_event, 0);
 
     if (result == pdPASS)
     {
         stats.events_pushed++;
 
-        UBaseType_t depth = uxQueueMessagesWaiting(sensor_queue);
+        UBaseType_t depth = uxQueueMessagesWaiting(target_queue);
         if (depth > stats.max_depth)
         {
             stats.max_depth = depth;
@@ -462,11 +500,11 @@ sensor_fusion_status_e sensor_fusion_push_event(const sensor_event_t* event)
         return SENSOR_FUSION_SUCCESS;
     }
 
-    // Queue full - drop oldest event and add new one
-    // This prevents blocking the caller and ensures recent data is processed
+    /* Queue full - drop oldest event and add new one.
+     * This prevents blocking the caller and ensures recent data is processed. */
     sensor_event_t discarded;
-    if (xQueueReceive(sensor_queue, &discarded, 0) == pdPASS &&
-        xQueueSend(sensor_queue, &queued_event, 0) == pdPASS)
+    if (xQueueReceive(target_queue, &discarded, 0) == pdPASS &&
+        xQueueSend(target_queue, &queued_event, 0) == pdPASS)
     {
         stats.overflows++;
         stats.events_pushed++;

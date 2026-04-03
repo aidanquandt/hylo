@@ -9,7 +9,6 @@
  *   8: UWB IRQ deferred handler (dwt_isr in task context)
  *   7: UWB TX worker (serialized frame transmission)
  *   6: UWB RX worker (deliver received frames to stack)
- *   4: High-rate sensor sampling (IMU at 1kHz)
  *   3: Normal I/O and communication (UART)
  *   2: Background computation (sensor fusion, ranging)
  *   1: Monitoring and logging (datalogger)
@@ -29,7 +28,7 @@
 #define TASK_PRIORITY_UWB_IRQ           8 // GPIO IRQ -> dwt_isr() (highest UWB)
 #define TASK_PRIORITY_UWB_TX            7 // TX queue worker
 #define TASK_PRIORITY_UWB_RX            6 // RX queue worker
-#define TASK_PRIORITY_IMU_PERIODIC      5 // 1kHz sensor sampling
+#define TASK_PRIORITY_IMU_PERIODIC      2 // IMU sampling (lowered from 5: UWB state machine must preempt blocking SPI reads)
 // #define TASK_PRIORITY_UART_RX           4 // Console RX: stream drain, framing, protocol dispatch
 // #define TASK_PRIORITY_UART_TX           4 // UART TX DMA drain; outbound protocol / telemetry
 // #define TASK_PRIORITY_WIFI              4 // WiFi state machine (10 Hz)

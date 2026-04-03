@@ -30,8 +30,11 @@
 #define STARTUP_DELAY_MS (2000U)
 #define IMU_PROCESS_FREQ_HZ (1000U)
 #define IMU_TEMPERATURE_READ_FREQ_HZ (1U)
-/* One IMU sampled per tick; each device sees IMU_PROCESS_FREQ_HZ / IMU_NUM_DEVICES Hz.
- * After the last device in a round, we aggregate and push to sensor fusion (same rate). */
+/* One IMU sampled per tick; each device sees IMU_PROCESS_FREQ_HZ / IMU_ROUND_ROBIN_SLOTS Hz.
+ * We use 5 slots (4 IMU reads + 1 idle) so each IMU is polled at 200 Hz,
+ * matching the BMI323 ODR of 200 Hz.  This avoids reading stale (duplicate) data.
+ * After the idle slot we aggregate and push to sensor fusion at 200 Hz. */
+#define IMU_ROUND_ROBIN_SLOTS (IMU_NUM_DEVICES + 1U)  /* 4 IMUs + 1 idle = 5 slots = 200 Hz */
 #define IMU_TEMPERATURE_PRESCALER (IMU_PROCESS_FREQ_HZ / IMU_TEMPERATURE_READ_FREQ_HZ)
 
 /*---------------------------------------------------------------------------
@@ -440,17 +443,21 @@ STATIC void imu_process_1kHz(void)
     static uint8_t imu_round_robin_index = 0U;
     uint8_t        i                    = imu_round_robin_index;
 
-    if (!imu_ctxs[i].paused)
+    /* Slots 0..(IMU_NUM_DEVICES-1) sample one IMU each; slot IMU_NUM_DEVICES is idle.
+     * This gives a 5-tick cycle (5 ms at 1 kHz) so each IMU is read at 200 Hz,
+     * matching the BMI323 ODR and avoiding stale/duplicate reads. */
+    bool is_idle_slot = (i >= (uint8_t)IMU_NUM_DEVICES);
+
+    if (!is_idle_slot && !imu_ctxs[i].paused)
     {
         imu_ctx_current_index = i;
         state_machine_periodic(&imu_ctxs[i].state_machine);
     }
 
-    uint32_t num_dev        = (uint32_t)IMU_NUM_DEVICES;
-    bool     cycle_complete = (i == (uint8_t)(num_dev - 1U));
+    uint32_t num_slots      = (uint32_t)IMU_ROUND_ROBIN_SLOTS;
+    bool     cycle_complete = (i == (uint8_t)(num_slots - 1U));
     uint32_t next           = (uint32_t)i + 1U;
-    /* num_dev is never 0 here (early return above); avoid % IMU_NUM_DEVICES when it is 0 in some builds. */
-    imu_round_robin_index   = (uint8_t)(next % num_dev);
+    imu_round_robin_index   = (uint8_t)(next % num_slots);
 
     if (cycle_complete)
     {

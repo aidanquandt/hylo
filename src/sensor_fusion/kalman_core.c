@@ -135,8 +135,8 @@ void kalmanCorePredict(kalmanCoreData_t* kf, const kalmanCoreParams_t* params, A
 {
     float dt = (nowMs - kf->lastPredictionMs) / 1000.0f;
 
-    if (dt > 0.0f && dt < 1.0f)
-    { /* Sanity check on dt */
+    if (dt > 0.0f && dt < 0.1f)
+    { /* Sanity check on dt — reject stale events where linearization breaks down */
         predictDt(kf, params, acc, gyro, dt);
     }
 
@@ -932,10 +932,15 @@ static void addProcessNoiseDt(kalmanCoreData_t* kf, const kalmanCoreParams_t* pa
     kf->P[KC_STATE_Y][KC_STATE_Y] += pos_noise_xy;
     kf->P[KC_STATE_Z][KC_STATE_Z] += pos_noise_z;
 
-    /* Velocity process noise - CORRECTED */
+    /* Velocity process noise: variance from integrating white accel noise over dt is
+     * sigma_a^2 * dt^2 (not dt^4).  Previous formula used (sigma_a * dt^2)^2 = sigma_a^2 * dt^4,
+     * which made velocity noise ~60000x too small at typical rates. */
     float vel_noise_xy =
-        acc_contrib_xy * acc_contrib_xy + params->procNoiseVel * params->procNoiseVel;
-    float vel_noise_z = acc_contrib_z * acc_contrib_z + params->procNoiseVel * params->procNoiseVel;
+        params->procNoiseAcc_xy * params->procNoiseAcc_xy * dt * dt +
+        params->procNoiseVel * params->procNoiseVel;
+    float vel_noise_z =
+        params->procNoiseAcc_z * params->procNoiseAcc_z * dt * dt +
+        params->procNoiseVel * params->procNoiseVel;
 
     kf->P[KC_STATE_PX][KC_STATE_PX] += vel_noise_xy;
     kf->P[KC_STATE_PY][KC_STATE_PY] += vel_noise_xy;
