@@ -16,13 +16,16 @@
  *---------------------------------------------------------------------------*/
 #define WATCHDOG_CHECK_RATE_MS 1000U // Check heartbeats every 1 second
 
-#define HEARTBEAT_1KHZ_BIT (1U << 0)
-#define HEARTBEAT_ALL_BITS HEARTBEAT_1KHZ_BIT
+#define WATCHDOG_EXPECTED_GOOD_TICKS_PER_CHECK \
+    ((uint32_t)((WATCHDOG_CHECK_RATE_MS * (uint32_t)configTICK_RATE_HZ) / 1000U))
 
 /*---------------------------------------------------------------------------
  * Private Variables
  *---------------------------------------------------------------------------*/
-STATIC volatile uint32_t task_heartbeats = 0; // Bitmask of which tasks have run since last check
+// 1 kHz task: counts wakes where xTaskGetTickCount advanced by exactly one since last wake.
+STATIC volatile uint32_t watchdog_1khz_good_count = 0;
+// Times xTaskGetTickCount advanced by other than one while scheduler was not suspended — latched per check window.
+STATIC volatile uint32_t watchdog_tick_gap_count = 0;
 
 /*---------------------------------------------------------------------------
  * Private Function Prototypes
@@ -38,6 +41,8 @@ STATIC void watchdog_task(void* argument)
     (void)argument;
 
     TickType_t lastWake = xTaskGetTickCount();
+    uint32_t   last_good_snapshot = 0;
+    uint8_t    have_good_baseline = 0;
 
 #if FEATURE_WATCHDOG_ENABLE_IWDG
     watchdog_driver_refresh();
@@ -47,11 +52,33 @@ STATIC void watchdog_task(void* argument)
     {
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(WATCHDOG_CHECK_RATE_MS));
 
-        uint32_t current_heartbeats = task_heartbeats;
-        task_heartbeats             = 0; // Clear for next check
+        uint32_t gaps;
+        uint32_t good_now;
+        taskENTER_CRITICAL();
+        gaps                    = watchdog_tick_gap_count;
+        watchdog_tick_gap_count = 0;
+        good_now                = watchdog_1khz_good_count;
+        taskEXIT_CRITICAL();
 
-        // Only refresh if all tasks are alive
-        if (current_heartbeats == HEARTBEAT_ALL_BITS)
+        if (!have_good_baseline)
+        {
+            last_good_snapshot   = good_now;
+            have_good_baseline   = 1;
+#if FEATURE_WATCHDOG_ENABLE_IWDG
+            watchdog_driver_refresh();
+#endif
+            continue;
+        }
+
+        uint32_t       good_delta = good_now - last_good_snapshot;
+        const uint32_t expected   = WATCHDOG_EXPECTED_GOOD_TICKS_PER_CHECK;
+        last_good_snapshot        = good_now;
+
+        const bool good_ticks_in_range =
+            (good_delta + 1U >= expected) && (good_delta <= expected + 1U);
+        const bool ok = (gaps == 0U) && good_ticks_in_range;
+
+        if (ok)
         {
 #if FEATURE_WATCHDOG_ENABLE_IWDG
             watchdog_driver_refresh();
@@ -59,12 +86,11 @@ STATIC void watchdog_task(void* argument)
         }
         else
         {
-            // Task failure - send event, DON'T refresh; system will reset in ~8s via IWDG
             WatchdogTaskFailureEvent ev = WatchdogTaskFailureEvent_init_zero;
-            ev.current_heartbeats  = current_heartbeats;
-            ev.expected_heartbeats = HEARTBEAT_ALL_BITS;
+            ev.current_heartbeats  = good_delta;
+            ev.expected_heartbeats = expected;
+            ev.tick_gap_count      = gaps;
             protocol_tx_WatchdogTaskFailureEvent(&ev);
-            // Stay in loop without refreshing until IWDG resets system
         }
     }
 }
@@ -73,10 +99,34 @@ STATIC void watchdog_1khz_task(void* pvParameters)
 {
     (void)pvParameters;
     TickType_t lastWake = xTaskGetTickCount();
+    TickType_t prevTick = 0;
+    uint8_t    havePrev = 0;
+
     for (;;)
     {
-        task_heartbeats |= HEARTBEAT_1KHZ_BIT;
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(1));
+
+        TickType_t now = xTaskGetTickCount();
+
+        if (havePrev)
+        {
+            TickType_t delta = (TickType_t)(now - prevTick);
+            if (delta == 1U)
+            {
+                taskENTER_CRITICAL();
+                watchdog_1khz_good_count++;
+                taskEXIT_CRITICAL();
+            }
+            else
+            {
+                taskENTER_CRITICAL();
+                watchdog_tick_gap_count++;
+                taskEXIT_CRITICAL();
+            }
+        }
+
+        prevTick = now;
+        havePrev = 1;
     }
 }
 

@@ -15,7 +15,7 @@ import nanopb_pb2 as nanopb__pb2
 import host_options_pb2 as host__options__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1emessages/protocol_system.proto\x1a\x0cnanopb.proto\x1a\x12host_options.proto\"\x1c\n\x14SystemGetUuidRequest:\x04\x88\xb5\x18\x01\"Y\n\x15SystemGetUuidResponse\x12\x12\n\nuuid_word0\x18\x01 \x01(\r\x12\x12\n\nuuid_word1\x18\x02 \x01(\r\x12\x12\n\nuuid_word2\x18\x03 \x01(\r:\x04\x88\xb5\x18\x02\"\x1c\n\x14SystemGetInfoRequest:\x04\x88\xb5\x18\x01\"2\n\x15SystemGetInfoResponse\x12\x13\n\x04info\x18\x01 \x01(\tB\x05\x92?\x02p@:\x04\x88\xb5\x18\x02\";\n\x1f\x41ppDeviceNotInMappingTableEvent\x12\x12\n\nuuid_word2\x18\x01 \x01(\r:\x04\x88\xb5\x18\x03\"4\n\x1b\x41ppUsingDefaultAddressEvent\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\r:\x04\x88\xb5\x18\x03\"$\n\x1c\x41ppFailedToInitDeviceIdEvent:\x04\x88\xb5\x18\x03\"Y\n\x18WatchdogTaskFailureEvent\x12\x1a\n\x12\x63urrent_heartbeats\x18\x01 \x01(\r\x12\x1b\n\x13\x65xpected_heartbeats\x18\x02 \x01(\r:\x04\x88\xb5\x18\x03\"G\n\x10SystemFatalEvent\x12\x15\n\x06module\x18\x01 \x01(\tB\x05\x92?\x02p\x10\x12\x16\n\x07message\x18\x02 \x01(\tB\x05\x92?\x02p@:\x04\x88\xb5\x18\x03\x42\x04\xd0\xb5\x18\x02\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1emessages/protocol_system.proto\x1a\x0cnanopb.proto\x1a\x12host_options.proto\"\x1c\n\x14SystemGetUuidRequest:\x04\x88\xb5\x18\x01\"Y\n\x15SystemGetUuidResponse\x12\x12\n\nuuid_word0\x18\x01 \x01(\r\x12\x12\n\nuuid_word1\x18\x02 \x01(\r\x12\x12\n\nuuid_word2\x18\x03 \x01(\r:\x04\x88\xb5\x18\x02\"\x1c\n\x14SystemGetInfoRequest:\x04\x88\xb5\x18\x01\"2\n\x15SystemGetInfoResponse\x12\x13\n\x04info\x18\x01 \x01(\tB\x05\x92?\x02p@:\x04\x88\xb5\x18\x02\";\n\x1f\x41ppDeviceNotInMappingTableEvent\x12\x12\n\nuuid_word2\x18\x01 \x01(\r:\x04\x88\xb5\x18\x03\"4\n\x1b\x41ppUsingDefaultAddressEvent\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\r:\x04\x88\xb5\x18\x03\"$\n\x1c\x41ppFailedToInitDeviceIdEvent:\x04\x88\xb5\x18\x03\"q\n\x18WatchdogTaskFailureEvent\x12\x1a\n\x12\x63urrent_heartbeats\x18\x01 \x01(\r\x12\x1b\n\x13\x65xpected_heartbeats\x18\x02 \x01(\r\x12\x16\n\x0etick_gap_count\x18\x03 \x01(\r:\x04\x88\xb5\x18\x03\"G\n\x10SystemFatalEvent\x12\x15\n\x06module\x18\x01 \x01(\tB\x05\x92?\x02p\x10\x12\x16\n\x07message\x18\x02 \x01(\tB\x05\x92?\x02p@:\x04\x88\xb5\x18\x03\x42\x04\xd0\xb5\x18\x02\x62\x06proto3')
 
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'messages.protocol_system_pb2', globals())
@@ -62,7 +62,7 @@ if _descriptor._USE_C_DESCRIPTORS == False:
   _APPFAILEDTOINITDEVICEIDEVENT._serialized_start=386
   _APPFAILEDTOINITDEVICEIDEVENT._serialized_end=422
   _WATCHDOGTASKFAILUREEVENT._serialized_start=424
-  _WATCHDOGTASKFAILUREEVENT._serialized_end=513
-  _SYSTEMFATALEVENT._serialized_start=515
-  _SYSTEMFATALEVENT._serialized_end=586
+  _WATCHDOGTASKFAILUREEVENT._serialized_end=537
+  _SYSTEMFATALEVENT._serialized_start=539
+  _SYSTEMFATALEVENT._serialized_end=610
 # @@protoc_insertion_point(module_scope)

@@ -39,6 +39,7 @@ message WatchdogTaskFailureEvent {
   option (host.host_message_type) = HOST_MESSAGE_TYPE_EVENT;
   uint32 current_heartbeats = 1;
   uint32 expected_heartbeats = 2;
+  uint32 tick_gap_count = 3;
 }
 
 message SystemFatalEvent {
