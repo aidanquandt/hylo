@@ -851,39 +851,52 @@ static void predictDt(kalmanCoreData_t* kf, const kalmanCoreParams_t* params, Ax
 
 static void addProcessNoiseDt(kalmanCoreData_t* kf, const kalmanCoreParams_t* params, float dt)
 {
-    /* Position process noise - CORRECTED: square each term then add */
-    /* Variances add (not standard deviations), so we compute: */
-    /* Q_pos = (sigma_acc * dt^2)^2 + (sigma_vel * dt)^2 + sigma_pos^2 */
-    float acc_contrib_xy = params->procNoiseAcc_xy * dt * dt;
-    float acc_contrib_z  = params->procNoiseAcc_z * dt * dt;
-    float vel_contrib    = params->procNoiseVel * dt;
+    /* Position process noise:
+     * position <- integrate acceleration twice, velocity once */
+    float acc_pos_contrib_xy = params->procNoiseAcc_xy * dt * dt;
+    float acc_pos_contrib_z  = params->procNoiseAcc_z * dt * dt;
+    float vel_pos_contrib    = params->procNoiseVel * dt;
 
-    float pos_noise_xy = acc_contrib_xy * acc_contrib_xy + vel_contrib * vel_contrib +
+    float pos_noise_xy = acc_pos_contrib_xy * acc_pos_contrib_xy +
+                         vel_pos_contrib * vel_pos_contrib +
                          params->procNoisePos * params->procNoisePos;
-    float pos_noise_z = acc_contrib_z * acc_contrib_z + vel_contrib * vel_contrib +
+    float pos_noise_z = acc_pos_contrib_z * acc_pos_contrib_z +
+                        vel_pos_contrib * vel_pos_contrib +
                         params->procNoisePos * params->procNoisePos;
 
     kf->P[KC_STATE_X][KC_STATE_X] += pos_noise_xy;
     kf->P[KC_STATE_Y][KC_STATE_Y] += pos_noise_xy;
     kf->P[KC_STATE_Z][KC_STATE_Z] += pos_noise_z;
 
-    /* Velocity process noise - CORRECTED */
-    float vel_noise_xy =
-        acc_contrib_xy * acc_contrib_xy + params->procNoiseVel * params->procNoiseVel;
-    float vel_noise_z = acc_contrib_z * acc_contrib_z + params->procNoiseVel * params->procNoiseVel;
+    /* Velocity process noise:
+     * velocity <- integrate acceleration once
+     * NOTE: keep dt scaling to avoid update-rate-dependent noise injection */
+    float acc_vel_contrib_xy = params->procNoiseAcc_xy * dt;
+    float acc_vel_contrib_z  = params->procNoiseAcc_z * dt;
+    float vel_rw_contrib     = params->procNoiseVel * dt;
+
+    float vel_noise_xy = acc_vel_contrib_xy * acc_vel_contrib_xy +
+                         vel_rw_contrib * vel_rw_contrib;
+    float vel_noise_z = acc_vel_contrib_z * acc_vel_contrib_z +
+                        vel_rw_contrib * vel_rw_contrib;
 
     kf->P[KC_STATE_PX][KC_STATE_PX] += vel_noise_xy;
     kf->P[KC_STATE_PY][KC_STATE_PY] += vel_noise_xy;
     kf->P[KC_STATE_PZ][KC_STATE_PZ] += vel_noise_z;
 
     /* Attitude process noise:
-     * Use process-noise parameters here (not measurement-noise params). */
-    float att_contrib = params->procNoiseAtt * dt;
-    float att_noise   = att_contrib * att_contrib + params->procNoiseAtt * params->procNoiseAtt;
+     * gyro measurement noise and attitude drift both contribute over dt. */
+    float gyro_att_contrib_rp = params->measNoiseGyro_rollpitch * dt;
+    float gyro_att_contrib_y  = params->measNoiseGyro_yaw * dt;
+    float att_rw_contrib      = params->procNoiseAtt * dt;
+    float att_noise_rp = gyro_att_contrib_rp * gyro_att_contrib_rp +
+                         att_rw_contrib * att_rw_contrib;
+    float att_noise_y = gyro_att_contrib_y * gyro_att_contrib_y +
+                        att_rw_contrib * att_rw_contrib;
 
-    kf->P[KC_STATE_D0][KC_STATE_D0] += att_noise;
-    kf->P[KC_STATE_D1][KC_STATE_D1] += att_noise;
-    kf->P[KC_STATE_D2][KC_STATE_D2] += att_noise;
+    kf->P[KC_STATE_D0][KC_STATE_D0] += att_noise_rp;
+    kf->P[KC_STATE_D1][KC_STATE_D1] += att_noise_rp;
+    kf->P[KC_STATE_D2][KC_STATE_D2] += att_noise_y;
 
     enforceSymmetryAndBounds(kf);
 }
