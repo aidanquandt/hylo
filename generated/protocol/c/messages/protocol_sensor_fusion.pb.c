@@ -18,6 +18,15 @@ PB_BIND(SensorFusionGetStatusRequest, SensorFusionGetStatusRequest, AUTO)
 PB_BIND(SensorFusionGetStatusResponse, SensorFusionGetStatusResponse, AUTO)
 
 
+PB_BIND(SensorFusionStreamStartRequest, SensorFusionStreamStartRequest, AUTO)
+
+
+PB_BIND(SensorFusionStreamStopRequest, SensorFusionStreamStopRequest, AUTO)
+
+
+PB_BIND(SensorFusionStreamPayload, SensorFusionStreamPayload, AUTO)
+
+
 PB_BIND(SensorFusionSetActiveRequest, SensorFusionSetActiveRequest, AUTO)
 
 

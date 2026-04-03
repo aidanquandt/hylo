@@ -38,16 +38,21 @@
  *---------------------------------------------------------------------------*/
 static uint32_t s_ping_seq;
 
-/* IMU stream: 10 Hz task sends ImuStreamPayload; mode 0 = array (per-IMU), 1 = avg */
-#define IMU_STREAM_PERIOD_MS 100
+/* Periodic stream task: 10 Hz; enabled streams share one task (bitmask). */
+#define PERIODIC_STREAM_PERIOD_MS 100
 
-static volatile bool s_imu_stream_running;
+#define STREAM_MASK_IMU                 (1U << 0)
+#define STREAM_MASK_SENSOR_FUSION_STATUS (1U << 1)
+
+static volatile uint32_t s_stream_mask;
 static volatile uint32_t s_imu_stream_mode; /* 0 = array, 1 = avg */
-static TaskHandle_t s_imu_stream_task_handle;
+static TaskHandle_t s_periodic_stream_task_handle;
 
-static void imu_stream_task_fn(void *arg);
+static void periodic_stream_task_fn(void *arg);
 static void imu_stream_send_payload(uint32_t imu_index, float accel_x, float accel_y, float accel_z,
                                     float gyro_x, float gyro_y, float gyro_z, float temp_c);
+static void ensure_periodic_stream_task_started(void);
+static void sf_stream_send_payload(void);
 
 /*---------------------------------------------------------------------------
  * Helpers: NodeType <-> uwb_node_type_e (same numeric values)
@@ -192,55 +197,84 @@ static void imu_stream_send_payload(uint32_t imu_index, float accel_x, float acc
     protocol_tx_ImuStreamPayload(&p);
 }
 
-static void imu_stream_task_fn(void *arg)
+static void sf_stream_send_payload(void)
+{
+    SensorFusionStreamPayload p = SensorFusionStreamPayload_init_zero;
+    p.active = sensor_fusion_is_active();
+    sensor_fusion_position_t pos;
+    if (sensor_fusion_get_position(&pos))
+    {
+        p.pos_x      = pos.x;
+        p.pos_y      = pos.y;
+        p.pos_z      = pos.z;
+        p.confidence = pos.confidence;
+    }
+    protocol_tx_SensorFusionStreamPayload(&p);
+}
+
+static void periodic_stream_task_fn(void *arg)
 {
     (void)arg;
     for (;;)
     {
-        vTaskDelay(pdMS_TO_TICKS(IMU_STREAM_PERIOD_MS));
-        if (!s_imu_stream_running)
+        vTaskDelay(pdMS_TO_TICKS(PERIODIC_STREAM_PERIOD_MS));
+        uint32_t mask = s_stream_mask;
+        if (mask == 0U)
+        {
             continue;
-
-        if (s_imu_stream_mode == 1)
-        {
-            /* Avg: single payload with aggregate data */
-            imu_data_t data;
-            if (imu_get_data(&data))
-            {
-                imu_stream_send_payload(0,
-                                        data.accel.x, data.accel.y, data.accel.z,
-                                        data.gyro.x, data.gyro.y, data.gyro.z,
-                                        data.temperature);
-            }
         }
-        else
+
+        if ((mask & STREAM_MASK_IMU) != 0U)
         {
-            /* Array: one payload per active IMU */
-            for (uint8_t i = 0; i < imu_get_device_count(); i++)
+            if (s_imu_stream_mode == 1)
             {
                 imu_data_t data;
-                if (imu_get_individual_data((imu_device_e)i, &data))
+                if (imu_get_data(&data))
                 {
-                    imu_stream_send_payload((uint32_t)i,
+                    imu_stream_send_payload(0,
                                             data.accel.x, data.accel.y, data.accel.z,
                                             data.gyro.x, data.gyro.y, data.gyro.z,
                                             data.temperature);
                 }
             }
+            else
+            {
+                for (uint8_t i = 0; i < imu_get_device_count(); i++)
+                {
+                    imu_data_t data;
+                    if (imu_get_individual_data((imu_device_e)i, &data))
+                    {
+                        imu_stream_send_payload((uint32_t)i,
+                                                data.accel.x, data.accel.y, data.accel.z,
+                                                data.gyro.x, data.gyro.y, data.gyro.z,
+                                                data.temperature);
+                    }
+                }
+            }
         }
+
+        if ((mask & STREAM_MASK_SENSOR_FUSION_STATUS) != 0U)
+        {
+            sf_stream_send_payload();
+        }
+    }
+}
+
+static void ensure_periodic_stream_task_started(void)
+{
+    if (s_periodic_stream_task_handle == NULL)
+    {
+        BaseType_t ok = xTaskCreate(periodic_stream_task_fn, "pstream", TASK_STACK_2KB, NULL,
+                                    TASK_PRIORITY_UART_TX, &s_periodic_stream_task_handle);
+        (void)ok;
     }
 }
 
 void protocol_rx_ImuStreamStartRequest(const ImuStreamStartRequest *msg)
 {
-    s_imu_stream_mode   = (msg->mode != 0) ? 1 : 0;
-    s_imu_stream_running = true;
-    if (s_imu_stream_task_handle == NULL)
-    {
-        BaseType_t ok = xTaskCreate(imu_stream_task_fn, "imu_str", TASK_STACK_2KB, NULL,
-                                    TASK_PRIORITY_UART_TX, &s_imu_stream_task_handle);
-        (void)ok;
-    }
+    s_imu_stream_mode = (msg->mode != 0) ? 1 : 0;
+    s_stream_mask |= STREAM_MASK_IMU;
+    ensure_periodic_stream_task_started();
     AckResponse ack = AckResponse_init_zero;
     ack.success = true;
     protocol_tx_AckResponse(&ack);
@@ -249,7 +283,7 @@ void protocol_rx_ImuStreamStartRequest(const ImuStreamStartRequest *msg)
 void protocol_rx_ImuStreamStopRequest(const ImuStreamStopRequest *msg)
 {
     (void)msg;
-    s_imu_stream_running = false;
+    s_stream_mask &= (uint32_t)~STREAM_MASK_IMU;
     AckResponse ack = AckResponse_init_zero;
     ack.success = true;
     protocol_tx_AckResponse(&ack);
@@ -703,6 +737,25 @@ void protocol_rx_SensorFusionGetStatusRequest(const SensorFusionGetStatusRequest
         r.confidence = pos.confidence;
     }
     protocol_tx_SensorFusionGetStatusResponse(&r);
+}
+
+void protocol_rx_SensorFusionStreamStartRequest(const SensorFusionStreamStartRequest *msg)
+{
+    (void)msg;
+    s_stream_mask |= STREAM_MASK_SENSOR_FUSION_STATUS;
+    ensure_periodic_stream_task_started();
+    AckResponse ack = AckResponse_init_zero;
+    ack.success = true;
+    protocol_tx_AckResponse(&ack);
+}
+
+void protocol_rx_SensorFusionStreamStopRequest(const SensorFusionStreamStopRequest *msg)
+{
+    (void)msg;
+    s_stream_mask &= (uint32_t)~STREAM_MASK_SENSOR_FUSION_STATUS;
+    AckResponse ack = AckResponse_init_zero;
+    ack.success = true;
+    protocol_tx_AckResponse(&ack);
 }
 
 void protocol_rx_SensorFusionSetActiveRequest(const SensorFusionSetActiveRequest *msg)

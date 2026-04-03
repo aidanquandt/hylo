@@ -178,6 +178,9 @@ __attribute__((weak)) void protocol_rx_WatchdogTaskFailureEvent(const WatchdogTa
 __attribute__((weak)) void protocol_rx_SystemFatalEvent(const SystemFatalEvent *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_DataloggerGetIdleCpuRequest(const DataloggerGetIdleCpuRequest *msg) { (void)msg; }
 __attribute__((weak)) void protocol_rx_DataloggerGetIdleCpuResponse(const DataloggerGetIdleCpuResponse *msg) { (void)msg; }
+__attribute__((weak)) void protocol_rx_SensorFusionStreamStartRequest(const SensorFusionStreamStartRequest *msg) { (void)msg; }
+__attribute__((weak)) void protocol_rx_SensorFusionStreamStopRequest(const SensorFusionStreamStopRequest *msg) { (void)msg; }
+__attribute__((weak)) void protocol_rx_SensorFusionStreamPayload(const SensorFusionStreamPayload *msg) { (void)msg; }
 
 void protocol_dispatch(uint16_t msg_id, const uint8_t *payload, size_t len)
 {
@@ -1219,6 +1222,24 @@ void protocol_dispatch(uint16_t msg_id, const uint8_t *payload, size_t len)
       DataloggerGetIdleCpuResponse decoded = DataloggerGetIdleCpuResponse_init_zero;
       if (pb_decode(&stream, DataloggerGetIdleCpuResponse_fields, &decoded))
         protocol_rx_DataloggerGetIdleCpuResponse(&decoded);
+      break;
+    }
+    case MSG_ID_SensorFusionStreamStartRequest: {
+      SensorFusionStreamStartRequest decoded = SensorFusionStreamStartRequest_init_zero;
+      if (pb_decode(&stream, SensorFusionStreamStartRequest_fields, &decoded))
+        protocol_rx_SensorFusionStreamStartRequest(&decoded);
+      break;
+    }
+    case MSG_ID_SensorFusionStreamStopRequest: {
+      SensorFusionStreamStopRequest decoded = SensorFusionStreamStopRequest_init_zero;
+      if (pb_decode(&stream, SensorFusionStreamStopRequest_fields, &decoded))
+        protocol_rx_SensorFusionStreamStopRequest(&decoded);
+      break;
+    }
+    case MSG_ID_SensorFusionStreamPayload: {
+      SensorFusionStreamPayload decoded = SensorFusionStreamPayload_init_zero;
+      if (pb_decode(&stream, SensorFusionStreamPayload_fields, &decoded))
+        protocol_rx_SensorFusionStreamPayload(&decoded);
       break;
     }
     default:

@@ -181,5 +181,8 @@ void protocol_rx_WatchdogTaskFailureEvent(const WatchdogTaskFailureEvent *msg);
 void protocol_rx_SystemFatalEvent(const SystemFatalEvent *msg);
 void protocol_rx_DataloggerGetIdleCpuRequest(const DataloggerGetIdleCpuRequest *msg);
 void protocol_rx_DataloggerGetIdleCpuResponse(const DataloggerGetIdleCpuResponse *msg);
+void protocol_rx_SensorFusionStreamStartRequest(const SensorFusionStreamStartRequest *msg);
+void protocol_rx_SensorFusionStreamStopRequest(const SensorFusionStreamStopRequest *msg);
+void protocol_rx_SensorFusionStreamPayload(const SensorFusionStreamPayload *msg);
 
 #endif /* PROTOCOL_DISPATCH_H */

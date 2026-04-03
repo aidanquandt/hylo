@@ -181,4 +181,7 @@ enum WireMessageId {
   SystemFatalEvent = 170;
   DataloggerGetIdleCpuRequest = 171;
   DataloggerGetIdleCpuResponse = 172;
+  SensorFusionStreamStartRequest = 173;
+  SensorFusionStreamStopRequest = 174;
+  SensorFusionStreamPayload = 175;
 }
