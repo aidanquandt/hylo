@@ -65,7 +65,7 @@ void kalmanCoreDefaultParams(kalmanCoreParams_t* params)
     params->initialX   = 5.10f;
     params->initialY   = 3.60f;
     params->initialZ   = 0.20f;
-    params->initialYaw = 0.0f;
+    params->initialYaw = M_PI; /* 180 degrees */
 }
 
 void kalmanCoreInit(kalmanCoreData_t* kf, const kalmanCoreParams_t* params, uint32_t nowMs)
