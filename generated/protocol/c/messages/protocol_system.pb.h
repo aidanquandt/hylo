@@ -44,7 +44,6 @@ typedef struct _AppFailedToInitDeviceIdEvent {
 typedef struct _WatchdogTaskFailureEvent {
     uint32_t current_heartbeats;
     uint32_t expected_heartbeats;
-    uint32_t tick_gap_count;
 } WatchdogTaskFailureEvent;
 
 typedef struct _SystemFatalEvent {
@@ -65,7 +64,7 @@ extern "C" {
 #define AppDeviceNotInMappingTableEvent_init_default {0}
 #define AppUsingDefaultAddressEvent_init_default {0}
 #define AppFailedToInitDeviceIdEvent_init_default {0}
-#define WatchdogTaskFailureEvent_init_default    {0, 0, 0}
+#define WatchdogTaskFailureEvent_init_default    {0, 0}
 #define SystemFatalEvent_init_default            {"", ""}
 #define SystemGetUuidRequest_init_zero           {0}
 #define SystemGetUuidResponse_init_zero          {0, 0, 0}
@@ -74,7 +73,7 @@ extern "C" {
 #define AppDeviceNotInMappingTableEvent_init_zero {0}
 #define AppUsingDefaultAddressEvent_init_zero    {0}
 #define AppFailedToInitDeviceIdEvent_init_zero   {0}
-#define WatchdogTaskFailureEvent_init_zero       {0, 0, 0}
+#define WatchdogTaskFailureEvent_init_zero       {0, 0}
 #define SystemFatalEvent_init_zero               {"", ""}
 
 /* Field tags (for use in manual encoding/decoding) */
@@ -86,7 +85,6 @@ extern "C" {
 #define AppUsingDefaultAddressEvent_address_tag  1
 #define WatchdogTaskFailureEvent_current_heartbeats_tag 1
 #define WatchdogTaskFailureEvent_expected_heartbeats_tag 2
-#define WatchdogTaskFailureEvent_tick_gap_count_tag 3
 #define SystemFatalEvent_module_tag              1
 #define SystemFatalEvent_message_tag             2
 
@@ -130,8 +128,7 @@ X(a, STATIC,   SINGULAR, UINT32,   address,           1)
 
 #define WatchdogTaskFailureEvent_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   current_heartbeats,   1) \
-X(a, STATIC,   SINGULAR, UINT32,   expected_heartbeats,   2) \
-X(a, STATIC,   SINGULAR, UINT32,   tick_gap_count,    3)
+X(a, STATIC,   SINGULAR, UINT32,   expected_heartbeats,   2)
 #define WatchdogTaskFailureEvent_CALLBACK NULL
 #define WatchdogTaskFailureEvent_DEFAULT NULL
 
@@ -172,7 +169,7 @@ extern const pb_msgdesc_t SystemFatalEvent_msg;
 #define SystemGetInfoResponse_size               66
 #define SystemGetUuidRequest_size                0
 #define SystemGetUuidResponse_size               18
-#define WatchdogTaskFailureEvent_size            18
+#define WatchdogTaskFailureEvent_size            12
 
 #ifdef __cplusplus
 } /* extern "C" */
