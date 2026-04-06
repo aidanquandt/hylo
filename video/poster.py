@@ -14,6 +14,10 @@ from manim import *
 import math
 import numpy as np
 
+# Use a taller output frame ratio (4:3) instead of widescreen (16:9).
+config.pixel_width = 1920
+config.pixel_height = 1440
+
 # ─── Color palette for white poster background ───────────────────────────────
 BG           = WHITE
 TEXT_COLOR   = "#1a1b26"      # near-black text
@@ -98,7 +102,7 @@ class PosterScene(ThreeDScene):
         self.add(track_outer, track_inner, track_centre)
 
         # ── 2. UWB Anchors — 3D enclosures on stands with radio waves ─────────
-        for (ax, ay), lbl in zip(ANCHOR_XY_M, ANCHOR_LBLS):
+        for (ax, ay), _lbl in zip(ANCHOR_XY_M, ANCHOR_LBLS):
             base = m2u(ax, ay, 0.0)
             top  = m2u(ax, ay, POLE_H_M)
 
@@ -145,14 +149,7 @@ class PosterScene(ThreeDScene):
                 ).move_to(top + OUT * 0.07)
                 self.add(arc)
 
-            # Label
-            label = Text(lbl, font_size=26, color=ANCHOR_COLOR, weight=BOLD)
-            cx, cy = ROOM_W_M / 2, ROOM_H_M / 2
-            off_x  = 0.50 * (1 if ax < cx else -1)
-            off_y  = 0.50 * (1 if ay < cy else -1)
-            label.move_to(top + np.array([off_x, off_y, 0.30]))
-
-            self.add(base_plate, pole, anchor_box, anchor_led, label)
+            self.add(base_plate, pole, anchor_box, anchor_led)
 
         # ── 3. UWB Ranging lines (dashed, no distance labels) ─────────────────
         for (ax, ay) in ANCHOR_XY_M:
@@ -183,8 +180,6 @@ class PosterScene(ThreeDScene):
         for wx, wy in [
             ( 0.13,  0.16),
             (-0.13,  0.16),
-            ( 0.13, -0.16),
-            (-0.13, -0.16),
         ]:
             wpos = robot_3d + fwd * wx + right * wy + OUT * wheel_r
             # Outer tyre ring
@@ -286,7 +281,7 @@ class PosterScene(ThreeDScene):
             # Custom text offsets keep labels readable in the projected 3D view.
             (fwd,                       IMU_X_COL, "X", AXIS,        fwd * 0.04 + right * 0.02),
             (perp,                      IMU_Y_COL, "Y", AXIS,        perp * 0.12 + right * 0.10 - fwd * 0.04),
-            (np.array([0.0, 0.0, 1.0]), IMU_Z_COL, "Z", AXIS * 0.80, np.array([0.0, 0.0, 0.20]) + right * 0.10),
+            (np.array([0.0, 0.0, 1.0]), IMU_Z_COL, "Z", AXIS * 1.45, np.array([0.0, 0.0, 0.42]) + right * 0.06),
         ]
         for direction, color, label_char, length, label_offset in axis_configs:
             self.add(Arrow(
@@ -294,9 +289,15 @@ class PosterScene(ThreeDScene):
                 color=color, stroke_width=5.5, buff=0,
                 max_tip_length_to_length_ratio=0.18,
             ))
-            lbl = Text(label_char, font_size=30, color=color, weight=BOLD)
-            lbl.move_to(imu_orig + direction * (length + 0.30) + label_offset)
-            self.add(lbl)
+            # lbl = Text(label_char, font_size=30, color=color, weight=BOLD)
+            # if label_char == "Z":
+            #     lbl.move_to(imu_orig + direction * (length + 0.10) - right * 0.16 + OUT * 0.02)
+            # elif label_char == "Y":
+            #     y_tip = imu_orig + direction * length
+            #     lbl.move_to(y_tip + RIGHT * 0.24 + UP * 0.10)
+            # else:
+            #     lbl.move_to(imu_orig + direction * (length + 0.30) + label_offset)
+            # self.add(lbl)
 
         # ── 7. Laptop + WiFi comms link ───────────────────────────────────────
         # Laptop sits on the floor at lower-left, outside the track.
@@ -348,33 +349,18 @@ class PosterScene(ThreeDScene):
 
         self.add(laptop_base, laptop_screen, screen_glow)
 
-        # WiFi dashed line (robot → laptop) — green to distinguish from UWB blue
-        wifi_target = laptop_pos + screen_base_dir * 0.10 + OUT * 0.10
-        wifi_raw = Line(
-            robot_3d + OUT * 0.05, wifi_target,
-            stroke_color="#15803d", stroke_width=3.0, stroke_opacity=0.85,
+        # WiFi curved dashed line (robot → laptop), arcing upward like a ballistic path.
+        wifi_start = robot_3d + OUT * 0.05
+        wifi_end = laptop_pos + screen_base_dir * 0.10 + OUT * 0.10
+        wifi_arc = ArcBetweenPoints(
+            wifi_start,
+            wifi_end,
+            radius=np.linalg.norm(wifi_start - wifi_end) * 1.20,
+            stroke_color="#15803d",
+            stroke_width=3.0,
+            stroke_opacity=0.85,
         )
-        wifi_dashed = DashedVMobject(wifi_raw, num_dashes=14, dashed_ratio=0.5)
+        wifi_dashed = DashedVMobject(wifi_arc, num_dashes=20, dashed_ratio=0.5)
         self.add(wifi_dashed)
-
-        # WiFi label on a white badge for contrast over busy geometry
-        wifi_mid = (
-            (robot_3d + laptop_pos) / 2
-            + right * 0.55
-            - fwd * 0.18
-            + np.array([0.0, 0.0, 0.32])
-        )
-        wifi_lbl = Text("Wi-Fi", font_size=22, color="#166534", weight=BOLD)
-        wifi_lbl.move_to(wifi_mid)
-        wifi_badge = SurroundingRectangle(
-            wifi_lbl,
-            buff=0.08,
-            corner_radius=0.06,
-            fill_color=WHITE,
-            fill_opacity=0.92,
-            stroke_color="#16a34a",
-            stroke_width=1.6,
-        )
-        self.add(wifi_badge, wifi_lbl)
 
         self.wait(1e-3)
