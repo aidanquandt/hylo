@@ -41,24 +41,24 @@ static void enforceSymmetryAndBounds(kalmanCoreData_t* kf);
 void kalmanCoreDefaultParams(kalmanCoreParams_t* params)
 {
     /* Initial state variances */
-    params->stdDevInitialPosition_xy        = 100.0f; /* Large uncertainty in XY */
-    params->stdDevInitialPosition_z         = 1.0f;   /* Smaller uncertainty in Z */
-    params->stdDevInitialVelocity           = 0.01f;  /* Know we start stationary */
-    params->stdDevInitialAttitude_rollpitch = 0.01f;  /* Roughly flat */
-    params->stdDevInitialAttitude_yaw       = 0.4f;   /* Unknown heading (less overconfident) */
+    params->stdDevInitialPosition_xy        = 25.0f; /* Large but bounded XY uncertainty */
+    params->stdDevInitialPosition_z         = 0.8f;  /* Smaller uncertainty in Z */
+    params->stdDevInitialVelocity           = 0.05f; /* Mild startup velocity uncertainty */
+    params->stdDevInitialAttitude_rollpitch = 0.08f; /* Allow imperfect initial leveling */
+    params->stdDevInitialAttitude_yaw       = 0.7f;  /* Yaw usually least certain at boot */
 
     /* Process noise - tune based on IMU quality */
     /* These values model the uncertainty in IMU measurements and allow the filter */
     /* to appropriately weight IMU predictions vs UWB measurements */
-    params->procNoiseAcc_xy = 0.40f;   /* Accelerometer noise XY (m/s^2) */
-    params->procNoiseAcc_z  = 0.70f;   /* Accelerometer noise Z (m/s^2) */
-    params->procNoiseVel    = 0.058f;  /* Velocity random walk (m/s) */
-    params->procNoisePos    = 0.0058f; /* Position random walk (m) */
-    params->procNoiseAtt    = 0.0058f; /* Attitude process noise (rad) */
+    params->procNoiseAcc_xy = 0.12f;   /* Lower accel noise to preserve short-term IMU dynamics */
+    params->procNoiseAcc_z  = 0.20f;   /* Slightly higher Z accel uncertainty than XY */
+    params->procNoiseVel    = 0.020f;  /* Reduced velocity random walk for short-horizon stability */
+    params->procNoisePos    = 0.0030f; /* Small position random walk; ranging handles long-term correction */
+    params->procNoiseAtt    = 0.0080f; /* Attitude drift allowance (with gyro scaling in sensor_fusion) */
 
     /* Measurement noise */
-    params->measNoiseGyro_rollpitch = 0.03f; /* rad/s */
-    params->measNoiseGyro_yaw       = 0.03f; /* rad/s */
+    params->measNoiseGyro_rollpitch = 0.012f; /* rad/s */
+    params->measNoiseGyro_yaw       = 0.012f; /* rad/s */
 
     /* Initial state */
     params->initialX   = 1.44f;
