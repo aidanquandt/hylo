@@ -54,11 +54,11 @@ void kalmanCoreDefaultParams(kalmanCoreParams_t* params)
     params->procNoiseAcc_z  = 0.20f;   /* Slightly higher Z accel uncertainty than XY */
     params->procNoiseVel    = 0.020f;  /* Reduced velocity random walk for short-horizon stability */
     params->procNoisePos    = 0.0030f; /* Small position random walk; ranging handles long-term correction */
-    params->procNoiseAtt    = 0.0080f; /* Attitude drift allowance (with gyro scaling in sensor_fusion) */
+    params->procNoiseAtt    = 0.0112f; /* Tuned from offline sweep */
 
     /* Measurement noise */
-    params->measNoiseGyro_rollpitch = 0.012f; /* rad/s */
-    params->measNoiseGyro_yaw       = 0.012f; /* rad/s */
+    params->measNoiseGyro_rollpitch = 0.0168f; /* rad/s, tuned from offline sweep */
+    params->measNoiseGyro_yaw       = 0.0168f; /* rad/s, tuned from offline sweep */
 
     /* Initial state */
     params->initialX   = 1.44f;
