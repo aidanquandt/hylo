@@ -67,7 +67,7 @@ class PosterScene(ThreeDScene):
         self.camera.background_color = BG
         # More cubic: phi=45° gives true isometric feel
         # More top-down, rotated so long side runs left-right in frame
-        self.set_camera_orientation(phi=42 * DEGREES, theta=-40 * DEGREES)
+        self.set_camera_orientation(phi=58 * DEGREES, theta=-55 * DEGREES)
 
         robot_3d = m2u(ROBOT_X_M, ROBOT_Y_M, 0.0)
         yaw_rad  = math.radians(ROBOT_YAW_DEG)
@@ -113,13 +113,13 @@ class PosterScene(ThreeDScene):
                 stroke_color="#475569", stroke_width=1.2,
             ).move_to(base)
 
-            # Thicker pole / stand
-            pole = Line(base, top, stroke_color=POLE_COL, stroke_width=5)
+            # Thicker pole / stand — stop clearly below the anchor box bottom face
+            pole = Line(base, top - OUT * 0.08, stroke_color=POLE_COL, stroke_width=5)
 
             # 3D anchor enclosure box (Prism) at the top
             anchor_box = Prism(
                 dimensions=[0.32, 0.24, 0.14],
-            ).set_fill(ANCHOR_COLOR, opacity=0.95).set_stroke(
+            ).set_fill(ANCHOR_COLOR, opacity=1.0).set_stroke(
                 color="#60a5fa", width=1.5, opacity=0.9,
             )
             anchor_box.move_to(top + OUT * 0.07)
@@ -356,7 +356,7 @@ class PosterScene(ThreeDScene):
             wifi_start,
             wifi_end,
             radius=np.linalg.norm(wifi_start - wifi_end) * 1.20,
-            stroke_color="#15803d",
+            stroke_color="#facc15",
             stroke_width=3.0,
             stroke_opacity=0.85,
         )
