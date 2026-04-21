@@ -10,6 +10,7 @@
 #include "FreeRTOS.h"
 #include "queue.h"
 #include "task.h"
+#include "task_config.h"
 
 /*---------------------------------------------------------------------------
  * Defines
@@ -20,8 +21,6 @@
 #define SDCARD_REMOUNT_DELAY_MS  (1000U)
 #define SDCARD_MAX_LOG_FILES     (1000U)
 #define SDCARD_ROW_BUF_SIZE      (320U)
-#define SDCARD_TASK_STACK_SIZE   (1024U)
-#define SDCARD_TASK_PRIORITY     (2U)
 
 /*---------------------------------------------------------------------------
  * Private Variables
@@ -29,7 +28,7 @@
 #if (HWREV == 1)
 static QueueHandle_t sdcard_queue = NULL;
 static StaticTask_t  sdcard_task_tcb;
-static StackType_t   sdcard_task_stack[SDCARD_TASK_STACK_SIZE];
+static StackType_t   sdcard_task_stack[TASK_STACK_4KB];
 
 static bool     sdcard_mounted = false;
 static bool     file_open = false;
@@ -61,9 +60,9 @@ void sdcard_driver_init(void)
     (void)xTaskCreateStatic(
         sdcard_driver_task,
         "SD_LOG",
-        SDCARD_TASK_STACK_SIZE,
+        TASK_STACK_4KB,
         NULL,
-        SDCARD_TASK_PRIORITY,
+        TASK_PRIORITY_SDCARD,
         sdcard_task_stack,
         &sdcard_task_tcb);
 #endif
@@ -137,7 +136,8 @@ static void sdcard_write_csv_header(void)
         "type,timestamp_ms,"
         "dist_m,anchor_addr,anchor_x,anchor_y,anchor_z,quality,rssi_dbm,"
         "accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,temp_c,"
-        "pos_x,pos_y,pos_z,vel_x,vel_y,vel_z,confidence,pos_valid,imu_enable\n";
+        "pos_x,pos_y,pos_z,vel_x,vel_y,vel_z,confidence,pos_valid,imu_enable,"
+        "roll_rad,pitch_rad,yaw_rad\n";
 
     UINT written;
     if (f_write(&SDFile, header, sizeof(header) - 1U, &written) != FR_OK)
@@ -155,25 +155,26 @@ static void sdcard_write_event(const sdcard_driver_event_t* event)
     switch (event->type) {
         case SDCARD_DRIVER_EVENT_RANGING: {
             const sdcard_driver_ranging_event_t* r = &event->data.ranging;
-            len = snprintf(row, sizeof(row), 
-                "RANGING,%lu,%.4f,%u,%.3f,%.3f,%.3f,%.3f,%.1f,,,,,,,,,,,,,,,,\n",
+            len = snprintf(row, sizeof(row),
+                "RANGING,%lu,%.4f,%u,%.3f,%.3f,%.3f,%.3f,%.1f,,,,,,,,,,,,,,,,,,,\n",
                 (unsigned long)event->timestamp_ms, r->distance_m, (unsigned)r->anchor_addr,
                 r->anchor_x, r->anchor_y, r->anchor_z, r->quality, r->rssi_dbm);
             break;
         }
         case SDCARD_DRIVER_EVENT_IMU: {
             const sdcard_driver_imu_event_t* i = &event->data.imu;
-            len = snprintf(row, sizeof(row), 
-                "IMU,%lu,,,,,,,,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.2f,,,,,,,,,\n",
+            len = snprintf(row, sizeof(row),
+                "IMU,%lu,,,,,,,,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.2f,,,,,,,,,,,\n",
                 (unsigned long)event->timestamp_ms, i->accel_x, i->accel_y, i->accel_z,
                 i->gyro_x, i->gyro_y, i->gyro_z, i->temp_c);
             break;
         }
         case SDCARD_DRIVER_EVENT_POSITION: {
             const sdcard_driver_position_event_t* p = &event->data.position;
-            len = snprintf(row, sizeof(row), 
-                "POSITION,%lu,,,,,,,,,,,,,,,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%d,%d\n",
-                (unsigned long)event->timestamp_ms, p->x, p->y, p->z, p->vx, p->vy, p->vz, p->confidence, (int)p->valid, p->imu_enable);
+            len = snprintf(row, sizeof(row),
+                "POSITION,%lu,,,,,,,,,,,,,,,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%d,%d,%.4f,%.4f,%.4f\n",
+                (unsigned long)event->timestamp_ms, p->x, p->y, p->z, p->vx, p->vy, p->vz,
+                p->confidence, (int)p->valid, p->imu_enable, p->roll, p->pitch, p->yaw);
             break;
         }
         default:

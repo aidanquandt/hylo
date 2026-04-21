@@ -1548,3 +1548,48 @@ void protocol_tx_SystemFatalEvent(const SystemFatalEvent *msg)
   protocol_send_frame(MSG_ID_SystemFatalEvent, tx_buf, stream.bytes_written);
 }
 
+void protocol_tx_DataloggerGetIdleCpuRequest(const DataloggerGetIdleCpuRequest *msg)
+{
+  uint8_t tx_buf[PROTOCOL_TX_BUF_SIZE];
+  pb_ostream_t stream = pb_ostream_from_buffer(tx_buf, sizeof(tx_buf));
+  if (!pb_encode(&stream, DataloggerGetIdleCpuRequest_fields, msg))
+    return;
+  protocol_send_frame(MSG_ID_DataloggerGetIdleCpuRequest, tx_buf, stream.bytes_written);
+}
+
+void protocol_tx_DataloggerGetIdleCpuResponse(const DataloggerGetIdleCpuResponse *msg)
+{
+  uint8_t tx_buf[PROTOCOL_TX_BUF_SIZE];
+  pb_ostream_t stream = pb_ostream_from_buffer(tx_buf, sizeof(tx_buf));
+  if (!pb_encode(&stream, DataloggerGetIdleCpuResponse_fields, msg))
+    return;
+  protocol_send_frame(MSG_ID_DataloggerGetIdleCpuResponse, tx_buf, stream.bytes_written);
+}
+
+void protocol_tx_SensorFusionStreamStartRequest(const SensorFusionStreamStartRequest *msg)
+{
+  uint8_t tx_buf[PROTOCOL_TX_BUF_SIZE];
+  pb_ostream_t stream = pb_ostream_from_buffer(tx_buf, sizeof(tx_buf));
+  if (!pb_encode(&stream, SensorFusionStreamStartRequest_fields, msg))
+    return;
+  protocol_send_frame(MSG_ID_SensorFusionStreamStartRequest, tx_buf, stream.bytes_written);
+}
+
+void protocol_tx_SensorFusionStreamStopRequest(const SensorFusionStreamStopRequest *msg)
+{
+  uint8_t tx_buf[PROTOCOL_TX_BUF_SIZE];
+  pb_ostream_t stream = pb_ostream_from_buffer(tx_buf, sizeof(tx_buf));
+  if (!pb_encode(&stream, SensorFusionStreamStopRequest_fields, msg))
+    return;
+  protocol_send_frame(MSG_ID_SensorFusionStreamStopRequest, tx_buf, stream.bytes_written);
+}
+
+void protocol_tx_SensorFusionStreamPayload(const SensorFusionStreamPayload *msg)
+{
+  uint8_t tx_buf[PROTOCOL_TX_BUF_SIZE];
+  pb_ostream_t stream = pb_ostream_from_buffer(tx_buf, sizeof(tx_buf));
+  if (!pb_encode(&stream, SensorFusionStreamPayload_fields, msg))
+    return;
+  protocol_send_frame(MSG_ID_SensorFusionStreamPayload, tx_buf, stream.bytes_written);
+}
+

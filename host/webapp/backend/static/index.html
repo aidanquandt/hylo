@@ -399,7 +399,7 @@
             </div>
             <div class="viz-toolbar">
               <button type="button" id="vizClear" title="Clear trail & ranges">Clear</button>
-              <button type="button" id="sfLiveBtn" title="Poll SensorFusionGetStatusRequest every 500ms to stream tag position">SF Live</button>
+              <button type="button" id="sfLiveBtn" title="Enable device periodic SensorFusionStreamPayload (replaces host polling)">SF Live</button>
               <button type="button" id="trailBtn" class="toggled" title="Show/hide position trail">Trail</button>
               <span id="sfConfidence" class="sf-confidence"></span>
               <label>Bounds X:</label>
@@ -480,7 +480,7 @@
 
     function shouldHideLine(text) {
       if (hideRanges && (text.includes("TWR range addr=") || text.includes("TwrMgrRangeEvent"))) return true;
-      if (hideSF && text.includes("SensorFusionGetStatusResponse")) return true;
+      if (hideSF && (text.includes("SensorFusionGetStatusResponse") || text.includes("SensorFusionStreamPayload"))) return true;
       return false;
     }
 
@@ -936,7 +936,7 @@
 
     // Visualization state
     const vizState = {
-      position: { x: 0, y: 0, z: 0 },
+      position: { x: 0, y: 0, z: 0, yaw: 0 },
       positionKnown: false,
       ranges: {},           // addr -> { distance_m }
       trail: [],            // [{x,y}]
@@ -1096,6 +1096,22 @@
         ctx.font = "11px monospace";
         ctx.textAlign = "center";
         ctx.fillText(`(${vizState.position.x.toFixed(2)}, ${vizState.position.y.toFixed(2)})`, tx, ty + 22);
+        // Heading arrow (yaw=0 → +X; canvas Y is inverted so sin is negated)
+        const arrowLen = 20;
+        const yaw = vizState.position.yaw;
+        const ax = tx + arrowLen * Math.cos(yaw);
+        const ay = ty - arrowLen * Math.sin(yaw);
+        const headLen = 7;
+        ctx.strokeStyle = "#e0af68";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(ax, ay); ctx.stroke();
+        const a1 = yaw + Math.PI * 5 / 6, a2 = yaw - Math.PI * 5 / 6;
+        ctx.fillStyle = "#e0af68";
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(ax + headLen * Math.cos(a1), ay - headLen * Math.sin(a1));
+        ctx.lineTo(ax + headLen * Math.cos(a2), ay - headLen * Math.sin(a2));
+        ctx.closePath(); ctx.fill();
       }
 
       // Legend
@@ -1164,8 +1180,12 @@
     // Sensor fusion event: actual tag position from EKF
     function handleFusionEvent(data) {
       const confEl = document.getElementById("sfConfidence");
+      // Always update yaw when active — IMU tracks attitude independently of position confidence
+      if (data.active && data.yaw != null) {
+        vizState.position.yaw = data.yaw;
+      }
       if (data.active && data.confidence > 0) {
-        vizState.position = { x: data.x, y: data.y, z: data.z };
+        vizState.position = { x: data.x, y: data.y, z: data.z, yaw: data.yaw ?? vizState.position.yaw };
         vizState.positionKnown = true;
         vizState.trail.push({ x: data.x, y: data.y });
         if (vizState.trail.length > 200) vizState.trail.shift();
@@ -1356,29 +1376,44 @@
     });
 
     // ===================== SF Live toggle =====================
-    let sfLiveInterval = null;
+    let sfLiveEnabled = false;
     const sfLiveBtn = document.getElementById("sfLiveBtn");
-    sfLiveBtn.addEventListener("click", () => {
-      if (sfLiveInterval) {
-        clearInterval(sfLiveInterval);
-        sfLiveInterval = null;
+    sfLiveBtn.addEventListener("click", async () => {
+      if (commRouteEl.value === "uart" && !portEl.value) {
+        alert("Select a USB port and open serial (toolbar) first.");
+        return;
+      }
+      if (sfLiveEnabled) {
+        sfLiveEnabled = false;
         sfLiveBtn.classList.remove("toggled");
         document.getElementById("sfConfidence").textContent = "";
+        try {
+          await fetch("/api/command", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              port: portEl.value || null,
+              route: commRouteEl.value,
+              command: "SensorFusionStreamStopRequest",
+              args: [],
+            }),
+          });
+        } catch (e) { /* ignore */ }
       } else {
-        if (commRouteEl.value === "uart" && !portEl.value) { alert("Select a USB port and open serial (toolbar) first."); return; }
+        sfLiveEnabled = true;
         sfLiveBtn.classList.add("toggled");
-        const poll = async () => {
-          if (commRouteEl.value === "uart" && !portEl.value) return;
-          try {
-            await fetch("/api/command", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ port: portEl.value || null, route: commRouteEl.value, command: "SensorFusionGetStatusRequest", args: [] })
-            });
-          } catch (e) { /* ignore */ }
-        };
-        poll(); // immediate first poll
-        sfLiveInterval = setInterval(poll, 100);
+        try {
+          await fetch("/api/command", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              port: portEl.value || null,
+              route: commRouteEl.value,
+              command: "SensorFusionStreamStartRequest",
+              args: [],
+            }),
+          });
+        } catch (e) { /* ignore */ }
       }
     });
 
@@ -1413,7 +1448,7 @@
       vizState.trail = [];
       vizState.ranges = {};
       vizState.positionKnown = false;
-      document.getElementById("sfConfidence").textContent = sfLiveInterval ? "conf: 0%" : "";
+      document.getElementById("sfConfidence").textContent = sfLiveEnabled ? "conf: 0%" : "";
       vizStatusEl.textContent = "No data";
       try { await fetch("/api/viz/clear", { method: "POST" }); } catch (e) { /* ignore */ }
       vizDraw();

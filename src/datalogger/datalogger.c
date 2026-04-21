@@ -11,6 +11,8 @@
 #include "protocol.pb.h"
 #include <string.h>
 
+extern unsigned long getRunTimeCounterValue(void);
+
 /*---------------------------------------------------------------------------
  * Defines
  *---------------------------------------------------------------------------*/
@@ -32,6 +34,9 @@ STATIC TaskStatus_t task_status_array[DATALOGGER_MAX_TASKS];
 STATIC UBaseType_t num_tracked_tasks   = 0;
 STATIC uint32_t current_free_heap      = 0U;
 STATIC uint32_t minimum_ever_free_heap = 0U;
+STATIC uint32_t idle_sample_prev_counter  = 0U;
+STATIC uint32_t idle_sample_prev_total    = 0U;
+STATIC float32_t idle_sample_last_percent = 0.0f;
 
 /*---------------------------------------------------------------------------
  * Private Function Implementations
@@ -184,4 +189,43 @@ void datalogger_get_system_stats(system_stats_t* stats, task_cpu_info_t* task_bu
     {
         stats->num_tasks = (uint32_t)uxTaskGetNumberOfTasks();
     }
+}
+
+float32_t datalogger_sample_idle_cpu_percent(void)
+{
+#if (configGENERATE_RUN_TIME_STATS == 1) && (INCLUDE_xTaskGetIdleTaskHandle == 1)
+    uint32_t idle_now   = ulTaskGetIdleRunTimeCounter();
+    uint32_t total_now  = (uint32_t)getRunTimeCounterValue();
+    uint32_t delta_idle = 0U;
+    uint32_t delta_total = 0U;
+
+    if (total_now >= idle_sample_prev_total)
+    {
+        delta_total = total_now - idle_sample_prev_total;
+    }
+    else
+    {
+        delta_total = (UINT32_MAX - idle_sample_prev_total) + total_now + 1U;
+    }
+
+    if (idle_now >= idle_sample_prev_counter)
+    {
+        delta_idle = idle_now - idle_sample_prev_counter;
+    }
+    else
+    {
+        delta_idle = (UINT32_MAX - idle_sample_prev_counter) + idle_now + 1U;
+    }
+
+    idle_sample_prev_counter = idle_now;
+    idle_sample_prev_total   = total_now;
+
+    if (delta_total > 0U)
+    {
+        idle_sample_last_percent = (100.0f * (float32_t)delta_idle) / (float32_t)delta_total;
+    }
+    return idle_sample_last_percent;
+#else
+    return 0.0f;
+#endif
 }

@@ -15,7 +15,7 @@ import nanopb_pb2 as nanopb__pb2
 import host_options_pb2 as host__options__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\"messages/protocol_datalogger.proto\x1a\x0cnanopb.proto\x1a\x12host_options.proto\"!\n\x19\x44\x61taloggerGetTasksRequest:\x04\x88\xb5\x18\x01\"B\n\x1a\x44\x61taloggerGetTasksResponse\x12\x1e\n\ntask_names\x18\x01 \x03(\tB\n\x92?\x02\x10\x10\x92?\x02p :\x04\x88\xb5\x18\x02\"!\n\x19\x44\x61taloggerGetStatsRequest:\x04\x88\xb5\x18\x01\"I\n\x1a\x44\x61taloggerGetStatsResponse\x12\x12\n\ntask_count\x18\x01 \x01(\r\x12\x11\n\tfree_heap\x18\x02 \x01(\r:\x04\x88\xb5\x18\x02\"\x80\x01\n\x1b\x44\x61taloggerTimingMissesEvent\x12\x18\n\ttask_name\x18\x01 \x01(\tB\x05\x92?\x02p\x18\x12\x12\n\nmiss_count\x18\x02 \x01(\r\x12\x13\n\x0b\x64\x65\x61\x64line_ms\x18\x03 \x01(\r\x12\x18\n\x10worst_latency_ms\x18\x04 \x01(\r:\x04\x88\xb5\x18\x03\"4\n\x18\x44\x61taloggerLowMemoryEvent\x12\x12\n\nbytes_free\x18\x01 \x01(\r:\x04\x88\xb5\x18\x03\x42\x04\xd0\xb5\x18\tb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\"messages/protocol_datalogger.proto\x1a\x0cnanopb.proto\x1a\x12host_options.proto\"!\n\x19\x44\x61taloggerGetTasksRequest:\x04\x88\xb5\x18\x01\"B\n\x1a\x44\x61taloggerGetTasksResponse\x12\x1e\n\ntask_names\x18\x01 \x03(\tB\n\x92?\x02\x10\x10\x92?\x02p :\x04\x88\xb5\x18\x02\"!\n\x19\x44\x61taloggerGetStatsRequest:\x04\x88\xb5\x18\x01\"I\n\x1a\x44\x61taloggerGetStatsResponse\x12\x12\n\ntask_count\x18\x01 \x01(\r\x12\x11\n\tfree_heap\x18\x02 \x01(\r:\x04\x88\xb5\x18\x02\"#\n\x1b\x44\x61taloggerGetIdleCpuRequest:\x04\x88\xb5\x18\x01\">\n\x1c\x44\x61taloggerGetIdleCpuResponse\x12\x18\n\x10idle_cpu_percent\x18\x01 \x01(\x02:\x04\x88\xb5\x18\x02\"\x80\x01\n\x1b\x44\x61taloggerTimingMissesEvent\x12\x18\n\ttask_name\x18\x01 \x01(\tB\x05\x92?\x02p\x18\x12\x12\n\nmiss_count\x18\x02 \x01(\r\x12\x13\n\x0b\x64\x65\x61\x64line_ms\x18\x03 \x01(\r\x12\x18\n\x10worst_latency_ms\x18\x04 \x01(\r:\x04\x88\xb5\x18\x03\"4\n\x18\x44\x61taloggerLowMemoryEvent\x12\x12\n\nbytes_free\x18\x01 \x01(\r:\x04\x88\xb5\x18\x03\x42\x04\xd0\xb5\x18\tb\x06proto3')
 
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'messages.protocol_datalogger_pb2', globals())
@@ -33,6 +33,10 @@ if _descriptor._USE_C_DESCRIPTORS == False:
   _DATALOGGERGETSTATSREQUEST._serialized_options = b'\210\265\030\001'
   _DATALOGGERGETSTATSRESPONSE._options = None
   _DATALOGGERGETSTATSRESPONSE._serialized_options = b'\210\265\030\002'
+  _DATALOGGERGETIDLECPUREQUEST._options = None
+  _DATALOGGERGETIDLECPUREQUEST._serialized_options = b'\210\265\030\001'
+  _DATALOGGERGETIDLECPURESPONSE._options = None
+  _DATALOGGERGETIDLECPURESPONSE._serialized_options = b'\210\265\030\002'
   _DATALOGGERTIMINGMISSESEVENT.fields_by_name['task_name']._options = None
   _DATALOGGERTIMINGMISSESEVENT.fields_by_name['task_name']._serialized_options = b'\222?\002p\030'
   _DATALOGGERTIMINGMISSESEVENT._options = None
@@ -47,8 +51,12 @@ if _descriptor._USE_C_DESCRIPTORS == False:
   _DATALOGGERGETSTATSREQUEST._serialized_end=208
   _DATALOGGERGETSTATSRESPONSE._serialized_start=210
   _DATALOGGERGETSTATSRESPONSE._serialized_end=283
-  _DATALOGGERTIMINGMISSESEVENT._serialized_start=286
-  _DATALOGGERTIMINGMISSESEVENT._serialized_end=414
-  _DATALOGGERLOWMEMORYEVENT._serialized_start=416
-  _DATALOGGERLOWMEMORYEVENT._serialized_end=468
+  _DATALOGGERGETIDLECPUREQUEST._serialized_start=285
+  _DATALOGGERGETIDLECPUREQUEST._serialized_end=320
+  _DATALOGGERGETIDLECPURESPONSE._serialized_start=322
+  _DATALOGGERGETIDLECPURESPONSE._serialized_end=384
+  _DATALOGGERTIMINGMISSESEVENT._serialized_start=387
+  _DATALOGGERTIMINGMISSESEVENT._serialized_end=515
+  _DATALOGGERLOWMEMORYEVENT._serialized_start=517
+  _DATALOGGERLOWMEMORYEVENT._serialized_end=569
 # @@protoc_insertion_point(module_scope)

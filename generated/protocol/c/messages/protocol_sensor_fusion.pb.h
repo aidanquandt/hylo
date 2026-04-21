@@ -31,6 +31,23 @@ typedef struct _SensorFusionGetStatusResponse {
     float confidence;
 } SensorFusionGetStatusResponse;
 
+typedef struct _SensorFusionStreamStartRequest {
+    char dummy_field;
+} SensorFusionStreamStartRequest;
+
+typedef struct _SensorFusionStreamStopRequest {
+    char dummy_field;
+} SensorFusionStreamStopRequest;
+
+typedef struct _SensorFusionStreamPayload {
+    bool active;
+    float pos_x;
+    float pos_y;
+    float pos_z;
+    float confidence;
+    float yaw_rad;
+} SensorFusionStreamPayload;
+
 typedef struct _SensorFusionSetActiveRequest {
     bool active;
 } SensorFusionSetActiveRequest;
@@ -81,6 +98,9 @@ extern "C" {
 #define SensorFusionSetDebugRequest_init_default {0}
 #define SensorFusionGetStatusRequest_init_default {0}
 #define SensorFusionGetStatusResponse_init_default {0, 0, 0, 0, 0}
+#define SensorFusionStreamStartRequest_init_default {0}
+#define SensorFusionStreamStopRequest_init_default {0}
+#define SensorFusionStreamPayload_init_default   {0, 0, 0, 0, 0, 0}
 #define SensorFusionSetActiveRequest_init_default {0}
 #define SensorFusionGetImuEnabledRequest_init_default {0}
 #define SensorFusionGetImuEnabledResponse_init_default {0}
@@ -94,6 +114,9 @@ extern "C" {
 #define SensorFusionSetDebugRequest_init_zero    {0}
 #define SensorFusionGetStatusRequest_init_zero   {0}
 #define SensorFusionGetStatusResponse_init_zero  {0, 0, 0, 0, 0}
+#define SensorFusionStreamStartRequest_init_zero {0}
+#define SensorFusionStreamStopRequest_init_zero  {0}
+#define SensorFusionStreamPayload_init_zero      {0, 0, 0, 0, 0, 0}
 #define SensorFusionSetActiveRequest_init_zero   {0}
 #define SensorFusionGetImuEnabledRequest_init_zero {0}
 #define SensorFusionGetImuEnabledResponse_init_zero {0}
@@ -111,6 +134,12 @@ extern "C" {
 #define SensorFusionGetStatusResponse_pos_y_tag  3
 #define SensorFusionGetStatusResponse_pos_z_tag  4
 #define SensorFusionGetStatusResponse_confidence_tag 5
+#define SensorFusionStreamPayload_active_tag     1
+#define SensorFusionStreamPayload_pos_x_tag      2
+#define SensorFusionStreamPayload_pos_y_tag      3
+#define SensorFusionStreamPayload_pos_z_tag      4
+#define SensorFusionStreamPayload_confidence_tag 5
+#define SensorFusionStreamPayload_yaw_rad_tag    6
 #define SensorFusionSetActiveRequest_active_tag  1
 #define SensorFusionGetImuEnabledResponse_imu_enabled_tag 1
 #define SensorFusionSetImuEnabledRequest_imu_enabled_tag 1
@@ -146,6 +175,26 @@ X(a, STATIC,   SINGULAR, FLOAT,    pos_z,             4) \
 X(a, STATIC,   SINGULAR, FLOAT,    confidence,        5)
 #define SensorFusionGetStatusResponse_CALLBACK NULL
 #define SensorFusionGetStatusResponse_DEFAULT NULL
+
+#define SensorFusionStreamStartRequest_FIELDLIST(X, a) \
+
+#define SensorFusionStreamStartRequest_CALLBACK NULL
+#define SensorFusionStreamStartRequest_DEFAULT NULL
+
+#define SensorFusionStreamStopRequest_FIELDLIST(X, a) \
+
+#define SensorFusionStreamStopRequest_CALLBACK NULL
+#define SensorFusionStreamStopRequest_DEFAULT NULL
+
+#define SensorFusionStreamPayload_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     active,            1) \
+X(a, STATIC,   SINGULAR, FLOAT,    pos_x,             2) \
+X(a, STATIC,   SINGULAR, FLOAT,    pos_y,             3) \
+X(a, STATIC,   SINGULAR, FLOAT,    pos_z,             4) \
+X(a, STATIC,   SINGULAR, FLOAT,    confidence,        5) \
+X(a, STATIC,   SINGULAR, FLOAT,    yaw_rad,           6)
+#define SensorFusionStreamPayload_CALLBACK NULL
+#define SensorFusionStreamPayload_DEFAULT NULL
 
 #define SensorFusionSetActiveRequest_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, BOOL,     active,            1)
@@ -200,6 +249,9 @@ extern const pb_msgdesc_t SensorFusionGetDebugRequest_msg;
 extern const pb_msgdesc_t SensorFusionSetDebugRequest_msg;
 extern const pb_msgdesc_t SensorFusionGetStatusRequest_msg;
 extern const pb_msgdesc_t SensorFusionGetStatusResponse_msg;
+extern const pb_msgdesc_t SensorFusionStreamStartRequest_msg;
+extern const pb_msgdesc_t SensorFusionStreamStopRequest_msg;
+extern const pb_msgdesc_t SensorFusionStreamPayload_msg;
 extern const pb_msgdesc_t SensorFusionSetActiveRequest_msg;
 extern const pb_msgdesc_t SensorFusionGetImuEnabledRequest_msg;
 extern const pb_msgdesc_t SensorFusionGetImuEnabledResponse_msg;
@@ -215,6 +267,9 @@ extern const pb_msgdesc_t SensorFusionSetConfigRequest_msg;
 #define SensorFusionSetDebugRequest_fields &SensorFusionSetDebugRequest_msg
 #define SensorFusionGetStatusRequest_fields &SensorFusionGetStatusRequest_msg
 #define SensorFusionGetStatusResponse_fields &SensorFusionGetStatusResponse_msg
+#define SensorFusionStreamStartRequest_fields &SensorFusionStreamStartRequest_msg
+#define SensorFusionStreamStopRequest_fields &SensorFusionStreamStopRequest_msg
+#define SensorFusionStreamPayload_fields &SensorFusionStreamPayload_msg
 #define SensorFusionSetActiveRequest_fields &SensorFusionSetActiveRequest_msg
 #define SensorFusionGetImuEnabledRequest_fields &SensorFusionGetImuEnabledRequest_msg
 #define SensorFusionGetImuEnabledResponse_fields &SensorFusionGetImuEnabledResponse_msg
@@ -227,7 +282,7 @@ extern const pb_msgdesc_t SensorFusionSetConfigRequest_msg;
 
 /* Maximum encoded size of messages (where known) */
 /* SensorFusionSetConfigRequest_size depends on runtime parameters */
-#define MESSAGES_PROTOCOL_SENSOR_FUSION_PB_H_MAX_SIZE SensorFusionGetStatusResponse_size
+#define MESSAGES_PROTOCOL_SENSOR_FUSION_PB_H_MAX_SIZE SensorFusionStreamPayload_size
 #define SensorFusionGetConfigRequest_size        0
 #define SensorFusionGetDebugRequest_size         0
 #define SensorFusionGetImuEnabledRequest_size    0
@@ -240,6 +295,9 @@ extern const pb_msgdesc_t SensorFusionSetConfigRequest_msg;
 #define SensorFusionSetDebugRequest_size         6
 #define SensorFusionSetImuEnabledRequest_size    2
 #define SensorFusionSetNoiseRequest_size         15
+#define SensorFusionStreamPayload_size           27
+#define SensorFusionStreamStartRequest_size      0
+#define SensorFusionStreamStopRequest_size       0
 
 #ifdef __cplusplus
 } /* extern "C" */

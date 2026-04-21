@@ -23,6 +23,21 @@ message SensorFusionGetStatusResponse {
   float pos_z = 4;
   float confidence = 5;
 }
+message SensorFusionStreamStartRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message SensorFusionStreamStopRequest {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
+}
+message SensorFusionStreamPayload {
+  option (host.host_message_type) = HOST_MESSAGE_TYPE_STREAM;
+  bool active = 1;
+  float pos_x = 2;
+  float pos_y = 3;
+  float pos_z = 4;
+  float confidence = 5;
+  float yaw_rad = 6;
+}
 message SensorFusionSetActiveRequest {
   option (host.host_message_type) = HOST_MESSAGE_TYPE_REQUEST;
   bool active = 1;
